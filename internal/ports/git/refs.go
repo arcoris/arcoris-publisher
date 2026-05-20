@@ -37,15 +37,3 @@ type TagName string
 // RefSpec is deliberately opaque because Git accepts several valid forms,
 // including delete and force update syntax.
 type RefSpec string
-
-// String returns the commit hash as a string.
-func (h CommitHash) String() string { return string(h) }
-
-// String returns the branch name as a string.
-func (b BranchName) String() string { return string(b) }
-
-// String returns the tag name as a string.
-func (t TagName) String() string { return string(t) }
-
-// String returns the refspec as a string.
-func (r RefSpec) String() string { return string(r) }

@@ -31,13 +31,3 @@ type BranchProtection struct {
 	// AllowsDeletions reports whether branch deletion is allowed.
 	AllowsDeletions bool
 }
-
-// BlocksDirectPush reports whether the protection settings imply that a direct
-// branch push is likely to be rejected.
-//
-// The helper is intentionally narrow: status checks alone do not necessarily
-// block direct pushes, but a protected branch that requires pull requests usually
-// does.
-func (p BranchProtection) BlocksDirectPush() bool {
-	return p.Protected && p.RequiresPullRequest
-}

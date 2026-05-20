@@ -26,22 +26,3 @@ type ListOptions struct {
 	// JSON asks the adapter to parse go list -json output into Packages.
 	JSON bool
 }
-
-// ListResult contains go list output and optional parsed package data.
-//
-// Stdout and Stderr preserve the command's raw streams. Packages is populated
-// only when the adapter parsed JSON output, usually because ListOptions.JSON was
-// set by the caller.
-type ListResult struct {
-	// Stdout contains raw standard output.
-	Stdout []byte
-	// Stderr contains raw standard error.
-	Stderr []byte
-	// Packages contains parsed package data when JSON output was requested.
-	Packages []Package
-}
-
-// HasPackages reports whether parsed packages were attached to the result.
-func (r ListResult) HasPackages() bool {
-	return len(r.Packages) > 0
-}

@@ -43,31 +43,3 @@ func (a AccessLevel) Valid() bool {
 		return false
 	}
 }
-
-// RepositoryPermissions describes effective provider permissions for a repository.
-//
-// Permissions are effective for the current principal, not repository policy in
-// general. Providers may compute them from role names, team grants, installation
-// scopes, or token capabilities.
-type RepositoryPermissions struct {
-	// CanRead permits reading repository metadata and contents.
-	CanRead bool
-	// CanWrite permits writing refs, pull requests, or releases.
-	CanWrite bool
-	// CanAdmin permits administrative repository actions.
-	CanAdmin bool
-}
-
-// Allows reports whether the permission set satisfies the requested access level.
-func (p RepositoryPermissions) Allows(level AccessLevel) bool {
-	switch level {
-	case AccessRead:
-		return p.CanRead || p.CanWrite || p.CanAdmin
-	case AccessWrite:
-		return p.CanWrite || p.CanAdmin
-	case AccessAdmin:
-		return p.CanAdmin
-	default:
-		return false
-	}
-}

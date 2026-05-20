@@ -16,7 +16,6 @@ package gitcli
 
 import (
 	"context"
-	"strings"
 
 	gitport "arcoris.dev/arcoris-publisher/internal/ports/git"
 )
@@ -29,34 +28,4 @@ func (c *Client) Status(ctx context.Context, repoDir string) (gitport.Status, er
 	}
 	entries := parseStatus(result.Stdout)
 	return gitport.Status{Clean: len(entries) == 0, Entries: entries}, nil
-}
-
-// parseStatus parses NUL-delimited porcelain-v1 output.
-//
-// Rename and copy records include an extra path field after the primary entry;
-// the parser skips that extra field because the port currently models only one
-// path per status entry.
-func parseStatus(out []byte) []gitport.StatusEntry {
-	if len(out) == 0 {
-		return nil
-	}
-	parts := strings.Split(string(out), "\x00")
-	entries := make([]gitport.StatusEntry, 0, len(parts))
-	for i := 0; i < len(parts); i++ {
-		part := parts[i]
-		if part == "" {
-			continue
-		}
-		if len(part) < 3 {
-			entries = append(entries, gitport.StatusEntry{Path: part})
-			continue
-		}
-		code := part[:2]
-		path := strings.TrimPrefix(part[2:], " ")
-		entries = append(entries, gitport.StatusEntry{Code: code, Path: path})
-		if strings.HasPrefix(code, "R") || strings.HasPrefix(code, "C") {
-			i++
-		}
-	}
-	return entries
 }

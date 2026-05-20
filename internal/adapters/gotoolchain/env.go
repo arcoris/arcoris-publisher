@@ -16,7 +16,6 @@ package gotoolchain
 
 import (
 	"context"
-	"encoding/json"
 
 	goport "arcoris.dev/arcoris-publisher/internal/ports/gotoolchain"
 )
@@ -28,9 +27,5 @@ func (t *Toolchain) Env(ctx context.Context, opts goport.EnvOptions) (goport.Env
 	if err != nil {
 		return goport.EnvResult{}, wrapGoError(goport.CodeCommandFailed, "go env failed", result, err)
 	}
-	values := map[string]string{}
-	if err := json.Unmarshal(result.Stdout, &values); err != nil {
-		return goport.EnvResult{}, goError(goport.CodeCommandFailed, "go env output could not be parsed", err, nil)
-	}
-	return goport.EnvResult{Values: values}, nil
+	return parseEnvResult(result.Stdout)
 }

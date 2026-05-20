@@ -26,14 +26,19 @@ import (
 // not accept the same -tags flag as go list/test, so tags remain a shared option
 // for compatibility but are ignored for this operation.
 func (t *Toolchain) ModTidy(ctx context.Context, moduleDir string, opts goport.ModTidyOptions) (goport.ModTidyResult, error) {
-	args := []string{"mod", "tidy"}
-	if opts.Compat != "" {
-		args = append(args, "-compat", opts.Compat)
-	}
-	result, err := t.runner.Run(ctx, t.command(moduleDir, args, opts.CommonOptions))
+	result, err := t.runner.Run(ctx, t.command(moduleDir, modTidyArgs(opts), opts.CommonOptions))
 	out := goport.ModTidyResult{Stdout: result.Stdout, Stderr: result.Stderr}
 	if err != nil {
 		return out, wrapGoError(goport.CodeModTidyFailed, "go mod tidy failed", result, err)
 	}
 	return out, nil
+}
+
+// modTidyArgs renders the go mod tidy command line.
+func modTidyArgs(opts goport.ModTidyOptions) []string {
+	args := []string{"mod", "tidy"}
+	if opts.Compat != "" {
+		args = append(args, "-compat", opts.Compat)
+	}
+	return args
 }

@@ -16,30 +16,15 @@ package github
 
 import (
 	"context"
-	"strconv"
 
 	remoteport "arcoris.dev/arcoris-publisher/internal/ports/remote"
 )
 
-type createReleaseBody struct {
-	TagName    string `json:"tag_name"`
-	Name       string `json:"name,omitempty"`
-	Body       string `json:"body,omitempty"`
-	Draft      bool   `json:"draft"`
-	Prerelease bool   `json:"prerelease"`
-}
-
-type releaseResponse struct {
-	ID      int64  `json:"id"`
-	HTMLURL string `json:"html_url"`
-}
-
 // CreateRelease creates GitHub release metadata for an existing tag.
 func (p *Provider) CreateRelease(ctx context.Context, req remoteport.CreateReleaseRequest) (remoteport.Release, error) {
-	body := createReleaseBody{TagName: req.TagName, Name: req.Name, Body: req.Body, Draft: req.Draft, Prerelease: req.Prerelease}
 	var out releaseResponse
-	if err := p.do(ctx, "POST", repoPath(req.Repository)+"/releases", body, &out); err != nil {
+	if err := p.do(ctx, "POST", repoPath(req.Repository)+"/releases", newCreateReleaseBody(req), &out); err != nil {
 		return remoteport.Release{}, wrapRemoteOperationError(remoteport.CodeReleaseFailed, "github release creation failed", err, nil)
 	}
-	return remoteport.Release{ID: strconv.FormatInt(out.ID, 10), URL: out.HTMLURL}, nil
+	return out.toPort(), nil
 }

@@ -33,29 +33,3 @@ type Package struct {
 	// Error describes a package loading error when go list reports one.
 	Error *PackageError
 }
-
-// ModuleInfo describes the module metadata reported by the Go command.
-//
-// Replace points at the replacement module when a replace directive applies.
-// It may itself contain only a subset of fields, matching Go's JSON output.
-type ModuleInfo struct {
-	// Path is the module path.
-	Path string
-	// Version is the selected module version.
-	Version string
-	// Dir is the module directory on disk when available.
-	Dir string
-	// Replace contains replacement module metadata when a replace directive applies.
-	Replace *ModuleInfo
-}
-
-// PackageError describes a package loading error reported by the Go command.
-type PackageError struct {
-	// Err is the human-readable load error reported by go list.
-	Err string
-}
-
-// HasReplace reports whether module replacement metadata is present.
-func (m ModuleInfo) HasReplace() bool {
-	return m.Replace != nil
-}

@@ -16,39 +16,16 @@ package gotoolchain
 
 import (
 	"context"
-	"strings"
 
 	goport "arcoris.dev/arcoris-publisher/internal/ports/gotoolchain"
 )
 
 // List runs go list and optionally parses newline-delimited JSON package data.
 func (t *Toolchain) List(ctx context.Context, moduleDir string, opts goport.ListOptions) (goport.ListResult, error) {
-	patterns := opts.Patterns
-	if len(patterns) == 0 {
-		patterns = []string{"./..."}
-	}
-	args := []string{"list"}
-	if opts.JSON {
-		args = append(args, "-json")
-	}
-	if opts.Deps {
-		args = append(args, "-deps")
-	}
-	if opts.Test {
-		args = append(args, "-test")
-	}
-	if len(opts.Tags) > 0 {
-		args = append(args, "-tags", strings.Join(opts.Tags, ","))
-	}
-	args = append(args, patterns...)
-	result, err := t.runner.Run(ctx, t.command(moduleDir, args, opts.CommonOptions))
-	out := goport.ListResult{Stdout: result.Stdout, Stderr: result.Stderr}
-	if opts.JSON && len(result.Stdout) > 0 {
-		packages, parseErr := parsePackages(result.Stdout)
-		if parseErr != nil {
-			return out, goError(goport.CodeListFailed, "go list output could not be parsed", parseErr, nil)
-		}
-		out.Packages = packages
+	result, err := t.runner.Run(ctx, t.command(moduleDir, listArgs(opts), opts.CommonOptions))
+	out, parseErr := parseListResult(result.Stdout, result.Stderr, opts)
+	if parseErr != nil {
+		return out, parseErr
 	}
 	if err != nil {
 		return out, wrapGoError(goport.CodeListFailed, "go list failed", result, err)

@@ -50,25 +50,3 @@ type CopyTreeOptions struct {
 	// directories. Empty SafetyRoot delegates to the adapter's default policy.
 	SafetyRoot string
 }
-
-// CopyTreeResult reports tree-copy counters useful for diagnostics.
-type CopyTreeResult struct {
-	// FilesCopied is the number of regular files written to the destination.
-	FilesCopied int
-	// DirectoriesCopied is the number of directories created or reused.
-	DirectoriesCopied int
-	// FilesSkipped is the number of source files intentionally ignored.
-	FilesSkipped int
-	// BytesCopied is the total number of regular-file bytes written.
-	BytesCopied int64
-}
-
-// CopiedEntries reports how many filesystem entries were copied or created.
-func (r CopyTreeResult) CopiedEntries() int {
-	return r.FilesCopied + r.DirectoriesCopied
-}
-
-// Empty reports whether no filesystem entries were copied.
-func (r CopyTreeResult) Empty() bool {
-	return r.CopiedEntries() == 0
-}

@@ -59,23 +59,3 @@ type Spec struct {
 	// logs, errors, stdout, and stderr by concrete implementations.
 	SensitiveValues []string
 }
-
-// WithSensitiveValues returns a copy of the spec with detached sensitive values.
-//
-// The values are copied so later caller mutations cannot change redaction
-// behavior for a spec already passed through workflow code.
-func (s Spec) WithSensitiveValues(values ...string) Spec {
-	copy := s
-	copy.SensitiveValues = append([]string(nil), values...)
-	return copy
-}
-
-// WithAllowedExitCodes returns a copy of the spec with detached success codes.
-//
-// Passing no codes resets the spec to the default success policy: only exit code
-// 0 is accepted by IsAllowedExitCode.
-func (s Spec) WithAllowedExitCodes(codes ...int) Spec {
-	copy := s
-	copy.AllowedExitCodes = append([]int(nil), codes...)
-	return copy
-}

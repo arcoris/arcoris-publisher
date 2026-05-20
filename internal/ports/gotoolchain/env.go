@@ -25,29 +25,3 @@ type EnvOptions struct {
 	// Timeout limits the tool invocation when greater than zero.
 	Timeout time.Duration
 }
-
-// EnvResult contains selected Go environment values.
-//
-// Values is intentionally a map because different adapters may query different
-// variables. Use HasValue when an empty string is a meaningful reported value.
-type EnvResult struct {
-	// Values maps Go environment variable names to their reported values.
-	Values map[string]string
-}
-
-// Value returns a Go environment value by name or an empty string when missing.
-func (r EnvResult) Value(name string) string {
-	if r.Values == nil {
-		return ""
-	}
-	return r.Values[name]
-}
-
-// HasValue reports whether a Go environment value was reported by name.
-func (r EnvResult) HasValue(name string) bool {
-	if r.Values == nil {
-		return false
-	}
-	_, ok := r.Values[name]
-	return ok
-}

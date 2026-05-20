@@ -15,8 +15,6 @@
 package gotoolchain
 
 import (
-	"strings"
-
 	goport "arcoris.dev/arcoris-publisher/internal/ports/gotoolchain"
 	processport "arcoris.dev/arcoris-publisher/internal/ports/process"
 )
@@ -27,39 +25,14 @@ import (
 // derived-option order. Derived options such as WorkspaceMode and GOPROXY win so
 // the typed option fields have predictable precedence.
 func (t *Toolchain) command(moduleDir string, args []string, common goport.CommonOptions) processport.Spec {
-	env := append([]string(nil), t.env...)
-	env = append(env, common.Env...)
-	if common.WorkspaceMode == goport.WorkspaceOff {
-		env = setEnv(env, "GOWORK", "off")
+	return processport.Spec{
+		Name:            binary(t.goBin, common.GoBinary),
+		Args:            append([]string(nil), args...),
+		Dir:             moduleDir,
+		Env:             t.commandEnv(common),
+		Timeout:         common.Timeout,
+		CaptureStdout:   true,
+		CaptureStderr:   true,
+		SensitiveValues: append([]string(nil), common.SensitiveValues...),
 	}
-	if common.Proxy != "" {
-		env = setEnv(env, "GOPROXY", common.Proxy)
-	}
-	if common.SumDB != "" {
-		env = setEnv(env, "GOSUMDB", common.SumDB)
-	}
-	if len(common.PrivateModules) > 0 {
-		env = setEnv(env, "GOPRIVATE", strings.Join(common.PrivateModules, ","))
-	}
-	return processport.Spec{Name: binary(t.goBin, common.GoBinary), Args: args, Dir: moduleDir, Env: env, Timeout: common.Timeout, CaptureStdout: true, CaptureStderr: true, SensitiveValues: append([]string(nil), common.SensitiveValues...)}
-}
-
-// binary chooses the executable for one command invocation.
-func binary(defaultBin, override string) string {
-	if override != "" {
-		return override
-	}
-	return defaultBin
-}
-
-// setEnv overlays one KEY=VALUE assignment in env.
-func setEnv(env []string, key, value string) []string {
-	entry := key + "=" + value
-	for i, existing := range env {
-		if strings.HasPrefix(existing, key+"=") {
-			env[i] = entry
-			return env
-		}
-	}
-	return append(env, entry)
 }

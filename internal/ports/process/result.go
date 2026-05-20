@@ -47,8 +47,3 @@ type Result struct {
 	// timestamps are populated.
 	Duration time.Duration
 }
-
-// Succeeded reports whether the result exit code is accepted by the provided list.
-func (r Result) Succeeded(allowed []int) bool {
-	return IsAllowedExitCode(r.ExitCode, allowed)
-}

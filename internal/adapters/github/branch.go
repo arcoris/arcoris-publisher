@@ -21,17 +21,6 @@ import (
 	remoteport "arcoris.dev/arcoris-publisher/internal/ports/remote"
 )
 
-type protectionResponse struct {
-	RequiredPullRequestReviews *struct{} `json:"required_pull_request_reviews"`
-	RequiredStatusChecks       *struct{} `json:"required_status_checks"`
-	AllowForcePushes           *struct {
-		Enabled bool `json:"enabled"`
-	} `json:"allow_force_pushes"`
-	AllowDeletions *struct {
-		Enabled bool `json:"enabled"`
-	} `json:"allow_deletions"`
-}
-
 // BranchProtection maps GitHub branch protection metadata into the remote port.
 //
 // GitHub returns 404 both for missing resources and for unprotected branches on
@@ -47,12 +36,5 @@ func (p *Provider) BranchProtection(ctx context.Context, ref remoteport.Reposito
 		}
 		return remoteport.BranchProtection{}, err
 	}
-	protection := remoteport.BranchProtection{Protected: true, RequiresPullRequest: out.RequiredPullRequestReviews != nil, RequiresStatusChecks: out.RequiredStatusChecks != nil}
-	if out.AllowForcePushes != nil {
-		protection.AllowsForcePushes = out.AllowForcePushes.Enabled
-	}
-	if out.AllowDeletions != nil {
-		protection.AllowsDeletions = out.AllowDeletions.Enabled
-	}
-	return protection, nil
+	return out.toPort(), nil
 }

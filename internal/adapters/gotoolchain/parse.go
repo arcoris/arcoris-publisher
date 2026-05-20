@@ -22,6 +22,10 @@ import (
 	goport "arcoris.dev/arcoris-publisher/internal/ports/gotoolchain"
 )
 
+// jsonPackage mirrors the subset of one go list -json package object we need.
+//
+// The Go command exposes many more fields. Keeping this DTO intentionally small
+// prevents adapter code from depending on unstable or currently unused output.
 type jsonPackage struct {
 	ImportPath  string
 	Module      *jsonModule
@@ -31,6 +35,10 @@ type jsonPackage struct {
 	Error       *goport.PackageError
 }
 
+// jsonModule mirrors the recursive module object emitted by go list -json.
+//
+// Replace uses the same JSON shape as a normal module, so the DTO is recursive
+// and convertModule handles that recursion explicitly.
 type jsonModule struct {
 	Path    string
 	Version string
@@ -54,9 +62,24 @@ func parsePackages(data []byte) ([]goport.Package, error) {
 			}
 			return nil, err
 		}
-		packages = append(packages, goport.Package{ImportPath: item.ImportPath, Module: convertModule(item.Module), Imports: append([]string(nil), item.Imports...), TestImports: append([]string(nil), item.TestImports...), Deps: append([]string(nil), item.Deps...), Error: item.Error})
+		packages = append(packages, convertPackage(item))
 	}
 	return packages, nil
+}
+
+// convertPackage converts one JSON package object into the port package model.
+//
+// Slices are detached because the returned result belongs to callers, not the
+// decoder buffer or temporary DTO values.
+func convertPackage(item jsonPackage) goport.Package {
+	return goport.Package{
+		ImportPath:  item.ImportPath,
+		Module:      convertModule(item.Module),
+		Imports:     append([]string(nil), item.Imports...),
+		TestImports: append([]string(nil), item.TestImports...),
+		Deps:        append([]string(nil), item.Deps...),
+		Error:       item.Error,
+	}
 }
 
 // convertModule converts the recursive JSON module shape into the port type.

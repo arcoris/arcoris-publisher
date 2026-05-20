@@ -16,39 +16,13 @@ package gotoolchain
 
 import (
 	"context"
-	"strconv"
-	"strings"
 
 	goport "arcoris.dev/arcoris-publisher/internal/ports/gotoolchain"
 )
 
 // Test runs go test with typed test options.
 func (t *Toolchain) Test(ctx context.Context, moduleDir string, opts goport.TestOptions) (goport.TestResult, error) {
-	patterns := opts.Patterns
-	if len(patterns) == 0 {
-		patterns = []string{"./..."}
-	}
-	args := []string{"test"}
-	if opts.Race {
-		args = append(args, "-race")
-	}
-	if opts.Count > 0 {
-		args = append(args, "-count", strconv.Itoa(opts.Count))
-	}
-	if opts.Short {
-		args = append(args, "-short")
-	}
-	if opts.Run != "" {
-		args = append(args, "-run", opts.Run)
-	}
-	if opts.Verbose {
-		args = append(args, "-v")
-	}
-	if len(opts.Tags) > 0 {
-		args = append(args, "-tags", strings.Join(opts.Tags, ","))
-	}
-	args = append(args, patterns...)
-	result, err := t.runner.Run(ctx, t.command(moduleDir, args, opts.CommonOptions))
+	result, err := t.runner.Run(ctx, t.command(moduleDir, testArgs(opts), opts.CommonOptions))
 	out := goport.TestResult{Stdout: result.Stdout, Stderr: result.Stderr}
 	if err != nil {
 		return out, wrapGoError(goport.CodeTestFailed, "go test failed", result, err)
