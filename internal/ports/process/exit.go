@@ -19,6 +19,10 @@ package process
 // If allowed is empty, only code 0 is accepted. This default matches the normal
 // operating-system process convention while still allowing callers to explicitly
 // accept commands where a non-zero exit code is a meaningful result.
+//
+// Duplicate entries in allowed have no special meaning. Negative codes are
+// accepted only when explicitly listed, which keeps the helper neutral for
+// adapters that use sentinel values for signal or startup states.
 func IsAllowedExitCode(code int, allowed []int) bool {
 	if len(allowed) == 0 {
 		return code == 0

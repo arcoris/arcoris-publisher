@@ -15,6 +15,9 @@
 package porterr
 
 // Kind identifies the external infrastructure boundary that produced an error.
+//
+// Kind is intentionally broader than Code. It answers "which boundary failed?"
+// while Code answers "which stable failure class happened inside that boundary?"
 type Kind string
 
 const (

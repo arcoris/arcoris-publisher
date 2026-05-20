@@ -15,6 +15,10 @@
 package git
 
 // Status describes a Git working tree status.
+//
+// Clean is the adapter's summarized view, while Entries contains path-level
+// diagnostics. A defensive caller can use IsDirty, which treats either a false
+// Clean flag or non-empty Entries as dirty.
 type Status struct {
 	// Clean reports whether the working tree has no known changes.
 	Clean bool
@@ -30,12 +34,15 @@ type StatusEntry struct {
 	Code string
 }
 
-// HasEntries reports whether the status has any entries.
+// HasEntries reports whether the status contains path-level changes.
 func (s Status) HasEntries() bool {
 	return len(s.Entries) > 0
 }
 
 // IsDirty reports whether the status represents a non-clean working tree.
+//
+// The method is intentionally conservative: if an adapter marks Clean as false
+// without listing entries, callers still treat the tree as dirty.
 func (s Status) IsDirty() bool {
 	return !s.Clean || s.HasEntries()
 }

@@ -17,6 +17,11 @@
 // This package describes Git capabilities only. It MUST NOT contain ARCORIS
 // publishing operations such as module publication, staging synchronization, or
 // Go module rewriting.
+//
+// Adapters may call the Git CLI, libgit2, go-git, or another implementation, but
+// they should expose the same semantics through these contracts: context-aware
+// operations, stable typed refs, redaction of sensitive values, and structured
+// errors using this package's error codes.
 package git
 
 // Client groups all Git capabilities required by publisher workflows.

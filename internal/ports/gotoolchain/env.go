@@ -27,6 +27,9 @@ type EnvOptions struct {
 }
 
 // EnvResult contains selected Go environment values.
+//
+// Values is intentionally a map because different adapters may query different
+// variables. Use HasValue when an empty string is a meaningful reported value.
 type EnvResult struct {
 	// Values maps Go environment variable names to their reported values.
 	Values map[string]string

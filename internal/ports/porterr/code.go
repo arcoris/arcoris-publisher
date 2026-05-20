@@ -19,6 +19,10 @@ package porterr
 // Concrete port packages define their own code constants. For example, the Git
 // port defines push and ref-related codes, while the process port defines
 // timeout and process startup codes.
+//
+// Codes are part of the workflow contract. Rename them only with a migration
+// path because callers may branch on exact strings in retry, reporting, or
+// operator guidance logic.
 type Code string
 
 // String returns the stable string representation of the error code.

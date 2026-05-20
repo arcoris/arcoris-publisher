@@ -21,14 +21,28 @@ import (
 
 // Writer describes mutating filesystem operations.
 type Writer interface {
+	// WriteFile creates or replaces a file according to opts.
+	//
+	// Implementations should reject overwrites unless opts.Overwrite is true and
+	// should create parent directories only when opts.CreateDirs is true.
 	WriteFile(ctx context.Context, path string, data []byte, opts WriteFileOptions) error
+	// MkdirAll creates path and any missing parents.
+	//
+	// Calling MkdirAll for an existing directory should be a successful no-op.
+	// Calling it for an existing non-directory should return a structured error.
 	MkdirAll(ctx context.Context, path string, opts MkdirOptions) error
+	// RemoveAll recursively removes path according to opts.
+	//
+	// Adapters must enforce SafetyRoot before deleting anything. Missing paths
+	// are successful only when opts.AllowMissing is true.
 	RemoveAll(ctx context.Context, path string, opts RemoveOptions) error
 }
 
 // WriteFileOptions configures file creation or replacement.
 type WriteFileOptions struct {
 	// Perm is the file mode to use when creating the file.
+	//
+	// Zero lets the adapter choose a safe default such as 0o644.
 	Perm fs.FileMode
 	// Overwrite permits replacing an existing file.
 	Overwrite bool
@@ -39,6 +53,8 @@ type WriteFileOptions struct {
 // MkdirOptions configures recursive directory creation.
 type MkdirOptions struct {
 	// Perm is the mode to use for created directories.
+	//
+	// Zero lets the adapter choose a safe default such as 0o755.
 	Perm fs.FileMode
 }
 

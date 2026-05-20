@@ -18,7 +18,19 @@ import "context"
 
 // Reader describes read-only filesystem operations.
 type Reader interface {
+	// Exists reports whether path is present.
+	//
+	// A missing path should return (false, nil). Other stat failures, including
+	// permission errors or context cancellation, should be returned as errors.
 	Exists(ctx context.Context, path string) (bool, error)
+	// IsDir reports whether path exists and is a directory.
+	//
+	// A missing path should return (false, nil). Adapters should not follow
+	// symlinks unless their documented filesystem behavior explicitly does so.
 	IsDir(ctx context.Context, path string) (bool, error)
+	// ReadFile returns the full contents of a regular file.
+	//
+	// Implementations should reject directories and should return a detached byte
+	// slice that callers can retain after the operation finishes.
 	ReadFile(ctx context.Context, path string) ([]byte, error)
 }

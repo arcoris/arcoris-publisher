@@ -15,7 +15,14 @@
 // Package ports contains infrastructure boundary contracts used by
 // arcoris-publisher workflows.
 //
-// Ports describe external capabilities, not ARCORIS publishing business
-// operations. Implementations live under internal/adapters and workflow code
-// depends on these contracts instead of concrete infrastructure implementations.
+// Ports describe capabilities supplied by the outside world: a filesystem, Git,
+// the Go toolchain, process execution, and remote hosting providers. They are
+// deliberately small and workflow-oriented so publisher logic can depend on
+// behavior instead of concrete command-line tools or SDK clients.
+//
+// Packages under ports must not contain ARCORIS publishing business rules. They
+// define vocabulary, data transfer objects, and error codes shared by workflow
+// code and infrastructure adapters. Concrete implementations belong under
+// internal/adapters and should translate implementation-specific failures into
+// porterr.Error values with stable Kind and Code fields.
 package ports

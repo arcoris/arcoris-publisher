@@ -14,6 +14,16 @@
 
 // Package filesystem defines the infrastructure port for safe filesystem tree
 // operations required by publisher workflows.
+//
+// The port is intentionally higher level than os or io/fs. Publisher workflows
+// operate on whole trees, safety roots, include/exclude filters, and deterministic
+// hashes; adapters hide platform-specific path behavior and filesystem error
+// details behind this contract.
+//
+// Implementations should treat every path argument as an external boundary:
+// normalize it consistently, reject operations that escape configured safety
+// roots, honor context cancellation where possible, and return structured
+// porterr.Error values using this package's error codes.
 package filesystem
 
 // FileSystem groups filesystem capabilities required by publisher workflows.

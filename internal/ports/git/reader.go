@@ -18,10 +18,33 @@ import "context"
 
 // RepositoryReader describes read-only Git repository operations.
 type RepositoryReader interface {
+	// Head returns the commit currently checked out in repoDir.
+	//
+	// Detached HEAD states should still return the checked-out commit hash.
 	Head(ctx context.Context, repoDir string) (CommitHash, error)
+	// CurrentBranch returns the selected local branch name.
+	//
+	// Detached HEAD states should return a structured error rather than guessing
+	// a branch from refs that happen to point at the same commit.
 	CurrentBranch(ctx context.Context, repoDir string) (BranchName, error)
+	// Status returns a normalized working tree status for repoDir.
+	//
+	// Adapters should preserve enough entry detail for diagnostics while keeping
+	// Status.Clean and Status.Entries internally consistent.
 	Status(ctx context.Context, repoDir string) (Status, error)
+	// RefExists reports whether ref resolves in the local repository.
+	//
+	// Missing refs should return (false, nil); invalid repositories or command
+	// failures should return an error.
 	RefExists(ctx context.Context, repoDir string, ref string) (bool, error)
+	// RemoteRefExists reports whether ref exists on the named remote.
+	//
+	// Implementations may query cached remote refs or contact the remote, but
+	// they should document that behavior because it affects freshness.
 	RemoteRefExists(ctx context.Context, repoDir string, remote string, ref string) (bool, error)
+	// CommitMessage returns the commit message for ref.
+	//
+	// The returned string should preserve the message body as Git reports it,
+	// without adding adapter-specific prefixes or diagnostics.
 	CommitMessage(ctx context.Context, repoDir string, ref string) (string, error)
 }

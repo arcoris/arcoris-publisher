@@ -15,6 +15,10 @@
 package gotoolchain
 
 // Package describes one package returned by go list -json.
+//
+// The struct mirrors the subset of Go command JSON needed by publisher
+// workflows. It intentionally omits many go list fields so adapters can remain
+// stable across Go versions while still carrying import graph and module data.
 type Package struct {
 	// ImportPath is the package import path reported by the Go command.
 	ImportPath string
@@ -31,6 +35,9 @@ type Package struct {
 }
 
 // ModuleInfo describes the module metadata reported by the Go command.
+//
+// Replace points at the replacement module when a replace directive applies.
+// It may itself contain only a subset of fields, matching Go's JSON output.
 type ModuleInfo struct {
 	// Path is the module path.
 	Path string

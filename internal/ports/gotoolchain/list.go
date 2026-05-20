@@ -28,6 +28,10 @@ type ListOptions struct {
 }
 
 // ListResult contains go list output and optional parsed package data.
+//
+// Stdout and Stderr preserve the command's raw streams. Packages is populated
+// only when the adapter parsed JSON output, usually because ListOptions.JSON was
+// set by the caller.
 type ListResult struct {
 	// Stdout contains raw standard output.
 	Stdout []byte

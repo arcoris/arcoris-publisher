@@ -19,6 +19,10 @@ package porterr
 // The type is intentionally small and stable. Port implementations may attach a
 // wrapped Cause, but workflow code should normally branch on Kind and Code
 // rather than parsing error strings.
+//
+// Message is for humans; Kind and Code are for control flow. Details may be
+// logged and displayed, so adapters must keep secrets in Cause or local
+// implementation state and redact them before constructing Error values.
 type Error struct {
 	// Kind identifies the infrastructure boundary that produced the error.
 	Kind Kind
@@ -35,6 +39,9 @@ type Error struct {
 }
 
 // New creates a structured infrastructure error.
+//
+// New leaves Details empty and Temporary false. Call WithDetails and
+// WithTemporary to enrich the error while preserving copy-on-write behavior.
 func New(kind Kind, code Code, message string, cause error) *Error {
 	return &Error{
 		Kind:    kind,
@@ -45,6 +52,9 @@ func New(kind Kind, code Code, message string, cause error) *Error {
 }
 
 // WithDetails returns a copy of the error with detached details attached.
+//
+// The receiver is not mutated. This allows adapters to define base errors and
+// attach operation-specific context without sharing maps between errors.
 func (e *Error) WithDetails(details Details) *Error {
 	if e == nil {
 		return nil
@@ -55,6 +65,9 @@ func (e *Error) WithDetails(details Details) *Error {
 }
 
 // WithTemporary returns a copy of the error with the temporary flag updated.
+//
+// Temporary means retrying the same logical operation may succeed, for example
+// after rate limiting or transient transport failure.
 func (e *Error) WithTemporary(temporary bool) *Error {
 	if e == nil {
 		return nil
@@ -65,6 +78,9 @@ func (e *Error) WithTemporary(temporary bool) *Error {
 }
 
 // Error returns the best available human-readable error text.
+//
+// It prefers the explicit Message and falls back to Kind and Code only to keep
+// zero-message errors useful in logs.
 func (e *Error) Error() string {
 	if e == nil {
 		return "<nil>"
@@ -85,6 +101,9 @@ func (e *Error) Error() string {
 }
 
 // Unwrap returns the wrapped implementation-specific error.
+//
+// This makes errors.Is and errors.As work for adapter-specific causes while
+// still exposing a stable porterr.Error to workflow code.
 func (e *Error) Unwrap() error {
 	if e == nil {
 		return nil

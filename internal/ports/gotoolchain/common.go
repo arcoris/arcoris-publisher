@@ -21,6 +21,9 @@ type CommonOptions struct {
 	// GoBinary overrides the executable name or path. Empty means "go".
 	GoBinary string
 	// WorkspaceMode controls GOWORK behavior for module-scoped commands.
+	//
+	// WorkspaceDefault leaves Go's ambient workspace discovery intact; WorkspaceOff
+	// forces single-module behavior with GOWORK=off.
 	WorkspaceMode WorkspaceMode
 	// Env contains additional KEY=VALUE environment assignments.
 	Env []string
@@ -29,6 +32,9 @@ type CommonOptions struct {
 	// Timeout limits the tool invocation when greater than zero.
 	Timeout time.Duration
 	// PrivateModules configures GOPRIVATE-style module patterns.
+	//
+	// Adapters typically join these values with commas for GOPRIVATE and related
+	// environment variables.
 	PrivateModules []string
 	// Proxy configures GOPROXY when non-empty.
 	Proxy string

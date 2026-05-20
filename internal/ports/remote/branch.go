@@ -15,6 +15,10 @@
 package remote
 
 // BranchProtection describes provider-level branch protection metadata.
+//
+// The struct captures only publisher-relevant policy. A provider may enforce
+// additional rules not represented here; adapters should still surface operation
+// failures with CodeBranchProtected when protection blocks a write.
 type BranchProtection struct {
 	// Protected reports whether the provider has protection enabled.
 	Protected bool
@@ -30,6 +34,10 @@ type BranchProtection struct {
 
 // BlocksDirectPush reports whether the protection settings imply that a direct
 // branch push is likely to be rejected.
+//
+// The helper is intentionally narrow: status checks alone do not necessarily
+// block direct pushes, but a protected branch that requires pull requests usually
+// does.
 func (p BranchProtection) BlocksDirectPush() bool {
 	return p.Protected && p.RequiresPullRequest
 }

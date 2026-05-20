@@ -15,6 +15,10 @@
 package remote
 
 // RepositoryRef identifies a repository hosted by a remote provider.
+//
+// Host lets adapters distinguish providers or enterprise instances. Owner may
+// be empty for providers that support ownerless repositories or when the caller
+// has already scoped the adapter to an owner.
 type RepositoryRef struct {
 	// Host is the provider hostname, such as github.com.
 	Host string
@@ -25,6 +29,9 @@ type RepositoryRef struct {
 }
 
 // FullName returns the owner/name repository name where an owner is present.
+//
+// Host is intentionally excluded because many provider APIs and UI labels use
+// owner/name as the repository's display identity.
 func (r RepositoryRef) FullName() string {
 	if r.Owner == "" {
 		return r.Name
@@ -33,6 +40,10 @@ func (r RepositoryRef) FullName() string {
 }
 
 // Repository describes remote repository metadata returned by a provider.
+//
+// The fields intentionally capture publish-relevant state only. Additional
+// provider metadata should stay in adapter-specific types until workflow code
+// needs a stable cross-provider contract.
 type Repository struct {
 	// Ref identifies the repository.
 	Ref RepositoryRef

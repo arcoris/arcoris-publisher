@@ -18,14 +18,25 @@ import "context"
 
 // Copier describes filesystem tree copy operations.
 type Copier interface {
+	// CopyTree copies entries from src to dst according to opts.
+	//
+	// The operation should be deterministic for a stable source tree and option
+	// set. Adapters must enforce SafetyRoot for destination writes and apply
+	// SymlinkPolicy consistently to every link encountered in the source tree.
 	CopyTree(ctx context.Context, src string, dst string, opts CopyTreeOptions) (CopyTreeResult, error)
 }
 
 // CopyTreeOptions configures deterministic tree copying.
 type CopyTreeOptions struct {
 	// Include limits the copy to matching relative paths when non-empty.
+	//
+	// Include is evaluated before Exclude. Empty Include means all source entries
+	// are candidates for copying.
 	Include []string
 	// Exclude skips matching relative paths after include filtering.
+	//
+	// Excluded files should be counted in CopyTreeResult.FilesSkipped when the
+	// adapter can determine that they otherwise would have been copied.
 	Exclude []string
 	// PreserveMode keeps source file modes instead of adapter defaults.
 	PreserveMode bool
@@ -34,6 +45,9 @@ type CopyTreeOptions struct {
 	// SymlinkPolicy controls whether links are rejected, copied, or followed.
 	SymlinkPolicy SymlinkPolicy
 	// SafetyRoot confines writes to a known parent directory.
+	//
+	// Adapters must reject dst paths outside this root before creating files or
+	// directories. Empty SafetyRoot delegates to the adapter's default policy.
 	SafetyRoot string
 }
 

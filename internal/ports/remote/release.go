@@ -15,6 +15,10 @@
 package remote
 
 // CreateReleaseRequest describes a release creation request.
+//
+// The request creates provider metadata for an existing Git tag. Adapters should
+// return a release error if the provider requires the tag to exist and cannot
+// find it.
 type CreateReleaseRequest struct {
 	// Repository identifies the target repository.
 	Repository RepositoryRef
@@ -31,6 +35,9 @@ type CreateReleaseRequest struct {
 }
 
 // Release describes a remote release object.
+//
+// ID is provider-specific and opaque. URL should be suitable for humans to open
+// in a browser or include in logs and summaries.
 type Release struct {
 	// ID is the provider-visible release identifier.
 	ID string

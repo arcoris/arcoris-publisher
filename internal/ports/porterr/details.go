@@ -18,9 +18,16 @@ package porterr
 //
 // Values stored here may be rendered in diagnostics and logs. Implementations
 // MUST NOT put raw secrets, tokens, or credentials into Details.
+//
+// Keep keys short and stable because callers may use them in tests, reports, or
+// machine-readable diagnostics. Values should describe context, not duplicate
+// the human Message.
 type Details map[string]string
 
 // Clone returns a detached copy of the details map.
+//
+// Empty maps normalize to nil so zero-value Error values stay compact and easy
+// to compare in tests.
 func (d Details) Clone() Details {
 	if len(d) == 0 {
 		return nil

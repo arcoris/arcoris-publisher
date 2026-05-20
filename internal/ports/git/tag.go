@@ -18,7 +18,19 @@ import "context"
 
 // TagClient describes Git tag operations required by release publishing.
 type TagClient interface {
+	// TagExists reports whether tag exists in repoDir.
+	//
+	// Missing tags should return (false, nil). Ambiguous or malformed refs should
+	// be returned as errors rather than treated as missing tags.
 	TagExists(ctx context.Context, repoDir string, tag TagName) (bool, error)
+	// CreateTag creates tag at target according to opts.
+	//
+	// Annotated tags should use opts.Message as their annotation body; lightweight
+	// tags may ignore Message.
 	CreateTag(ctx context.Context, repoDir string, tag TagName, target CommitHash, opts TagOptions) error
+	// PushTag publishes tag to remote.
+	//
+	// PushOptions apply to the tag ref update in the same way they apply to
+	// branch refspec pushes.
 	PushTag(ctx context.Context, repoDir string, remote string, tag TagName, opts PushOptions) error
 }

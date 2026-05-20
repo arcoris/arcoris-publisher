@@ -15,6 +15,10 @@
 package gotoolchain
 
 // WorkspaceMode controls how Go workspace mode is configured for toolchain calls.
+//
+// The zero value is intentionally invalid. Callers should choose
+// WorkspaceDefault when they want the Go command's normal discovery behavior or
+// WorkspaceOff when publishing must be isolated from ambient go.work files.
 type WorkspaceMode string
 
 const (

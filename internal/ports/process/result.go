@@ -17,6 +17,10 @@ package process
 import "time"
 
 // Result contains structured information about a completed process invocation.
+//
+// Result is useful both on success and on process-level failure. When a process
+// starts but exits unsuccessfully, adapters should still populate command
+// identity, exit code, timings, and any requested output.
 type Result struct {
 	// Name is the executable that was invoked.
 	Name string
@@ -25,6 +29,9 @@ type Result struct {
 	// Dir is the working directory used for the invocation.
 	Dir string
 	// ExitCode is the process exit code, when available.
+	//
+	// When a process cannot start, adapters should leave ExitCode at zero and
+	// report the startup failure through the returned error.
 	ExitCode int
 	// Stdout contains captured standard output, if requested.
 	Stdout []byte
@@ -35,6 +42,9 @@ type Result struct {
 	// FinishedAt is the invocation finish time.
 	FinishedAt time.Time
 	// Duration is the elapsed process duration.
+	//
+	// Duration should be equivalent to FinishedAt.Sub(StartedAt) when both
+	// timestamps are populated.
 	Duration time.Duration
 }
 

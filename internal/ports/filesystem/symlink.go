@@ -15,6 +15,10 @@
 package filesystem
 
 // SymlinkPolicy controls how filesystem operations treat symbolic links.
+//
+// The zero value is intentionally invalid so callers must choose a policy when
+// an operation can encounter links. Adapters may provide their own default only
+// when an option struct clearly documents that behavior.
 type SymlinkPolicy string
 
 const (

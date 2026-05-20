@@ -15,15 +15,27 @@
 package git
 
 // CommitHash is a Git commit object hash.
+//
+// The type does not validate hash length or algorithm. Adapters should return
+// the exact object name produced by their Git implementation.
 type CommitHash string
 
 // BranchName is a Git branch name.
+//
+// Values are stored without refs/heads/ unless a method explicitly documents a
+// fully qualified ref.
 type BranchName string
 
 // TagName is a Git tag name.
+//
+// Values are stored without refs/tags/ unless a method explicitly documents a
+// fully qualified ref.
 type TagName string
 
 // RefSpec is a Git refspec such as refs/heads/main:refs/heads/main.
+//
+// RefSpec is deliberately opaque because Git accepts several valid forms,
+// including delete and force update syntax.
 type RefSpec string
 
 // String returns the commit hash as a string.

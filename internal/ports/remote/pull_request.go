@@ -15,6 +15,10 @@
 package remote
 
 // CreatePullRequestRequest describes a pull request creation request.
+//
+// Branch names are provider branch names, not fully qualified Git refs. The
+// request assumes the branches already exist or will be made visible by the
+// caller through the git port before this provider operation runs.
 type CreatePullRequestRequest struct {
 	// Repository identifies the target repository.
 	Repository RepositoryRef
@@ -31,6 +35,10 @@ type CreatePullRequestRequest struct {
 }
 
 // PullRequest describes a remote pull request.
+//
+// Number and URL are the stable values workflow code can show to operators or
+// store in publish reports. Provider-specific IDs are intentionally omitted until
+// a workflow needs them.
 type PullRequest struct {
 	// Number is the provider-visible pull request number.
 	Number int

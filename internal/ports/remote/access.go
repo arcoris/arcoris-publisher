@@ -15,6 +15,9 @@
 package remote
 
 // AccessLevel identifies a required provider-level repository access level.
+//
+// Levels are ordered by capability: admin satisfies write and read, while write
+// satisfies read. Unknown levels are never allowed.
 type AccessLevel string
 
 const (
@@ -42,6 +45,10 @@ func (a AccessLevel) Valid() bool {
 }
 
 // RepositoryPermissions describes effective provider permissions for a repository.
+//
+// Permissions are effective for the current principal, not repository policy in
+// general. Providers may compute them from role names, team grants, installation
+// scopes, or token capabilities.
 type RepositoryPermissions struct {
 	// CanRead permits reading repository metadata and contents.
 	CanRead bool

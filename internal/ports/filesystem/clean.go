@@ -18,17 +18,28 @@ import "context"
 
 // Cleaner describes safe directory cleanup operations.
 type Cleaner interface {
+	// CleanDir removes contents from dir while preserving configured paths.
+	//
+	// Implementations must evaluate safety checks before mutating the filesystem.
+	// Preserve entries are interpreted by adapters but should always be relative
+	// to dir and must not permit deleting outside SafetyRoot.
 	CleanDir(ctx context.Context, dir string, opts CleanDirOptions) error
 }
 
 // CleanDirOptions configures safe recursive cleanup of one directory.
 type CleanDirOptions struct {
 	// Preserve contains relative paths or patterns that must survive cleanup.
+	//
+	// Adapters should document the exact pattern syntax they support. Exact
+	// relative paths are expected to be portable across implementations.
 	Preserve []string
 	// RequireGitDir makes cleanup fail unless dir contains repository metadata.
 	RequireGitDir bool
 	// AllowMissing treats a missing target directory as a successful no-op.
 	AllowMissing bool
 	// SafetyRoot confines deletion to a known parent directory.
+	//
+	// Empty SafetyRoot means the adapter's default safety policy applies; it must
+	// not be treated as permission to delete arbitrary absolute paths.
 	SafetyRoot string
 }

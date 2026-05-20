@@ -14,6 +14,15 @@
 
 // Package process defines the port for executing external operating-system
 // processes such as git, go, or user-defined smoke-test commands.
+//
+// This package is the lowest-level execution boundary. Higher-level ports such
+// as git and gotoolchain can be implemented on top of Runner, but workflow code
+// should prefer those domain-specific ports when it needs Git or Go behavior.
+//
+// Implementations are responsible for process lifecycle, cancellation, timeout
+// handling, output capture limits, and redaction. The contract intentionally
+// keeps command rendering out of workflow code so secrets and platform quirks
+// have one implementation boundary.
 package process
 
 import "context"
@@ -24,5 +33,10 @@ import "context"
 // sensitive values from rendered errors and logs, and MUST return structured
 // Result values when a process starts successfully.
 type Runner interface {
+	// Run starts the requested process and waits for completion.
+	//
+	// A process that exits with an unaccepted exit code should return both its
+	// Result and an error so callers can inspect captured output. If the process
+	// cannot start, adapters should return a zero Result plus a structured error.
 	Run(ctx context.Context, spec Spec) (Result, error)
 }

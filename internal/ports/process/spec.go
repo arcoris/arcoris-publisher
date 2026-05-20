@@ -20,6 +20,9 @@ import (
 )
 
 // Spec describes an external process invocation.
+//
+// Spec is immutable by convention: helper methods return modified copies, and
+// adapters should not retain or mutate caller-owned slices after Run returns.
 type Spec struct {
 	// Name is the executable name or absolute executable path.
 	Name string
@@ -28,16 +31,24 @@ type Spec struct {
 	// Dir is the working directory. Empty means the implementation default.
 	Dir string
 	// Env contains environment assignments in KEY=VALUE form.
+	//
+	// Env augments or overrides the adapter's base environment; it is not
+	// required to be a complete environment snapshot.
 	Env []string
 	// Stdin is optional process standard input.
 	Stdin io.Reader
 	// Timeout is an optional process-level timeout. Zero means no explicit timeout.
+	//
+	// Context cancellation still applies even when Timeout is zero.
 	Timeout time.Duration
 	// CaptureStdout asks the implementation to capture stdout into Result.Stdout.
 	CaptureStdout bool
 	// CaptureStderr asks the implementation to capture stderr into Result.Stderr.
 	CaptureStderr bool
 	// MaxStdoutBytes optionally limits captured stdout size. Zero means implementation default.
+	//
+	// Adapters should truncate deterministically and make truncation visible in
+	// diagnostics when possible.
 	MaxStdoutBytes int64
 	// MaxStderrBytes optionally limits captured stderr size. Zero means implementation default.
 	MaxStderrBytes int64
@@ -50,6 +61,9 @@ type Spec struct {
 }
 
 // WithSensitiveValues returns a copy of the spec with detached sensitive values.
+//
+// The values are copied so later caller mutations cannot change redaction
+// behavior for a spec already passed through workflow code.
 func (s Spec) WithSensitiveValues(values ...string) Spec {
 	copy := s
 	copy.SensitiveValues = append([]string(nil), values...)
@@ -57,6 +71,9 @@ func (s Spec) WithSensitiveValues(values ...string) Spec {
 }
 
 // WithAllowedExitCodes returns a copy of the spec with detached success codes.
+//
+// Passing no codes resets the spec to the default success policy: only exit code
+// 0 is accepted by IsAllowedExitCode.
 func (s Spec) WithAllowedExitCodes(codes ...int) Spec {
 	copy := s
 	copy.AllowedExitCodes = append([]int(nil), codes...)
