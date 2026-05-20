@@ -33,16 +33,3 @@ type StatusEntry struct {
 	// Code is the porcelain status code associated with Path.
 	Code string
 }
-
-// HasEntries reports whether the status contains path-level changes.
-func (s Status) HasEntries() bool {
-	return len(s.Entries) > 0
-}
-
-// IsDirty reports whether the status represents a non-clean working tree.
-//
-// The method is intentionally conservative: if an adapter marks Clean as false
-// without listing entries, callers still treat the tree as dirty.
-func (s Status) IsDirty() bool {
-	return !s.Clean || s.HasEntries()
-}
