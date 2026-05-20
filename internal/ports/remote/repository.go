@@ -1,0 +1,55 @@
+// Copyright 2026 The ARCORIS Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package remote
+
+// RepositoryRef identifies a repository hosted by a remote provider.
+type RepositoryRef struct {
+	// Host is the provider hostname, such as github.com.
+	Host string
+	// Owner is the organization or user namespace when the provider has one.
+	Owner string
+	// Name is the repository name.
+	Name string
+}
+
+// FullName returns the owner/name repository name where an owner is present.
+func (r RepositoryRef) FullName() string {
+	if r.Owner == "" {
+		return r.Name
+	}
+	return r.Owner + "/" + r.Name
+}
+
+// Repository describes remote repository metadata returned by a provider.
+type Repository struct {
+	// Ref identifies the repository.
+	Ref RepositoryRef
+	// CloneURL is the HTTPS clone URL.
+	CloneURL string
+	// SSHURL is the SSH clone URL.
+	SSHURL string
+	// WebURL is the browser URL.
+	WebURL string
+	// DefaultBranch is the provider's default branch name.
+	DefaultBranch string
+	// Private reports whether the repository is private.
+	Private bool
+	// Archived reports whether the repository is read-only archived.
+	Archived bool
+	// Disabled reports whether the provider has disabled the repository.
+	Disabled bool
+	// Permissions contains effective permissions for the current principal.
+	Permissions RepositoryPermissions
+}
