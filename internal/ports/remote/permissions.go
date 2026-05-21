@@ -35,12 +35,24 @@ type RepositoryPermissions struct {
 func (p RepositoryPermissions) Allows(level AccessLevel) bool {
 	switch level {
 	case AccessRead:
-		return p.CanRead || p.CanWrite || p.CanAdmin
+		return p.canRead()
 	case AccessWrite:
-		return p.CanWrite || p.CanAdmin
+		return p.canWrite()
 	case AccessAdmin:
-		return p.CanAdmin
+		return p.canAdmin()
 	default:
 		return false
 	}
+}
+
+func (p RepositoryPermissions) canRead() bool {
+	return p.CanRead || p.canWrite()
+}
+
+func (p RepositoryPermissions) canWrite() bool {
+	return p.CanWrite || p.canAdmin()
+}
+
+func (p RepositoryPermissions) canAdmin() bool {
+	return p.CanAdmin
 }

@@ -26,22 +26,31 @@ func MergeEnv(base, override []string) []string {
 	out := append([]string(nil), base...)
 	for _, entry := range override {
 		key, _, ok := strings.Cut(entry, "=")
-		if !ok || key == "" {
+		if !isWellFormedEnvKey(ok, key) {
 			out = append(out, entry)
 			continue
 		}
-		replaced := false
-		for i, existing := range out {
-			existingKey, _, existingOK := strings.Cut(existing, "=")
-			if existingOK && existingKey == key {
-				out[i] = entry
-				replaced = true
-				break
-			}
+
+		if replaceEnvKey(out, key, entry) {
+			continue
 		}
-		if !replaced {
-			out = append(out, entry)
-		}
+
+		out = append(out, entry)
 	}
 	return out
+}
+
+func isWellFormedEnvKey(cutOK bool, key string) bool {
+	return cutOK && key != ""
+}
+
+func replaceEnvKey(items []string, key string, value string) bool {
+	for i, existing := range items {
+		existingKey, _, existingOK := strings.Cut(existing, "=")
+		if existingOK && existingKey == key {
+			items[i] = value
+			return true
+		}
+	}
+	return false
 }

@@ -32,13 +32,16 @@ const maxResponseBodyBytes int64 = 4 << 20
 // decodeAPIResponse reads, classifies, and decodes one GitHub response.
 func (p *Provider) decodeAPIResponse(resp *http.Response, path string, out any) error {
 	defer resp.Body.Close()
+
 	data, err := readResponseBody(resp)
 	if err != nil {
 		return responseReadError(path, err)
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+
+	if !isHTTPSuccess(resp.StatusCode) {
 		return classifyHTTP(resp.StatusCode, resp.Header, string(data), path)
 	}
+
 	return decodeJSONResponse(path, data, out)
 }
 
@@ -49,11 +52,20 @@ func readResponseBody(resp *http.Response) ([]byte, error) {
 
 // decodeJSONResponse unmarshals successful JSON responses when a target is supplied.
 func decodeJSONResponse(path string, data []byte, out any) error {
-	if out == nil || len(data) == 0 {
+	if out == nil {
 		return nil
 	}
+	if len(data) == 0 {
+		return nil
+	}
+
 	if err := json.Unmarshal(data, out); err != nil {
 		return remoteError(remoteport.CodeReleaseFailed, "github response decode failed", err, porterr.Details{"path": path})
 	}
+
 	return nil
+}
+
+func isHTTPSuccess(statusCode int) bool {
+	return statusCode >= http.StatusOK && statusCode < http.StatusMultipleChoices
 }

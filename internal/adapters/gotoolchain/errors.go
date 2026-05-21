@@ -35,11 +35,19 @@ func goError(code porterr.Code, message string, cause error, details porterr.Det
 // callers do not need to understand how the Go adapter is implemented.
 func wrapGoError(code porterr.Code, message string, result processport.Result, cause error) error {
 	stderr := strings.TrimSpace(string(result.Stderr))
-	var perr *porterr.Error
-	if errors.As(cause, &perr) && perr.Kind == porterr.KindProcess && perr.Code == processport.CodeNotFound {
-		code = goport.CodeBinaryNotFound
-	} else if strings.Contains(strings.ToLower(stderr), "executable file not found") {
+
+	if isProcessNotFoundError(cause) || mentionsMissingExecutable(stderr) {
 		code = goport.CodeBinaryNotFound
 	}
+
 	return goError(code, message, cause, porterr.Details{"dir": result.Dir, "stderr": stderr})
+}
+
+func isProcessNotFoundError(cause error) bool {
+	var perr *porterr.Error
+	return errors.As(cause, &perr) && perr.Kind == porterr.KindProcess && perr.Code == processport.CodeNotFound
+}
+
+func mentionsMissingExecutable(stderr string) bool {
+	return strings.Contains(strings.ToLower(stderr), "executable file not found")
 }

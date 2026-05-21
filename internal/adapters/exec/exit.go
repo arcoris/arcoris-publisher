@@ -40,10 +40,13 @@ func finishSuccessfulProcess(result processport.Result, spec processport.Spec, r
 // generic process failure, and ExitError carries the real numeric exit code.
 func finishFailedProcess(result processport.Result, err error, parentCtx context.Context, runCtx context.Context, spec processport.Spec, redactor Redactor) (processport.Result, error) {
 	result.ExitCode = -1
-	if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+	runErr := runCtx.Err()
+	parentErr := parentCtx.Err()
+
+	if errors.Is(runErr, context.DeadlineExceeded) {
 		return result, timedOutError(spec, redactor, runCtx.Err(), result.ExitCode)
 	}
-	if errors.Is(runCtx.Err(), context.Canceled) || errors.Is(parentCtx.Err(), context.Canceled) {
+	if isCancelled(runErr, parentErr) {
 		return result, cancelledError(spec, redactor, runCtx.Err(), result.ExitCode)
 	}
 
@@ -62,6 +65,10 @@ func finishFailedProcess(result processport.Result, err error, parentCtx context
 		return result, executableNotFoundError(spec, redactor, err)
 	}
 	return result, startFailedError(spec, redactor, err)
+}
+
+func isCancelled(runErr error, parentErr error) bool {
+	return errors.Is(runErr, context.Canceled) || errors.Is(parentErr, context.Canceled)
 }
 
 // emptyNameError reports validation failure before os/exec is asked to start.

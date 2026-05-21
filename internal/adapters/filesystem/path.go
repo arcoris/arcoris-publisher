@@ -56,9 +56,11 @@ func ensureInside(path, root string) error {
 	if err != nil {
 		return err
 	}
-	if rel == "." || (!strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel)) {
+
+	if isPathInsideRoot(rel) {
 		return nil
 	}
+
 	return errors.New("path is outside safety root")
 }
 
@@ -93,4 +95,11 @@ func symlinkMode(policy fsport.SymlinkPolicy) fsport.SymlinkPolicy {
 		return fsport.SymlinkReject
 	}
 	return policy
+}
+
+func isPathInsideRoot(rel string) bool {
+	if rel == "." {
+		return true
+	}
+	return !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel)
 }

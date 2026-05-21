@@ -31,11 +31,17 @@ func (fs *FileSystem) CleanDir(ctx context.Context, dir string, opts fsport.Clea
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+
 	validated, err := validateCleanTarget(dir, opts)
-	if err != nil || !validated {
+	if err != nil {
 		return err
 	}
+	if !validated {
+		return nil
+	}
+
 	preserve := normalizePreserve(opts.Preserve)
+
 	err = filepath.WalkDir(dir, func(pathValue string, entry os.DirEntry, walkErr error) error {
 		return cleanEntry(ctx, dir, pathValue, entry, walkErr, preserve)
 	})

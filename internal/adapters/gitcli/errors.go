@@ -35,17 +35,38 @@ func gitError(code porterr.Code, message string, cause error, details porterr.De
 func wrapGitCommandError(message string, result processport.Result, cause error) error {
 	stderr := strings.ToLower(string(result.Stderr))
 	code := gitport.CodeCommandFailed
+
 	switch {
-	case strings.Contains(stderr, "authentication failed") || strings.Contains(stderr, "permission denied"):
+	case isAuthenticationFailure(stderr):
 		code = gitport.CodeAuthenticationFailed
-	case strings.Contains(stderr, "repository not found") || strings.Contains(stderr, "not found"):
+	case isRepositoryNotFound(stderr):
 		code = gitport.CodeRepositoryNotFound
-	case strings.Contains(stderr, "non-fast-forward") || strings.Contains(stderr, "fetch first") || strings.Contains(stderr, "protected branch") || strings.Contains(stderr, "pre-receive hook declined"):
+	case isPushRejected(stderr):
 		code = gitport.CodePushRejected
-	case strings.Contains(stderr, "already exists") && strings.Contains(stderr, "tag"):
+	case isTagAlreadyExists(stderr):
 		code = gitport.CodeTagAlreadyExists
 	}
+
 	return gitError(code, message, cause, porterr.Details{"repo": result.Dir, "stderr": strings.TrimSpace(string(result.Stderr))})
+}
+
+func isAuthenticationFailure(stderr string) bool {
+	return strings.Contains(stderr, "authentication failed") || strings.Contains(stderr, "permission denied")
+}
+
+func isRepositoryNotFound(stderr string) bool {
+	return strings.Contains(stderr, "repository not found") || strings.Contains(stderr, "not found")
+}
+
+func isPushRejected(stderr string) bool {
+	return strings.Contains(stderr, "non-fast-forward") ||
+		strings.Contains(stderr, "fetch first") ||
+		strings.Contains(stderr, "protected branch") ||
+		strings.Contains(stderr, "pre-receive hook declined")
+}
+
+func isTagAlreadyExists(stderr string) bool {
+	return strings.Contains(stderr, "already exists") && strings.Contains(stderr, "tag")
 }
 
 // trimOutput removes Git's trailing newlines from scalar command output.

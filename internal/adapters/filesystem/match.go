@@ -34,26 +34,20 @@ func slash(pathValue string) string {
 // tree operations should copy content, not repository metadata.
 func shouldInclude(rel string, include, exclude []string) bool {
 	rel = slash(rel)
-	if rel == ".git" || strings.HasPrefix(rel, ".git/") {
+	if isGitMetadataPath(rel) {
 		return false
 	}
+
 	if len(include) > 0 {
-		matched := false
-		for _, pattern := range include {
-			if matchPattern(pattern, rel) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
+		if !matchesAny(include, rel) {
 			return false
 		}
 	}
-	for _, pattern := range exclude {
-		if matchPattern(pattern, rel) {
-			return false
-		}
+
+	if matchesAny(exclude, rel) {
+		return false
 	}
+
 	return true
 }
 
@@ -70,9 +64,11 @@ func matchPattern(pattern, name string) bool {
 	if pattern == name {
 		return true
 	}
-	if strings.HasSuffix(pattern, "/**") && strings.HasPrefix(name, strings.TrimSuffix(pattern, "/**")+"/") {
+
+	if isSubtreePatternMatch(pattern, name) {
 		return true
 	}
+
 	if strings.HasPrefix(pattern, "**/") {
 		tail := strings.TrimPrefix(pattern, "**/")
 		if ok, _ := path.Match(tail, path.Base(name)); ok {
@@ -88,4 +84,25 @@ func matchPattern(pattern, name string) bool {
 	}
 	ok, _ = path.Match(pattern, path.Base(name))
 	return ok
+}
+
+func isGitMetadataPath(rel string) bool {
+	return rel == ".git" || strings.HasPrefix(rel, ".git/")
+}
+
+func matchesAny(patterns []string, name string) bool {
+	for _, pattern := range patterns {
+		if matchPattern(pattern, name) {
+			return true
+		}
+	}
+	return false
+}
+
+func isSubtreePatternMatch(pattern string, name string) bool {
+	if !strings.HasSuffix(pattern, "/**") {
+		return false
+	}
+	prefix := strings.TrimSuffix(pattern, "/**") + "/"
+	return strings.HasPrefix(name, prefix)
 }
