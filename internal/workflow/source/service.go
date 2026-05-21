@@ -38,7 +38,12 @@ func New(deps Dependencies, opts Options) Service {
 
 // Inspect validates source repository state and returns a source snapshot.
 func (s Service) Inspect(ctx context.Context, req Request) (Snapshot, error) {
-	ins := inspector{deps: s.deps, opts: s.opts, request: req}
+	ins := inspector{
+		deps:     s.deps,
+		opts:     s.opts,
+		request:  req,
+		warnings: newIssueCollector(),
+	}
 	snap, err := ins.inspect(ctx)
 	if err != nil {
 		return Snapshot{}, err

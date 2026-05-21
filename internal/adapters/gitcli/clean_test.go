@@ -30,7 +30,16 @@ func TestCleanFlags(t *testing.T) {
 		{name: "noop", opts: gitport.CleanOptions{}, want: nil},
 		{name: "untracked", opts: gitport.CleanOptions{RemoveUntracked: true}, want: []string{"clean", "-f"}},
 		{name: "ignored only", opts: gitport.CleanOptions{RemoveIgnored: true, Directories: true}, want: []string{"clean", "-fdX"}},
-		{name: "all forced", opts: gitport.CleanOptions{RemoveUntracked: true, RemoveIgnored: true, Directories: true, Force: true}, want: []string{"clean", "-ffdx"}},
+		{
+			name: "all forced",
+			opts: gitport.CleanOptions{
+				RemoveUntracked: true,
+				RemoveIgnored:   true,
+				Directories:     true,
+				Force:           true,
+			},
+			want: []string{"clean", "-ffdx"},
+		},
 	}
 
 	for _, tt := range tests {

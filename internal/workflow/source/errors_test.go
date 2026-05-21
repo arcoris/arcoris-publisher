@@ -21,19 +21,19 @@ import (
 
 func TestValidationErrorFormatting(t *testing.T) {
 	var nilErr *ValidationError
-	if got := nilErr.Error(); got != "source validation failed" {
+	if got := nilErr.Error(); got != "workflow validation failed" {
 		t.Fatalf("nil Error() = %q", got)
 	}
 	if nilErr.Has(IssueInvalidRequest) {
 		t.Fatal("nil Has(invalid_request) = true")
 	}
 
-	empty := &ValidationError{}
+	empty := &ValidationError{Scope: "source"}
 	if got := empty.Error(); got != "source validation failed" {
 		t.Fatalf("empty Error() = %q", got)
 	}
 
-	single := &ValidationError{Issues: []Issue{{
+	single := &ValidationError{Scope: "source", Issues: []Issue{{
 		Code:    IssueInvalidRequest,
 		Message: "bad request",
 	}}}
@@ -41,7 +41,7 @@ func TestValidationErrorFormatting(t *testing.T) {
 		t.Fatalf("single Error() = %q", got)
 	}
 
-	singleWithPath := &ValidationError{Issues: []Issue{{
+	singleWithPath := &ValidationError{Scope: "source", Issues: []Issue{{
 		Code:    IssueInvalidRequest,
 		Path:    "request",
 		Message: "bad request",
@@ -50,7 +50,7 @@ func TestValidationErrorFormatting(t *testing.T) {
 		t.Fatalf("single path Error() = %q", got)
 	}
 
-	many := &ValidationError{Issues: []Issue{
+	many := &ValidationError{Scope: "source", Issues: []Issue{
 		{Code: IssueInvalidRequest, Path: "request", Message: "bad request"},
 		{Code: IssueDirtySource, Message: "dirty"},
 	}}
@@ -63,17 +63,18 @@ func TestValidationErrorFormatting(t *testing.T) {
 }
 
 func TestIssueCollectorReturnsDetachedValidationError(t *testing.T) {
-	var collector issueCollector
-	collector.add(IssueInvalidRequest, "", "request", "bad %s", "request")
+	collector := newIssueCollector()
+	collector.Add(IssueInvalidRequest, "", "request", "bad %s", "request")
 
-	err := collector.err()
+	err := collector.Err()
 	ve, ok := err.(*ValidationError)
 	if !ok {
 		t.Fatalf("err() type = %T", err)
 	}
 
 	ve.Issues[0].Code = IssueDetachedHead
-	if collector.issues[0].Code != IssueInvalidRequest {
-		t.Fatalf("collector issue was mutated: %v", collector.issues)
+	issues := collector.Issues()
+	if issues[0].Code != IssueInvalidRequest {
+		t.Fatalf("collector issue was mutated: %v", issues)
 	}
 }

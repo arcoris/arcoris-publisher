@@ -58,7 +58,7 @@ func TestBuilderRejectsNonPublishableModule(t *testing.T) {
 	if ok {
 		t.Fatal("buildModulePlan(internal) succeeded")
 	}
-	assertPlanError(t, builder.issues.err(), IssueNonPublishableModule)
+	assertPlanError(t, builder.issues.Err(), IssueNonPublishableModule)
 }
 
 func TestBuilderRecordsMissingExecutionData(t *testing.T) {
@@ -69,7 +69,7 @@ func TestBuilderRecordsMissingExecutionData(t *testing.T) {
 	builder.addEmptyBranchesIssue("modules[0]", module)
 	builder.addEmptyPublishEntriesIssue("modules[0]", module)
 
-	err := builder.issues.err()
+	err := builder.issues.Err()
 	assertPlanError(t, err, IssueEmptyBranches)
 	assertPlanError(t, err, IssueEmptyPublishEntries)
 }

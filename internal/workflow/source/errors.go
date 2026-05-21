@@ -15,10 +15,8 @@
 package source
 
 import (
-	"fmt"
-	"strings"
-
 	"arcoris.dev/arcoris-publisher/internal/manifest"
+	"arcoris.dev/arcoris-publisher/internal/workflow/diag"
 )
 
 // IssueCode identifies a source inspection validation issue.
@@ -90,63 +88,10 @@ const (
 )
 
 // Issue describes one source inspection validation issue.
-type Issue struct {
-	// Code is the stable machine-readable reason for the issue.
-	Code IssueCode
-
-	// Module is set when the issue belongs to a specific planned module.
-	Module manifest.ModuleName
-
-	// Path identifies the request or plan location that failed.
-	Path string
-
-	// Message is the human-readable diagnostic text.
-	Message string
-}
+type Issue = diag.Issue[IssueCode]
 
 // ValidationError aggregates source inspection validation issues.
-type ValidationError struct {
-	// Issues contains all collected source inspection issues in deterministic
-	// order.
-	Issues []Issue
-}
-
-// Error returns a compact validation error summary.
-func (e *ValidationError) Error() string {
-	if e == nil || len(e.Issues) == 0 {
-		return "source validation failed"
-	}
-	if len(e.Issues) == 1 {
-		issue := e.Issues[0]
-		if issue.Path == "" {
-			return issue.Message
-		}
-		return issue.Path + ": " + issue.Message
-	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "source validation failed with %d issues", len(e.Issues))
-	for _, issue := range e.Issues {
-		if issue.Path == "" {
-			fmt.Fprintf(&b, "; %s", issue.Message)
-			continue
-		}
-		fmt.Fprintf(&b, "; %s: %s", issue.Path, issue.Message)
-	}
-	return b.String()
-}
-
-// Has reports whether the validation error contains code.
-func (e *ValidationError) Has(code IssueCode) bool {
-	if e == nil {
-		return false
-	}
-	for _, issue := range e.Issues {
-		if issue.Code == code {
-			return true
-		}
-	}
-	return false
-}
+type ValidationError = diag.ValidationError[IssueCode]
 
 // singleIssueError builds a validation error for one issue.
 func singleIssueError(
@@ -156,6 +101,7 @@ func singleIssueError(
 	message string,
 ) *ValidationError {
 	return &ValidationError{
+		Scope: "source",
 		Issues: []Issue{{
 			Code:    code,
 			Module:  module,
@@ -167,54 +113,14 @@ func singleIssueError(
 
 // cloneIssues detaches issue slices before storing or returning diagnostics.
 func cloneIssues(in []Issue) []Issue {
-	out := make([]Issue, len(in))
-	copy(out, in)
-	return out
+	return diag.CloneIssues(in)
 }
 
 // issueCollector accumulates validation diagnostics while preserving the order
 // in which inspection discovered them.
-type issueCollector struct {
-	// issues buffers diagnostics before they are exposed as a detached
-	// ValidationError.
-	issues []Issue
-}
+type issueCollector = diag.Collector[IssueCode]
 
-// add records one formatted diagnostic.
-func (c *issueCollector) add(
-	code IssueCode,
-	module manifest.ModuleName,
-	path string,
-	format string,
-	args ...any,
-) {
-	c.addMessage(code, module, path, fmt.Sprintf(format, args...))
-}
-
-// addMessage records one diagnostic whose message is already formatted.
-func (c *issueCollector) addMessage(
-	code IssueCode,
-	module manifest.ModuleName,
-	path string,
-	message string,
-) {
-	c.issues = append(c.issues, Issue{
-		Code:    code,
-		Module:  module,
-		Path:    path,
-		Message: message,
-	})
-}
-
-// append stores detached issues from a nested validation pass.
-func (c *issueCollector) append(issues []Issue) {
-	c.issues = append(c.issues, cloneIssues(issues)...)
-}
-
-// err returns nil for an empty collector or a detached ValidationError.
-func (c *issueCollector) err() error {
-	if len(c.issues) == 0 {
-		return nil
-	}
-	return &ValidationError{Issues: cloneIssues(c.issues)}
+// newIssueCollector creates a source-scoped collector.
+func newIssueCollector() issueCollector {
+	return diag.NewCollector[IssueCode]("source")
 }

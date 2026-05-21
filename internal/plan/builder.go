@@ -27,7 +27,10 @@ import (
 // Build constructs an executable publication plan from resolved manifests,
 // registry indexes, graph topology, and version assignments.
 func Build(req Request) (Plan, error) {
-	builder := builder{request: req}
+	builder := builder{
+		request: req,
+		issues:  newIssueCollector(),
+	}
 	return builder.build()
 }
 
@@ -83,7 +86,7 @@ func (b *builder) build() (Plan, error) {
 	}
 
 	modules := b.buildModulePlans(order)
-	if err := b.issues.err(); err != nil {
+	if err := b.issues.Err(); err != nil {
 		return Plan{}, err
 	}
 
@@ -147,6 +150,7 @@ func (b *builder) finalize(modules []ModulePlan) (Plan, error) {
 // graphOrderError wraps graph ordering failures in plan diagnostics.
 func graphOrderError(err error) *ValidationError {
 	return &ValidationError{
+		Scope: "plan",
 		Issues: []Issue{
 			{
 				Code:    IssueGraphOrder,
@@ -160,6 +164,7 @@ func graphOrderError(err error) *ValidationError {
 // emptyPlanError reports that no public modules can be planned.
 func emptyPlanError() *ValidationError {
 	return &ValidationError{
+		Scope: "plan",
 		Issues: []Issue{
 			{
 				Code:    IssueEmptyPlan,
@@ -172,7 +177,7 @@ func emptyPlanError() *ValidationError {
 
 // addUnknownModuleIssue records a publish order name absent from the registry.
 func (b *builder) addUnknownModuleIssue(index int, name manifest.ModuleName) {
-	b.issues.add(
+	b.issues.Add(
 		IssueUnknownModule,
 		fmt.Sprintf("publishOrder[%d]", index),
 		"module %q is absent from registry",
@@ -250,7 +255,7 @@ func (b *builder) addNonPublishableModuleIssue(
 	path string,
 	mod resolved.PublicationModule,
 ) {
-	b.issues.add(
+	b.issues.Add(
 		IssueNonPublishableModule,
 		path+".visibility",
 		"module %q is not public",
@@ -260,7 +265,7 @@ func (b *builder) addNonPublishableModuleIssue(
 
 // addMissingVersionIssue records a missing scalar version assignment.
 func (b *builder) addMissingVersionIssue(path string, mod resolved.PublicationModule) {
-	b.issues.add(
+	b.issues.Add(
 		IssueMissingAssignment,
 		path+".version",
 		"module %q has no assigned version",
@@ -273,7 +278,7 @@ func (b *builder) addMissingModuleVersionIssue(
 	path string,
 	mod resolved.PublicationModule,
 ) {
-	b.issues.add(
+	b.issues.Add(
 		IssueMissingAssignment,
 		path+".version",
 		"module %q has no module version record",
@@ -288,7 +293,7 @@ func (b *builder) addAssignmentPathMismatchIssue(
 	mod resolved.PublicationModule,
 	versioned versioning.ModuleVersion,
 ) {
-	b.issues.add(
+	b.issues.Add(
 		IssueMissingAssignment,
 		path+".modulePath",
 		"module %q assignment path %q does not match resolved module path %q",
@@ -300,7 +305,7 @@ func (b *builder) addAssignmentPathMismatchIssue(
 
 // addEmptyBranchesIssue records missing effective branch mappings.
 func (b *builder) addEmptyBranchesIssue(path string, mod resolved.PublicationModule) {
-	b.issues.add(
+	b.issues.Add(
 		IssueEmptyBranches,
 		path+".branches",
 		"module %q has no branch mappings",
@@ -313,7 +318,7 @@ func (b *builder) addEmptyPublishEntriesIssue(
 	path string,
 	mod resolved.PublicationModule,
 ) {
-	b.issues.add(
+	b.issues.Add(
 		IssueEmptyPublishEntries,
 		path+".publish.entries",
 		"module %q has no explicit publish entries",
@@ -326,7 +331,7 @@ func (b *builder) addMissingRequirementsIssue(
 	path string,
 	mod resolved.PublicationModule,
 ) {
-	b.issues.add(
+	b.issues.Add(
 		IssueMissingRequirements,
 		path+".requirements",
 		"module %q has no dependency requirement set",

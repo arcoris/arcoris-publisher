@@ -24,7 +24,7 @@ func TestValidationErrorHelpers(t *testing.T) {
 	if nilErr.Has(IssueEmptyPlan) {
 		t.Fatal("nil ValidationError unexpectedly has issue")
 	}
-	if nilErr.Error() != "plan validation failed" {
+	if nilErr.Error() != "validation failed" {
 		t.Fatalf("nil Error() = %q", nilErr.Error())
 	}
 	err := &ValidationError{
@@ -53,7 +53,7 @@ func TestValidationErrorHelpers(t *testing.T) {
 	if got := err.Error(); got != "empty_plan: modules: empty" {
 		t.Fatalf("ValidationError.Error() = %q", got)
 	}
-	empty := &ValidationError{}
+	empty := &ValidationError{Scope: "plan"}
 	if got := empty.Error(); got != "plan validation failed" {
 		t.Fatalf("empty ValidationError.Error() = %q", got)
 	}

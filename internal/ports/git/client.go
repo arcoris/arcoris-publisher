@@ -24,10 +24,16 @@
 // errors using this package's error codes.
 package git
 
-// Client groups all Git capabilities required by publisher workflows.
-type Client interface {
+// WorktreeClient groups Git capabilities that operate on repository worktrees
+// and remotes without tag publication.
+type WorktreeClient interface {
 	RepositoryReader
 	RepositoryWriter
 	RemoteClient
+}
+
+// Client groups all Git capabilities required by publisher workflows.
+type Client interface {
+	WorktreeClient
 	TagClient
 }

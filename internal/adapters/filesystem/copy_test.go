@@ -59,7 +59,12 @@ func TestCopyTreeRejectsDestinationOutsideSafetyRoot(t *testing.T) {
 
 func TestCopyTreeMissingSource(t *testing.T) {
 	root := t.TempDir()
-	_, err := New().CopyTree(context.Background(), filepath.Join(root, "missing"), filepath.Join(root, "dst"), fsport.CopyTreeOptions{SafetyRoot: root})
+	_, err := New().CopyTree(
+		context.Background(),
+		filepath.Join(root, "missing"),
+		filepath.Join(root, "dst"),
+		fsport.CopyTreeOptions{SafetyRoot: root},
+	)
 	assertPortCode(t, err, fsport.CodePathNotFound)
 }
 

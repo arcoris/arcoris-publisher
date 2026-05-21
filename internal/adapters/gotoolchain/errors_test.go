@@ -31,6 +31,11 @@ func TestWrapGoErrorMapsProcessNotFound(t *testing.T) {
 }
 
 func TestWrapGoErrorMapsStderrNotFound(t *testing.T) {
-	err := wrapGoError(goport.CodeCommandFailed, "go failed", processport.Result{Stderr: []byte("executable file not found")}, errors.New("missing"))
+	err := wrapGoError(
+		goport.CodeCommandFailed,
+		"go failed",
+		processport.Result{Stderr: []byte("executable file not found")},
+		errors.New("missing"),
+	)
 	assertPortCode(t, err, goport.CodeBinaryNotFound)
 }

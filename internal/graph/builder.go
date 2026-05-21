@@ -30,7 +30,10 @@ import (
 // TopologicalOrder, PublishOrder, HasCycle, and Cycles so callers can inspect
 // the cycle before failing a higher-level planning operation.
 func New(reg registry.Registry) (Graph, error) {
-	builder := builder{registry: reg}
+	builder := builder{
+		registry: reg,
+		issues:   newIssueCollector(),
+	}
 	return builder.build()
 }
 
@@ -74,7 +77,7 @@ func (b *builder) build() (Graph, error) {
 
 	b.indexNodes()
 	b.indexEdges()
-	if err := b.issues.err(); err != nil {
+	if err := b.issues.Err(); err != nil {
 		return Graph{}, err
 	}
 
@@ -174,12 +177,12 @@ func (b *builder) addEdge(moduleName manifest.ModuleName, dependency manifest.Mo
 }
 
 func (b *builder) addDuplicateNodeIssue(path string, name manifest.ModuleName) {
-	b.issues.add(IssueDuplicateNode, path, "duplicate graph node %q", name)
+	b.issues.Add(IssueDuplicateNode, path, "duplicate graph node %q", name)
 }
 
 // addSelfDependencyIssue records a direct module-to-itself dependency.
 func (b *builder) addSelfDependencyIssue(path string, moduleName manifest.ModuleName) {
-	b.issues.add(
+	b.issues.Add(
 		IssueSelfDependency,
 		path,
 		"module %q cannot depend on itself",
@@ -189,7 +192,7 @@ func (b *builder) addSelfDependencyIssue(path string, moduleName manifest.Module
 
 // addUnknownDependencyIssue records a dependency absent from the registry.
 func (b *builder) addUnknownDependencyIssue(path string, dependency manifest.ModuleName) {
-	b.issues.add(IssueUnknownDependency, path, "unknown dependency %q", dependency)
+	b.issues.Add(IssueUnknownDependency, path, "unknown dependency %q", dependency)
 }
 
 // addDisabledDependencyIssue records a dependency on a disabled module.
@@ -198,7 +201,7 @@ func (b *builder) addDisabledDependencyIssue(
 	moduleName manifest.ModuleName,
 	dependency manifest.ModuleName,
 ) {
-	b.issues.add(
+	b.issues.Add(
 		IssueDisabledDependency,
 		path,
 		"module %q depends on disabled module %q",
@@ -212,7 +215,7 @@ func (b *builder) addMissingDependencyNodeIssue(
 	path string,
 	dependency manifest.ModuleName,
 ) {
-	b.issues.add(
+	b.issues.Add(
 		IssueUnknownDependency,
 		path,
 		"dependency %q is not present in graph",

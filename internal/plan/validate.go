@@ -27,12 +27,12 @@ func (p *Plan) rebuildIndexes() error {
 	p.byPath = make(map[manifest.ModulePath]int, len(p.modules))
 	p.byRepository = make(map[manifest.RepositoryRef]int, len(p.modules))
 
-	var collector issueCollector
+	collector := newIssueCollector()
 	for i, mod := range p.modules {
 		p.indexModule(&collector, i, mod)
 	}
 
-	return collector.err()
+	return collector.Err()
 }
 
 // indexModule stores one module in every lookup index.
@@ -56,7 +56,7 @@ func (p *Plan) indexModuleName(
 	mod ModulePlan,
 ) {
 	if prev, exists := p.byName[mod.Name()]; exists {
-		collector.add(
+		collector.Add(
 			IssueDuplicateModuleName,
 			path+".name",
 			"duplicate module name %q previously planned at modules[%d]",
@@ -77,7 +77,7 @@ func (p *Plan) indexModulePath(
 	mod ModulePlan,
 ) {
 	if prev, exists := p.byPath[mod.ModulePath()]; exists {
-		collector.add(
+		collector.Add(
 			IssueDuplicateModulePath,
 			path+".modulePath",
 			"duplicate module path %q previously planned at modules[%d]",
@@ -98,7 +98,7 @@ func (p *Plan) indexRepository(
 	mod ModulePlan,
 ) {
 	if prev, exists := p.byRepository[mod.Repository()]; exists {
-		collector.add(
+		collector.Add(
 			IssueDuplicateRepository,
 			path+".repository",
 			"duplicate repository %q previously planned at modules[%d]",
@@ -113,22 +113,22 @@ func (p *Plan) indexRepository(
 
 // validate checks the final executable plan shape.
 func validate(p Plan) error {
-	var collector issueCollector
+	collector := newIssueCollector()
 	if len(p.modules) == 0 {
-		collector.add(IssueEmptyPlan, "modules", "publication plan has no public modules")
+		collector.Add(IssueEmptyPlan, "modules", "publication plan has no public modules")
 	}
 	for i, mod := range p.modules {
 		path := fmt.Sprintf("modules[%d]", i)
 		validateModulePlan(&collector, path, mod)
 	}
 
-	return collector.err()
+	return collector.Err()
 }
 
 // validateModulePlan checks invariants expected by downstream workflow stages.
 func validateModulePlan(collector *issueCollector, path string, mod ModulePlan) {
 	if mod.Visibility() != manifest.VisibilityPublic {
-		collector.add(
+		collector.Add(
 			IssueNonPublishableModule,
 			path+".visibility",
 			"planned module %q is not public",
@@ -137,7 +137,7 @@ func validateModulePlan(collector *issueCollector, path string, mod ModulePlan) 
 	}
 
 	if mod.Version().IsZero() {
-		collector.add(
+		collector.Add(
 			IssueMissingAssignment,
 			path+".version",
 			"planned module %q has no version",
@@ -146,7 +146,7 @@ func validateModulePlan(collector *issueCollector, path string, mod ModulePlan) 
 	}
 
 	if len(mod.Branches()) == 0 {
-		collector.add(
+		collector.Add(
 			IssueEmptyBranches,
 			path+".branches",
 			"planned module %q has no branch mappings",
@@ -155,7 +155,7 @@ func validateModulePlan(collector *issueCollector, path string, mod ModulePlan) 
 	}
 
 	if len(mod.PublishEntries()) == 0 {
-		collector.add(
+		collector.Add(
 			IssueEmptyPublishEntries,
 			path+".publish.entries",
 			"planned module %q has no explicit publish entries",

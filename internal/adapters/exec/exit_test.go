@@ -46,7 +46,10 @@ func TestRedactedCommandDetailsHidesSensitiveValues(t *testing.T) {
 	spec := processport.Spec{Name: "git-token", Args: []string{"push", "git-token"}, Dir: "/tmp/git-token"}
 	details := redactedCommandDetails(spec, NewRedactor("git-token"), 3)
 
-	if details["name"] != "<redacted>" || details["args"] != "push <redacted>" || details["dir"] != "/tmp/<redacted>" || details["exit_code"] != "3" {
+	if details["name"] != "<redacted>" ||
+		details["args"] != "push <redacted>" ||
+		details["dir"] != "/tmp/<redacted>" ||
+		details["exit_code"] != "3" {
 		t.Fatalf("redactedCommandDetails() = %#v", details)
 	}
 }

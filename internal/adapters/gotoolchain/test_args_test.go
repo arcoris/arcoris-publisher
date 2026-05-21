@@ -30,5 +30,17 @@ func TestTestArgs(t *testing.T) {
 		Run:           "TestOne",
 		Verbose:       true,
 	})
-	assertStringSlice(t, args, []string{"test", "-race", "-count", "1", "-short", "-run", "TestOne", "-v", "-tags", "integration,linux", "./pkg"})
+	assertStringSlice(t, args, []string{
+		"test",
+		"-race",
+		"-count",
+		"1",
+		"-short",
+		"-run",
+		"TestOne",
+		"-v",
+		"-tags",
+		"integration,linux",
+		"./pkg",
+	})
 }

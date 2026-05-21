@@ -22,13 +22,25 @@ import (
 )
 
 // CheckAccess loads repository permissions and verifies the requested level.
-func (p *Provider) CheckAccess(ctx context.Context, ref remoteport.RepositoryRef, access remoteport.AccessLevel) error {
+func (p *Provider) CheckAccess(
+	ctx context.Context,
+	ref remoteport.RepositoryRef,
+	access remoteport.AccessLevel,
+) error {
 	repo, err := p.Repository(ctx, ref)
 	if err != nil {
 		return err
 	}
 	if !repo.Permissions.Allows(access) {
-		return remoteError(remoteport.CodeAccessDenied, "repository access level is insufficient", nil, porterr.Details{"repository": ref.FullName(), "access": access.String()})
+		return remoteError(
+			remoteport.CodeAccessDenied,
+			"repository access level is insufficient",
+			nil,
+			porterr.Details{
+				"repository": ref.FullName(),
+				"access":     access.String(),
+			},
+		)
 	}
 	return nil
 }

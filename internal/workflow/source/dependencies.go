@@ -19,18 +19,6 @@ import (
 	portgit "arcoris.dev/arcoris-publisher/internal/ports/git"
 )
 
-// FileSystem groups the filesystem capabilities required by the source
-// inspection stage.
-//
-// Reader is used for existence and type checks. Hasher is used only when
-// Options.DisableHashes is false. Keeping the dependency as a narrow local
-// interface makes the workflow easy to test while remaining compatible with the
-// broader filesystem port and adapter implementations.
-type FileSystem interface {
-	portfs.Reader
-	portfs.Hasher
-}
-
 // Dependencies contains infrastructure ports used by Service.
 //
 // Dependencies MUST be satisfied by ports, not adapters directly. Application
@@ -40,5 +28,5 @@ type Dependencies struct {
 	Git portgit.RepositoryReader
 
 	// FS reads source paths and computes content hashes.
-	FS FileSystem
+	FS portfs.FileSystem
 }

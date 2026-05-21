@@ -72,8 +72,16 @@ func TestCopySymlinkRejectsFollowAndUnknownPolicy(t *testing.T) {
 	}
 	result := fsport.CopyTreeResult{}
 
-	assertPortCode(t, New().copySymlink(link, filepath.Join(root, "dst"), fsport.SymlinkFollow, &result), fsport.CodeSymlinkRejected)
-	assertPortCode(t, New().copySymlink(link, filepath.Join(root, "dst"), fsport.SymlinkPolicy("unknown"), &result), fsport.CodeSymlinkRejected)
+	assertPortCode(
+		t,
+		New().copySymlink(link, filepath.Join(root, "dst"), fsport.SymlinkFollow, &result),
+		fsport.CodeSymlinkRejected,
+	)
+	assertPortCode(
+		t,
+		New().copySymlink(link, filepath.Join(root, "dst"), fsport.SymlinkPolicy("unknown"), &result),
+		fsport.CodeSymlinkRejected,
+	)
 }
 
 func TestCopySymlinkReturnsReadlinkError(t *testing.T) {

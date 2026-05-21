@@ -21,7 +21,13 @@ import (
 )
 
 // CreateTag creates an annotated or lightweight tag.
-func (c *Client) CreateTag(ctx context.Context, repoDir string, tag gitport.TagName, target gitport.CommitHash, opts gitport.TagOptions) error {
+func (c *Client) CreateTag(
+	ctx context.Context,
+	repoDir string,
+	tag gitport.TagName,
+	target gitport.CommitHash,
+	opts gitport.TagOptions,
+) error {
 	result, err := c.runner.Run(ctx, c.command(repoDir, createTagArgs(tag, target, opts), nil, true, true))
 	if err != nil {
 		return wrapGitCommandError("git tag creation failed", result, err)

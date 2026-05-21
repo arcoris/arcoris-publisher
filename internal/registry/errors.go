@@ -14,10 +14,7 @@
 
 package registry
 
-import (
-	"fmt"
-	"strings"
-)
+import "arcoris.dev/arcoris-publisher/internal/diagnostic"
 
 // IssueCode is a stable machine-readable registry validation code.
 type IssueCode string
@@ -36,69 +33,13 @@ const (
 )
 
 // Issue describes one registry validation problem.
-type Issue struct {
-	Code    IssueCode
-	Path    string
-	Message string
-}
-
-// Error returns a compact human-readable issue message.
-func (i Issue) Error() string {
-	if i.Path == "" {
-		return fmt.Sprintf("%s: %s", i.Code, i.Message)
-	}
-
-	return fmt.Sprintf("%s: %s: %s", i.Code, i.Path, i.Message)
-}
+type Issue = diagnostic.Issue[IssueCode]
 
 // ValidationError groups registry validation issues in stable order.
-type ValidationError struct {
-	Issues []Issue
-}
+type ValidationError = diagnostic.ValidationError[IssueCode]
 
-// Error returns all registry validation issues as one message.
-func (e *ValidationError) Error() string {
-	if e == nil || len(e.Issues) == 0 {
-		return "registry validation failed"
-	}
+type issueCollector = diagnostic.Collector[IssueCode]
 
-	parts := make([]string, 0, len(e.Issues))
-	for _, issue := range e.Issues {
-		parts = append(parts, issue.Error())
-	}
-
-	return strings.Join(parts, "; ")
-}
-
-type issueCollector struct {
-	issues []Issue
-}
-
-func (c *issueCollector) Add(
-	code IssueCode,
-	path string,
-	format string,
-	args ...any,
-) {
-	c.issues = append(c.issues, Issue{
-		Code:    code,
-		Path:    path,
-		Message: fmt.Sprintf(format, args...),
-	})
-}
-
-func (c *issueCollector) Issues() []Issue {
-	out := make([]Issue, len(c.issues))
-	copy(out, c.issues)
-	return out
-}
-
-func (c *issueCollector) Err() error {
-	if len(c.issues) == 0 {
-		return nil
-	}
-
-	return &ValidationError{
-		Issues: c.Issues(),
-	}
+func newIssueCollector() issueCollector {
+	return diagnostic.NewCollector[IssueCode]("registry")
 }

@@ -56,12 +56,12 @@ func (g Graph) validateInputNames(
 	path string,
 	names []manifest.ModuleName,
 ) ([]manifest.ModuleName, error) {
-	var collector issueCollector
+	collector := newIssueCollector()
 	seen := make(map[manifest.ModuleName]struct{}, len(names))
 	out := make([]manifest.ModuleName, 0, len(names))
 	for _, name := range names {
 		if !g.Contains(name) {
-			collector.add(
+			collector.Add(
 				IssueUnknownNode,
 				inputIssuePath(path, len(names)),
 				"unknown graph node %q",
@@ -78,7 +78,7 @@ func (g Graph) validateInputNames(
 		out = append(out, name)
 	}
 
-	if err := collector.err(); err != nil {
+	if err := collector.Err(); err != nil {
 		return nil, err
 	}
 

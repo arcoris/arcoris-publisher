@@ -40,7 +40,7 @@ func TestAssignVersionDefensiveBranches(t *testing.T) {
 	assigner.assignVersion(0, manifest.ModuleName("missing"))
 	assigner.assignVersion(1, manifest.ModuleName("tooling"))
 
-	err := assigner.issues.err()
+	err := assigner.issues.Err()
 	assertValidationHas(t, err, IssueUnknownModule)
 	assertValidationHas(t, err, IssueInvalidRequest)
 }
@@ -86,7 +86,7 @@ func TestRequirementForDependencyDefensiveBranches(t *testing.T) {
 		t.Fatal("unassigned dependency returned a requirement")
 	}
 
-	err := assigner.issues.err()
+	err := assigner.issues.Err()
 	assertValidationHas(t, err, IssueUnknownModule)
 	assertValidationHas(t, err, IssueNonPublishableDependency)
 	assertValidationHas(t, err, IssueMissingAssignment)
@@ -117,5 +117,5 @@ func TestAssignModuleRequirementsSkipsInvalidDependency(t *testing.T) {
 	if got := assigner.requirements[manifest.ModuleName("control")]; len(got) != 0 {
 		t.Fatalf("requirements = %#v, want none", got)
 	}
-	assertValidationHas(t, assigner.issues.err(), IssueUnknownModule)
+	assertValidationHas(t, assigner.issues.Err(), IssueUnknownModule)
 }

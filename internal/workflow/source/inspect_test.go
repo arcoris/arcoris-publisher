@@ -302,7 +302,7 @@ func TestInspectRejectsModuleSourceProblems(t *testing.T) {
 }
 
 func TestValidateModuleRootsReportsEscapes(t *testing.T) {
-	var issues issueCollector
+	issues := newIssueCollector()
 	inspector := inspector{
 		deps:       Dependencies{FS: standardFS()},
 		stagingDir: "/repo/staging",
@@ -317,7 +317,7 @@ func TestValidateModuleRootsReportsEscapes(t *testing.T) {
 		"/repo/outside/foundation",
 	)
 
-	err := issues.err()
+	err := issues.Err()
 	assertValidationHas(t, err, IssueEntryPathEscape)
 }
 

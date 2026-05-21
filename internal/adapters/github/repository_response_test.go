@@ -32,7 +32,14 @@ func TestRepositoryResponseToPort(t *testing.T) {
 		Permissions:   permissionsResponse{Pull: true, Push: true, Admin: false},
 	}.toPort(ref)
 
-	if repo.Ref != ref || repo.CloneURL == "" || repo.SSHURL == "" || repo.WebURL == "" || repo.DefaultBranch != "main" || !repo.Private || !repo.Archived || !repo.Permissions.CanWrite {
+	if repo.Ref != ref ||
+		repo.CloneURL == "" ||
+		repo.SSHURL == "" ||
+		repo.WebURL == "" ||
+		repo.DefaultBranch != "main" ||
+		!repo.Private ||
+		!repo.Archived ||
+		!repo.Permissions.CanWrite {
 		t.Fatalf("toPort() = %#v", repo)
 	}
 }

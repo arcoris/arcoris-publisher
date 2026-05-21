@@ -38,7 +38,14 @@ func finishSuccessfulProcess(result processport.Result, spec processport.Spec, r
 //
 // The order matters: context timeout/cancel errors are more informative than a
 // generic process failure, and ExitError carries the real numeric exit code.
-func finishFailedProcess(result processport.Result, err error, parentCtx context.Context, runCtx context.Context, spec processport.Spec, redactor Redactor) (processport.Result, error) {
+func finishFailedProcess(
+	result processport.Result,
+	err error,
+	parentCtx context.Context,
+	runCtx context.Context,
+	spec processport.Spec,
+	redactor Redactor,
+) (processport.Result, error) {
 	result.ExitCode = -1
 	runErr := runCtx.Err()
 	parentErr := parentCtx.Err()

@@ -33,7 +33,13 @@ func TestFetchBuildsCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Fetch() error = %v", err)
 	}
-	assertStringSlice(t, runner.specs[0].Args, []string{"fetch", "--prune", "--no-tags", "origin", "refs/heads/main:refs/remotes/origin/main"})
+	assertStringSlice(t, runner.specs[0].Args, []string{
+		"fetch",
+		"--prune",
+		"--no-tags",
+		"origin",
+		"refs/heads/main:refs/remotes/origin/main",
+	})
 }
 
 func TestFetchArgsSupportsAllTags(t *testing.T) {

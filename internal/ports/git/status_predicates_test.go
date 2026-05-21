@@ -43,7 +43,14 @@ func TestStatusIsDirty(t *testing.T) {
 	}{
 		{name: "explicit clean", status: Status{Clean: true}, want: false},
 		{name: "clean flag false", status: Status{}, want: true},
-		{name: "entries override clean flag", status: Status{Clean: true, Entries: []StatusEntry{{Path: "go.mod"}}}, want: true},
+		{
+			name: "entries override clean flag",
+			status: Status{
+				Clean:   true,
+				Entries: []StatusEntry{{Path: "go.mod"}},
+			},
+			want: true,
+		},
 	}
 
 	for _, tt := range tests {

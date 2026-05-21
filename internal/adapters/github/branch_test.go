@@ -35,11 +35,19 @@ func TestBranchProtectionMapsResponse(t *testing.T) {
 		}`)
 	})
 
-	protection, err := provider.BranchProtection(context.Background(), remoteport.RepositoryRef{Owner: "arcoris", Name: "repo"}, "feature/x")
+	protection, err := provider.BranchProtection(
+		context.Background(),
+		remoteport.RepositoryRef{Owner: "arcoris", Name: "repo"},
+		"feature/x",
+	)
 	if err != nil {
 		t.Fatalf("BranchProtection() error = %v", err)
 	}
-	if !protection.Protected || !protection.RequiresPullRequest || !protection.RequiresStatusChecks || !protection.AllowsForcePushes || protection.AllowsDeletions {
+	if !protection.Protected ||
+		!protection.RequiresPullRequest ||
+		!protection.RequiresStatusChecks ||
+		!protection.AllowsForcePushes ||
+		protection.AllowsDeletions {
 		t.Fatalf("unexpected protection %#v", protection)
 	}
 }

@@ -25,7 +25,14 @@ func TestCreateBranchBuildsCommand(t *testing.T) {
 	runner := &fakeRunner{}
 	client := New(runner, Options{})
 
-	if err := client.CreateBranch(context.Background(), "/repo", gitport.BranchName("next"), "HEAD", gitport.CreateBranchOptions{Force: true}); err != nil {
+	err := client.CreateBranch(
+		context.Background(),
+		"/repo",
+		gitport.BranchName("next"),
+		"HEAD",
+		gitport.CreateBranchOptions{Force: true},
+	)
+	if err != nil {
 		t.Fatalf("CreateBranch() error = %v", err)
 	}
 	assertStringSlice(t, runner.specs[0].Args, []string{"branch", "-f", "next", "HEAD"})

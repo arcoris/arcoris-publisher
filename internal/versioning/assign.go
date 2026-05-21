@@ -23,7 +23,10 @@ import (
 
 // Assign assigns module versions according to the effective publication policy.
 func Assign(req Request) (Assignments, error) {
-	assigner := assigner{request: req}
+	assigner := assigner{
+		request: req,
+		issues:  newIssueCollector(),
+	}
 	return assigner.assign()
 }
 
@@ -56,7 +59,7 @@ func (a *assigner) assign() (Assignments, error) {
 	}
 
 	a.assignRequirements()
-	if err := a.issues.err(); err != nil {
+	if err := a.issues.Err(); err != nil {
 		return Assignments{}, err
 	}
 
@@ -69,7 +72,7 @@ func (a *assigner) validateRequest() error {
 	a.validatePolicyAndVersion()
 	a.validatePublishableInputs()
 
-	return a.issues.err()
+	return a.issues.Err()
 }
 
 // validatePolicyAndVersion enforces the resolved version policy against the
@@ -77,7 +80,7 @@ func (a *assigner) validateRequest() error {
 func (a *assigner) validatePolicyAndVersion() {
 	policy := a.request.Set.Publish().VersionPolicy()
 	if a.request.Version.IsZero() {
-		a.issues.add(IssueInvalidVersion, "version", "version is required")
+		a.issues.Add(IssueInvalidVersion, "version", "version is required")
 		return
 	}
 
@@ -97,7 +100,7 @@ func (a *assigner) validateReleaseTrainVersion() {
 		return
 	}
 
-	a.issues.add(
+	a.issues.Add(
 		IssueInvalidVersion,
 		"version",
 		"release-train requires a non-pseudo SemVer version",
@@ -110,7 +113,7 @@ func (a *assigner) validateSnapshotVersion() {
 		return
 	}
 
-	a.issues.add(
+	a.issues.Add(
 		IssueInvalidVersion,
 		"version",
 		"snapshot policy requires a Go pseudo-version",
@@ -119,7 +122,7 @@ func (a *assigner) validateSnapshotVersion() {
 
 // addInvalidPolicyIssue records a missing or unsupported resolved policy.
 func (a *assigner) addInvalidPolicyIssue(policy manifest.VersionPolicy) {
-	a.issues.add(
+	a.issues.Add(
 		IssueInvalidRequest,
 		"publish.versionPolicy",
 		"unsupported or missing version policy %q",
@@ -149,7 +152,7 @@ func (a *assigner) validateRegistryModule(
 ) {
 	registryModule, ok := a.request.Registry.ModuleByName(module.Name())
 	if !ok {
-		a.issues.add(
+		a.issues.Add(
 			IssueUnknownModule,
 			path+".name",
 			"module %q is absent from registry",
@@ -159,7 +162,7 @@ func (a *assigner) validateRegistryModule(
 	}
 
 	if registryModule.ModulePath() != module.ModulePath() {
-		a.issues.add(
+		a.issues.Add(
 			IssueInvalidRequest,
 			path+".module.path",
 			"registry module %q has path %q, want %q",
@@ -176,7 +179,7 @@ func (a *assigner) validateGraphNode(path string, module resolved.PublicationMod
 		return
 	}
 
-	a.issues.add(
+	a.issues.Add(
 		IssueUnknownModule,
 		path+".name",
 		"module %q is absent from graph",
@@ -200,12 +203,13 @@ func (a *assigner) assignVersions() error {
 		a.assignVersion(i, name)
 	}
 
-	return a.issues.err()
+	return a.issues.Err()
 }
 
 // graphOrderError wraps graph ordering failures in versioning diagnostics.
 func graphOrderError(err error) *ValidationError {
 	return &ValidationError{
+		Scope: "versioning",
 		Issues: []Issue{
 			{
 				Code:    IssueGraphOrder,
@@ -221,12 +225,12 @@ func (a *assigner) assignVersion(index int, name manifest.ModuleName) {
 	path := fmt.Sprintf("publishOrder[%d]", index)
 	module, ok := a.request.Registry.ModuleByName(name)
 	if !ok {
-		a.issues.add(IssueUnknownModule, path, "module %q is absent from registry", name)
+		a.issues.Add(IssueUnknownModule, path, "module %q is absent from registry", name)
 		return
 	}
 
 	if module.Visibility() != manifest.VisibilityPublic {
-		a.issues.add(IssueInvalidRequest, path, "module %q is not public", name)
+		a.issues.Add(IssueInvalidRequest, path, "module %q is not public", name)
 		return
 	}
 
@@ -268,7 +272,7 @@ func (a *assigner) requirementForDependency(
 ) (Requirement, bool) {
 	depModule, ok := a.request.Registry.ModuleByName(dependency)
 	if !ok {
-		a.issues.add(
+		a.issues.Add(
 			IssueUnknownModule,
 			path,
 			"dependency %q is absent from registry",
@@ -278,7 +282,7 @@ func (a *assigner) requirementForDependency(
 	}
 
 	if depModule.Visibility() != manifest.VisibilityPublic {
-		a.issues.add(
+		a.issues.Add(
 			IssueNonPublishableDependency,
 			path,
 			"dependency %q is not publishable",
@@ -289,7 +293,7 @@ func (a *assigner) requirementForDependency(
 
 	assigned, ok := a.versions[dependency]
 	if !ok {
-		a.issues.add(
+		a.issues.Add(
 			IssueMissingAssignment,
 			path,
 			"dependency %q has no assigned version",

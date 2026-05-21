@@ -125,6 +125,7 @@ func (g Graph) dependencyCycleError() error {
 // explicit acyclicity checks.
 func dependencyCycleError(message string) *ValidationError {
 	return &ValidationError{
+		Scope: "graph",
 		Issues: []Issue{
 			{
 				Code:    IssueDependencyCycle,

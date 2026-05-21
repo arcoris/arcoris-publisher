@@ -34,7 +34,15 @@ func TestCloneBuildsCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Clone() error = %v", err)
 	}
-	assertStringSlice(t, runner.specs[0].Args, []string{"clone", "--no-tags", "--depth", "1", "--bare", "https://token@example/repo.git", "/dst"})
+	assertStringSlice(t, runner.specs[0].Args, []string{
+		"clone",
+		"--no-tags",
+		"--depth",
+		"1",
+		"--bare",
+		"https://token@example/repo.git",
+		"/dst",
+	})
 	assertStringSlice(t, runner.specs[0].SensitiveValues, []string{"token"})
 }
 

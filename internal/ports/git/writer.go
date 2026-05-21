@@ -27,7 +27,13 @@ type RepositoryWriter interface {
 	//
 	// startPoint may be a commit, tag, local branch, or remote-tracking ref as
 	// accepted by the adapter's Git implementation.
-	CreateBranch(ctx context.Context, repoDir string, branch BranchName, startPoint string, opts CreateBranchOptions) error
+	CreateBranch(
+		ctx context.Context,
+		repoDir string,
+		branch BranchName,
+		startPoint string,
+		opts CreateBranchOptions,
+	) error
 	// ResetHard resets repoDir to ref and discards tracked working tree changes.
 	//
 	// Because this is destructive, adapters should surface dirty worktree or

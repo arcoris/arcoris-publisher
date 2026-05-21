@@ -44,7 +44,7 @@ func TestValidationErrorFormatsIssues(t *testing.T) {
 }
 
 func TestEmptyValidationErrorString(t *testing.T) {
-	if (&ValidationError{}).Error() != "registry validation failed" {
+	if (&ValidationError{Scope: "registry"}).Error() != "registry validation failed" {
 		t.Fatal("unexpected empty validation error")
 	}
 }

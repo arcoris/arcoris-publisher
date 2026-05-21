@@ -25,11 +25,25 @@ func TestCreateAnnotatedTagBuildsCommand(t *testing.T) {
 	runner := &fakeRunner{}
 	client := New(runner, Options{})
 
-	err := client.CreateTag(context.Background(), "/repo", gitport.TagName("v1.0.0"), gitport.CommitHash("abc"), gitport.TagOptions{Annotated: true, Message: "release", Force: true})
+	err := client.CreateTag(
+		context.Background(),
+		"/repo",
+		gitport.TagName("v1.0.0"),
+		gitport.CommitHash("abc"),
+		gitport.TagOptions{Annotated: true, Message: "release", Force: true},
+	)
 	if err != nil {
 		t.Fatalf("CreateTag() error = %v", err)
 	}
-	assertStringSlice(t, runner.specs[0].Args, []string{"tag", "-f", "-a", "v1.0.0", "abc", "-m", "release"})
+	assertStringSlice(t, runner.specs[0].Args, []string{
+		"tag",
+		"-f",
+		"-a",
+		"v1.0.0",
+		"abc",
+		"-m",
+		"release",
+	})
 }
 
 func TestCreateTagArgsOmitsEmptyOptionalParts(t *testing.T) {

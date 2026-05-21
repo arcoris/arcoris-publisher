@@ -37,5 +37,17 @@ func TestTestBuildsCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Test() error = %v", err)
 	}
-	assertStringSlice(t, runner.specs[0].Args, []string{"test", "-race", "-count", "1", "-short", "-run", "TestOne", "-v", "-tags", "integration,linux", "./pkg"})
+	assertStringSlice(t, runner.specs[0].Args, []string{
+		"test",
+		"-race",
+		"-count",
+		"1",
+		"-short",
+		"-run",
+		"TestOne",
+		"-v",
+		"-tags",
+		"integration,linux",
+		"./pkg",
+	})
 }

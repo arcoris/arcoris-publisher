@@ -23,9 +23,10 @@ import (
 // validateModules rejects impossible duplicate indexes before Registry is
 // exposed to downstream packages.
 func validateModules(modules []resolved.PublicationModule) error {
-	var collector issueCollector
+	collector := newIssueCollector()
 
-	collector.checkDuplicates(
+	checkDuplicates(
+		&collector,
 		IssueDuplicateModuleName,
 		"modules[%d].name",
 		modules,
@@ -33,7 +34,8 @@ func validateModules(modules []resolved.PublicationModule) error {
 			return module.Name().String()
 		},
 	)
-	collector.checkDuplicates(
+	checkDuplicates(
+		&collector,
 		IssueDuplicateModulePath,
 		"modules[%d].module.path",
 		modules,
@@ -41,7 +43,8 @@ func validateModules(modules []resolved.PublicationModule) error {
 			return module.ModulePath().String()
 		},
 	)
-	collector.checkDuplicates(
+	checkDuplicates(
+		&collector,
 		IssueDuplicateSourceDir,
 		"modules[%d].sourceDir",
 		modules,
@@ -49,7 +52,8 @@ func validateModules(modules []resolved.PublicationModule) error {
 			return module.SourceDir().String()
 		},
 	)
-	collector.checkDuplicates(
+	checkDuplicates(
+		&collector,
 		IssueDuplicateRepository,
 		"modules[%d].repository",
 		modules,
@@ -61,7 +65,8 @@ func validateModules(modules []resolved.PublicationModule) error {
 	return collector.Err()
 }
 
-func (c *issueCollector) checkDuplicates(
+func checkDuplicates(
+	collector *issueCollector,
 	code IssueCode,
 	pathFormat string,
 	modules []resolved.PublicationModule,
@@ -71,7 +76,7 @@ func (c *issueCollector) checkDuplicates(
 	for i, module := range modules {
 		current := value(module)
 		if first, ok := seen[current]; ok {
-			c.Add(
+			collector.Add(
 				code,
 				fmt.Sprintf(pathFormat, i),
 				"duplicates modules[%d] value %q",
@@ -87,7 +92,7 @@ func (c *issueCollector) checkDuplicates(
 
 // invalidPublicationSet reports a registry input that is structurally unusable.
 func invalidPublicationSet(path string, format string, args ...any) error {
-	var collector issueCollector
+	collector := newIssueCollector()
 	collector.Add(IssueInvalidPublicationSet, path, format, args...)
 	return collector.Err()
 }

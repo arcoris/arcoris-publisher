@@ -39,11 +39,19 @@ func TestRepositoryMapsResponse(t *testing.T) {
 		}`)
 	})
 
-	repo, err := provider.Repository(context.Background(), remoteport.RepositoryRef{Owner: "arcoris", Name: "repo"})
+	repo, err := provider.Repository(
+		context.Background(),
+		remoteport.RepositoryRef{Owner: "arcoris", Name: "repo"},
+	)
 	if err != nil {
 		t.Fatalf("Repository() error = %v", err)
 	}
-	if repo.CloneURL == "" || repo.SSHURL == "" || repo.WebURL == "" || repo.DefaultBranch != "main" || !repo.Private || !repo.Permissions.CanWrite {
+	if repo.CloneURL == "" ||
+		repo.SSHURL == "" ||
+		repo.WebURL == "" ||
+		repo.DefaultBranch != "main" ||
+		!repo.Private ||
+		!repo.Permissions.CanWrite {
 		t.Fatalf("unexpected repository %#v", repo)
 	}
 }

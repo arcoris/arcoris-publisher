@@ -17,9 +17,16 @@ package gotoolchain
 import "testing"
 
 func TestParsePackages(t *testing.T) {
-	packages, err := parsePackages([]byte(`{"ImportPath":"example.com/a","Module":{"Path":"example.com/a","Replace":{"Path":"../a"}},"Imports":["fmt"],"TestImports":["testing"],"Deps":["errors"]}
+	input := []byte(`{
+  "ImportPath":"example.com/a",
+  "Module":{"Path":"example.com/a","Replace":{"Path":"../a"}},
+  "Imports":["fmt"],
+  "TestImports":["testing"],
+  "Deps":["errors"]
+}
 {"ImportPath":"example.com/b"}
-`))
+`)
+	packages, err := parsePackages(input)
 	if err != nil {
 		t.Fatalf("parsePackages() error = %v", err)
 	}

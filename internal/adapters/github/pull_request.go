@@ -21,10 +21,18 @@ import (
 )
 
 // CreatePullRequest creates a GitHub pull request and returns its public handle.
-func (p *Provider) CreatePullRequest(ctx context.Context, req remoteport.CreatePullRequestRequest) (remoteport.PullRequest, error) {
+func (p *Provider) CreatePullRequest(
+	ctx context.Context,
+	req remoteport.CreatePullRequestRequest,
+) (remoteport.PullRequest, error) {
 	var out pullRequestResponse
 	if err := p.do(ctx, "POST", repoPath(req.Repository)+"/pulls", newCreatePullRequestBody(req), &out); err != nil {
-		return remoteport.PullRequest{}, wrapRemoteOperationError(remoteport.CodePullRequestFailed, "github pull request creation failed", err, nil)
+		return remoteport.PullRequest{}, wrapRemoteOperationError(
+			remoteport.CodePullRequestFailed,
+			"github pull request creation failed",
+			err,
+			nil,
+		)
 	}
 	return out.toPort(), nil
 }

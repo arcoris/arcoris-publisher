@@ -27,7 +27,11 @@ import (
 // this endpoint. For publisher planning, treating that as "not protected" is the
 // least surprising behavior; actual write failures are still surfaced by Git or
 // later provider calls.
-func (p *Provider) BranchProtection(ctx context.Context, ref remoteport.RepositoryRef, branch string) (remoteport.BranchProtection, error) {
+func (p *Provider) BranchProtection(
+	ctx context.Context,
+	ref remoteport.RepositoryRef,
+	branch string,
+) (remoteport.BranchProtection, error) {
 	var out protectionResponse
 	err := p.do(ctx, "GET", repoPath(ref)+"/branches/"+url.PathEscape(branch)+"/protection", nil, &out)
 	if err != nil {

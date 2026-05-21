@@ -17,6 +17,7 @@ package source
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -298,6 +299,113 @@ func (fs *fakeFS) ReadFile(_ context.Context, path string) ([]byte, error) {
 	out := make([]byte, len(data))
 	copy(out, data)
 	return out, nil
+}
+
+// WriteFile stores a detached file payload for tests that require the full
+// filesystem port.
+func (fs *fakeFS) WriteFile(
+	_ context.Context,
+	path string,
+	data []byte,
+	opts portfs.WriteFileOptions,
+) error {
+	if fs.files[path] != nil && !opts.Overwrite {
+		return fmt.Errorf("file %s already exists", path)
+	}
+	if opts.CreateDirs {
+		fs.addParents(filepath.Dir(path))
+	}
+
+	out := make([]byte, len(data))
+	copy(out, data)
+	fs.files[path] = out
+	return nil
+}
+
+// MkdirAll records a directory and all missing parents.
+func (fs *fakeFS) MkdirAll(_ context.Context, path string, _ portfs.MkdirOptions) error {
+	fs.addParents(path)
+	return nil
+}
+
+// RemoveAll removes matching fake files and directories.
+func (fs *fakeFS) RemoveAll(_ context.Context, path string, _ portfs.RemoveOptions) error {
+	delete(fs.dirs, path)
+	delete(fs.files, path)
+	prefix := path + "/"
+	for dir := range fs.dirs {
+		if strings.HasPrefix(dir, prefix) {
+			delete(fs.dirs, dir)
+		}
+	}
+	for file := range fs.files {
+		if strings.HasPrefix(file, prefix) {
+			delete(fs.files, file)
+		}
+	}
+	return nil
+}
+
+// CleanDir removes fake directory contents while keeping the directory itself.
+func (fs *fakeFS) CleanDir(_ context.Context, dir string, _ portfs.CleanDirOptions) error {
+	if !fs.dirs[dir] {
+		return fmt.Errorf("dir %s not found", dir)
+	}
+	prefix := dir + "/"
+	for child := range fs.dirs {
+		if strings.HasPrefix(child, prefix) {
+			delete(fs.dirs, child)
+		}
+	}
+	for file := range fs.files {
+		if strings.HasPrefix(file, prefix) {
+			delete(fs.files, file)
+		}
+	}
+	return nil
+}
+
+// CopyTree mirrors fake files from src to dst.
+func (fs *fakeFS) CopyTree(
+	_ context.Context,
+	src string,
+	dst string,
+	_ portfs.CopyTreeOptions,
+) (portfs.CopyTreeResult, error) {
+	if !fs.dirs[src] {
+		return portfs.CopyTreeResult{}, fmt.Errorf("tree %s not found", src)
+	}
+
+	fs.addParents(dst)
+	result := portfs.CopyTreeResult{DirectoriesCopied: 1}
+	prefix := src + "/"
+	for path, data := range fs.files {
+		if !strings.HasPrefix(path, prefix) {
+			continue
+		}
+		rel := strings.TrimPrefix(path, prefix)
+		target := filepath.Join(dst, filepath.FromSlash(rel))
+		if err := fs.WriteFile(context.Background(), target, data, portfs.WriteFileOptions{
+			CreateDirs: true,
+			Overwrite:  true,
+		}); err != nil {
+			return portfs.CopyTreeResult{}, err
+		}
+		result.FilesCopied++
+		result.BytesCopied += int64(len(data))
+	}
+	return result, nil
+}
+
+// addParents registers path and its parents as directories.
+func (fs *fakeFS) addParents(path string) {
+	for path != "." && path != "/" && path != "" {
+		fs.dirs[path] = true
+		path = filepath.Dir(path)
+	}
+	if path == "/" {
+		fs.dirs[path] = true
+	}
 }
 
 // TreeHash returns a stable synthetic hash for files under root.

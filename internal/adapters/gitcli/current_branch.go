@@ -29,7 +29,12 @@ func (c *Client) CurrentBranch(ctx context.Context, repoDir string) (gitport.Bra
 	}
 	branch := trimOutput(result.Stdout)
 	if branch == "" {
-		return "", gitError(gitport.CodeRefNotFound, "git current branch lookup failed because HEAD is detached", nil, porterr.Details{"repo": repoDir})
+		return "", gitError(
+			gitport.CodeRefNotFound,
+			"git current branch lookup failed because HEAD is detached",
+			nil,
+			porterr.Details{"repo": repoDir},
+		)
 	}
 	return gitport.BranchName(branch), nil
 }

@@ -14,10 +14,7 @@
 
 package versioning
 
-import (
-	"fmt"
-	"strings"
-)
+import "arcoris.dev/arcoris-publisher/internal/diagnostic"
 
 // IssueCode is a stable machine-readable versioning issue code.
 type IssueCode string
@@ -41,76 +38,13 @@ const (
 )
 
 // Issue describes one version assignment problem.
-type Issue struct {
-	// Code is the stable machine-readable reason for the issue.
-	Code IssueCode
-
-	// Path identifies the request or derived graph location that failed.
-	Path string
-
-	// Message is the human-readable diagnostic text.
-	Message string
-}
-
-// Error returns a compact issue message.
-func (i Issue) Error() string {
-	if i.Path == "" {
-		return fmt.Sprintf("%s: %s", i.Code, i.Message)
-	}
-	return fmt.Sprintf("%s: %s: %s", i.Code, i.Path, i.Message)
-}
+type Issue = diagnostic.Issue[IssueCode]
 
 // ValidationError groups versioning issues while preserving deterministic order.
-type ValidationError struct {
-	// Issues contains all collected validation issues in deterministic order.
-	Issues []Issue
-}
+type ValidationError = diagnostic.ValidationError[IssueCode]
 
-// Error returns a compact summary of all versioning issues.
-func (e *ValidationError) Error() string {
-	if e == nil || len(e.Issues) == 0 {
-		return "versioning validation failed"
-	}
-	parts := make([]string, 0, len(e.Issues))
-	for _, issue := range e.Issues {
-		parts = append(parts, issue.Error())
-	}
-	return strings.Join(parts, "; ")
-}
+type issueCollector = diagnostic.Collector[IssueCode]
 
-// Has reports whether the error contains issue code.
-func (e *ValidationError) Has(code IssueCode) bool {
-	if e == nil {
-		return false
-	}
-	for _, issue := range e.Issues {
-		if issue.Code == code {
-			return true
-		}
-	}
-	return false
-}
-
-// Empty reports whether the validation error has no issues.
-func (e *ValidationError) Empty() bool { return e == nil || len(e.Issues) == 0 }
-
-type issueCollector struct {
-	// issues buffers validation issues before they are exposed as a detached
-	// ValidationError.
-	issues []Issue
-}
-
-// add records one formatted issue.
-func (c *issueCollector) add(code IssueCode, path string, format string, args ...any) {
-	c.issues = append(c.issues, Issue{Code: code, Path: path, Message: fmt.Sprintf(format, args...)})
-}
-
-// err returns nil for an empty collector or a detached ValidationError.
-func (c *issueCollector) err() error {
-	if len(c.issues) == 0 {
-		return nil
-	}
-	out := make([]Issue, len(c.issues))
-	copy(out, c.issues)
-	return &ValidationError{Issues: out}
+func newIssueCollector() issueCollector {
+	return diagnostic.NewCollector[IssueCode]("versioning")
 }

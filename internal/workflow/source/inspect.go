@@ -20,6 +20,7 @@ import (
 
 	"arcoris.dev/arcoris-publisher/internal/manifest"
 	portfs "arcoris.dev/arcoris-publisher/internal/ports/filesystem"
+	"arcoris.dev/arcoris-publisher/internal/workflow/pathutil"
 )
 
 // inspector owns the mutable state for one source inspection run.
@@ -76,14 +77,14 @@ func (i *inspector) inspect(ctx context.Context) (Snapshot, error) {
 	return Snapshot{
 		repository: repository,
 		modules:    modules,
-		warnings:   cloneIssues(i.warnings.issues),
+		warnings:   i.warnings.Issues(),
 	}, nil
 }
 
 // validateRequest normalizes user-provided roots and checks the filesystem
 // invariants needed before any Git or module inspection can be trusted.
 func (i *inspector) validateRequest(ctx context.Context) error {
-	var issues issueCollector
+	issues := newIssueCollector()
 
 	i.validatePlan(&issues)
 	repositoryDir := i.cleanRequestPath(&issues, "repositoryDir", i.request.RepositoryDir)
@@ -109,7 +110,7 @@ func (i *inspector) validateRequest(ctx context.Context) error {
 	)
 	i.validateStagingRoot(&issues, repositoryDir, stagingDir)
 
-	if err := issues.err(); err != nil {
+	if err := issues.Err(); err != nil {
 		return err
 	}
 
@@ -126,7 +127,7 @@ func (i *inspector) validatePlan(issues *issueCollector) {
 		return
 	}
 
-	issues.add(
+	issues.Add(
 		IssueInvalidRequest,
 		"",
 		"plan",
@@ -140,12 +141,12 @@ func (i *inspector) cleanRequestPath(
 	path string,
 	value string,
 ) string {
-	cleaned, err := cleanAbs(value)
+	cleaned, err := pathutil.CleanAbs(value)
 	if err == nil {
 		return cleaned
 	}
 
-	issues.addMessage(IssueInvalidRequest, "", path, err.Error())
+	issues.AddMessage(IssueInvalidRequest, "", path, err.Error())
 	return ""
 }
 
@@ -164,7 +165,7 @@ func (i *inspector) validateRootDir(
 	}
 
 	if err := i.checkDir(ctx, dir, missing, notDir, path, label); err != nil {
-		issues.append(validationIssues(err))
+		issues.Append(validationIssues(err))
 	}
 }
 
@@ -179,8 +180,8 @@ func (i *inspector) validateStagingRoot(
 		return
 	}
 
-	if err := ensureInside(repositoryDir, stagingDir); err != nil {
-		issues.add(
+	if err := pathutil.EnsureInside(repositoryDir, stagingDir); err != nil {
+		issues.Add(
 			IssueStagingOutsideRepo,
 			"",
 			"stagingDir",
@@ -305,7 +306,7 @@ func (i *inspector) enforceDirtyPolicy(repository RepositorySnapshot) error {
 			"source checkout is dirty",
 		)
 	case manifest.DirtyPolicyWarn:
-		i.warnings.add(
+		i.warnings.Add(
 			IssueDirtySource,
 			"",
 			"git.status",
@@ -329,19 +330,19 @@ func (i *inspector) enforceDirtyPolicy(repository RepositorySnapshot) error {
 func (i *inspector) inspectModules(ctx context.Context) ([]ModuleSnapshot, error) {
 	modules := i.request.Plan.Modules()
 	out := make([]ModuleSnapshot, 0, len(modules))
-	var issues issueCollector
+	issues := newIssueCollector()
 
 	for index, modulePlan := range modules {
 		module, moduleIssues := i.inspectModule(ctx, index, modulePlan)
 		if len(moduleIssues) > 0 {
-			issues.append(moduleIssues)
+			issues.Append(moduleIssues)
 			continue
 		}
 
 		out = append(out, module)
 	}
 
-	if err := issues.err(); err != nil {
+	if err := issues.Err(); err != nil {
 		return nil, err
 	}
 
@@ -360,10 +361,10 @@ func (i *inspector) inspectModule(
 	moduleDir := resolveModuleDir(i.stagingDir, modulePlan.SourceDir())
 	moduleRootDir := resolveModuleRootDir(moduleDir, modulePlan.ModuleRoot())
 
-	var issues issueCollector
+	issues := newIssueCollector()
 	i.validateModuleRoots(ctx, &issues, name, basePath, moduleDir, moduleRootDir)
-	if len(issues.issues) > 0 {
-		return ModuleSnapshot{}, issues.issues
+	if issues.Len() > 0 {
+		return ModuleSnapshot{}, issues.Issues()
 	}
 
 	entries, entryHashes := i.inspectEntries(
@@ -374,8 +375,8 @@ func (i *inspector) inspectModule(
 		moduleRootDir,
 		modulePlan.PublishEntries(),
 	)
-	if len(issues.issues) > 0 {
-		return ModuleSnapshot{}, issues.issues
+	if issues.Len() > 0 {
+		return ModuleSnapshot{}, issues.Issues()
 	}
 
 	return ModuleSnapshot{
@@ -397,12 +398,12 @@ func (i *inspector) validateModuleRoots(
 	moduleDir string,
 	moduleRootDir string,
 ) {
-	if err := ensureInside(i.stagingDir, moduleDir); err != nil {
-		issues.addMessage(IssueEntryPathEscape, name, basePath+".sourceDir", err.Error())
+	if err := pathutil.EnsureInside(i.stagingDir, moduleDir); err != nil {
+		issues.AddMessage(IssueEntryPathEscape, name, basePath+".sourceDir", err.Error())
 	}
 
-	if err := ensureInside(moduleDir, moduleRootDir); err != nil {
-		issues.addMessage(IssueEntryPathEscape, name, basePath+".moduleRoot", err.Error())
+	if err := pathutil.EnsureInside(moduleDir, moduleRootDir); err != nil {
+		issues.AddMessage(IssueEntryPathEscape, name, basePath+".moduleRoot", err.Error())
 	}
 
 	i.validateModuleDir(
@@ -440,7 +441,7 @@ func (i *inspector) validateModuleDir(
 	label string,
 ) {
 	if err := i.checkDir(ctx, dir, missing, notDir, path, label); err != nil {
-		issues.append(withModule(validationIssues(err), name))
+		issues.Append(withModule(validationIssues(err), name))
 	}
 }
 
@@ -461,7 +462,7 @@ func (i *inspector) inspectEntries(
 		path := fmt.Sprintf("%s.publish.entries[%d]", basePath, index)
 		entrySnapshot, entryIssues := i.inspectEntry(ctx, name, path, moduleRootDir, entry)
 		if len(entryIssues) > 0 {
-			issues.append(entryIssues)
+			issues.Append(entryIssues)
 			continue
 		}
 
@@ -492,7 +493,7 @@ func (i *inspector) inspectEntry(
 	entry manifest.PublishEntry,
 ) (EntrySnapshot, []Issue) {
 	sourcePath := resolveEntrySource(moduleRootDir, entry)
-	if err := ensureInside(moduleRootDir, sourcePath); err != nil {
+	if err := pathutil.EnsureInside(moduleRootDir, sourcePath); err != nil {
 		return EntrySnapshot{}, []Issue{entryIssue(
 			IssueEntryPathEscape,
 			module,

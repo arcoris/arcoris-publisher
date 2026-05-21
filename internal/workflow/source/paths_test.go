@@ -16,21 +16,6 @@ package source
 
 import "testing"
 
-func TestPathHelpersCleanAndValidateRoots(t *testing.T) {
-	if _, err := cleanAbs(" "); err == nil {
-		t.Fatal("cleanAbs(blank) error = nil")
-	}
-
-	if err := ensureInside("/repo", "/repo"); err != nil {
-		t.Fatalf("ensureInside(root, root) error = %v", err)
-	}
-
-	err := ensureInside("/repo", "/elsewhere")
-	if err == nil {
-		t.Fatal("ensureInside(escaped) error = nil")
-	}
-}
-
 func TestPathHelpersResolveManifestPaths(t *testing.T) {
 	moduleDir := resolveModuleDir("/repo/staging", "src/arcoris.dev/foundation")
 	if moduleDir != "/repo/staging/src/arcoris.dev/foundation" {

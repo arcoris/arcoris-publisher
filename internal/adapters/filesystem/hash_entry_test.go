@@ -46,7 +46,12 @@ func TestHashCollectorSymlinkPolicy(t *testing.T) {
 		t.Skipf("symlink unavailable: %v", err)
 	}
 	entry := readDirEntry(t, dir, "link")
-	collector := hashCollector{ctx: context.Background(), root: dir, opts: fsport.TreeHashOptions{IncludeSymlinks: true}, policy: fsport.SymlinkPreserve}
+	collector := hashCollector{
+		ctx:    context.Background(),
+		root:   dir,
+		opts:   fsport.TreeHashOptions{IncludeSymlinks: true},
+		policy: fsport.SymlinkPreserve,
+	}
 
 	item, include, err := collector.entry(link, entry, nil)
 	if err != nil || !include || item.kind != "symlink" || item.content != "file.txt" {

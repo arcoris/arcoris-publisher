@@ -33,7 +33,12 @@ func TestClassifyHTTP(t *testing.T) {
 		{name: "not found", status: http.StatusNotFound, want: remoteport.CodeRepositoryNotFound.String()},
 		{name: "unauthorized", status: http.StatusUnauthorized, want: remoteport.CodeAuthenticationFailed.String()},
 		{name: "forbidden", status: http.StatusForbidden, want: remoteport.CodeAccessDenied.String()},
-		{name: "rate limit 403", status: http.StatusForbidden, header: http.Header{"X-Ratelimit-Remaining": []string{"0"}}, want: remoteport.CodeRateLimited.String()},
+		{
+			name:   "rate limit 403",
+			status: http.StatusForbidden,
+			header: http.Header{"X-Ratelimit-Remaining": []string{"0"}},
+			want:   remoteport.CodeRateLimited.String(),
+		},
 		{name: "rate limit 429", status: http.StatusTooManyRequests, want: remoteport.CodeRateLimited.String()},
 		{name: "generic", status: http.StatusUnprocessableEntity, want: remoteport.CodeReleaseFailed.String()},
 	}

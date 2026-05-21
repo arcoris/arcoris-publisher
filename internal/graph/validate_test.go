@@ -109,7 +109,7 @@ func TestBuilderAddDependencyDefensiveErrors(t *testing.T) {
 	builder.addDependency("disabled", "foundation", "disabled")
 	builder.addDependency("absent", "foundation", "control")
 
-	err := builder.issues.err()
+	err := builder.issues.Err()
 	if err == nil {
 		t.Fatal("expected validation errors")
 	}

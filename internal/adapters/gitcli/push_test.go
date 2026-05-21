@@ -25,11 +25,23 @@ func TestPushBuildsCommand(t *testing.T) {
 	runner := &fakeRunner{}
 	client := New(runner, Options{})
 
-	err := client.Push(context.Background(), "/repo", "", gitport.RefSpec("main:main"), gitport.PushOptions{ForceWithLease: true, Atomic: true})
+	err := client.Push(
+		context.Background(),
+		"/repo",
+		"",
+		gitport.RefSpec("main:main"),
+		gitport.PushOptions{ForceWithLease: true, Atomic: true},
+	)
 	if err != nil {
 		t.Fatalf("Push() error = %v", err)
 	}
-	assertStringSlice(t, runner.specs[0].Args, []string{"push", "--force-with-lease", "--atomic", "origin", "main:main"})
+	assertStringSlice(t, runner.specs[0].Args, []string{
+		"push",
+		"--force-with-lease",
+		"--atomic",
+		"origin",
+		"main:main",
+	})
 }
 
 func TestPushArgsSupportsForce(t *testing.T) {

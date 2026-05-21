@@ -31,7 +31,11 @@ func TestProtectionResponseToPort(t *testing.T) {
 	}
 
 	protection := response.toPort()
-	if !protection.Protected || !protection.RequiresPullRequest || !protection.RequiresStatusChecks || !protection.AllowsForcePushes || protection.AllowsDeletions {
+	if !protection.Protected ||
+		!protection.RequiresPullRequest ||
+		!protection.RequiresStatusChecks ||
+		!protection.AllowsForcePushes ||
+		protection.AllowsDeletions {
 		t.Fatalf("toPort() = %#v", protection)
 	}
 }

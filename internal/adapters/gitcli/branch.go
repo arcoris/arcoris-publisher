@@ -21,7 +21,13 @@ import (
 )
 
 // CreateBranch runs git branch to create or update a local branch.
-func (c *Client) CreateBranch(ctx context.Context, repoDir string, branch gitport.BranchName, startPoint string, opts gitport.CreateBranchOptions) error {
+func (c *Client) CreateBranch(
+	ctx context.Context,
+	repoDir string,
+	branch gitport.BranchName,
+	startPoint string,
+	opts gitport.CreateBranchOptions,
+) error {
 	result, err := c.runner.Run(ctx, c.command(repoDir, createBranchArgs(branch, startPoint, opts), nil, true, true))
 	if err != nil {
 		return wrapGitCommandError("git branch creation failed", result, err)

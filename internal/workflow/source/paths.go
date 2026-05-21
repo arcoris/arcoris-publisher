@@ -15,44 +15,11 @@
 package source
 
 import (
-	"fmt"
 	"path/filepath"
-	"strings"
 
 	"arcoris.dev/arcoris-publisher/internal/manifest"
+	"arcoris.dev/arcoris-publisher/internal/workflow/pathutil"
 )
-
-// cleanAbs rejects empty input and returns a cleaned absolute path.
-func cleanAbs(path string) (string, error) {
-	if strings.TrimSpace(path) == "" {
-		return "", fmt.Errorf("path is required")
-	}
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Clean(abs), nil
-}
-
-// ensureInside rejects paths that escape root after filepath.Rel normalization.
-func ensureInside(root string, path string) error {
-	rel, err := filepath.Rel(root, path)
-	if err != nil {
-		return err
-	}
-	if rel == "." {
-		return nil
-	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("%q escapes root %q", path, root)
-	}
-	return nil
-}
-
-// joinRelative joins manifest slash-separated relative paths to a platform path.
-func joinRelative(root string, rel fmt.Stringer) string {
-	return filepath.Clean(filepath.Join(root, filepath.FromSlash(rel.String())))
-}
 
 // resolveModuleDir resolves a module SourceDir under the staging root.
 func resolveModuleDir(stagingDir string, sourceDir manifest.SourceDir) string {
@@ -61,10 +28,10 @@ func resolveModuleDir(stagingDir string, sourceDir manifest.SourceDir) string {
 
 // resolveModuleRootDir resolves a module root under the module source dir.
 func resolveModuleRootDir(moduleDir string, moduleRoot manifest.RelativePath) string {
-	return joinRelative(moduleDir, moduleRoot)
+	return pathutil.JoinRelative(moduleDir, moduleRoot)
 }
 
 // resolveEntrySource resolves one explicit publish entry source path.
 func resolveEntrySource(moduleRootDir string, entry manifest.PublishEntry) string {
-	return joinRelative(moduleRootDir, entry.From())
+	return pathutil.JoinRelative(moduleRootDir, entry.From())
 }
