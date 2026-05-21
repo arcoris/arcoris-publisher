@@ -32,7 +32,9 @@ func TestNewBuildsValidatedModuleManifest(t *testing.T) {
 	if m.Metadata().Name() != "control" {
 		t.Fatalf("unexpected metadata: %#v", m.Metadata())
 	}
-	if m.Module().Type() != manifest.ModuleTypeGo || m.Module().Root().String() != "." || m.Module().GoMod().String() != "go.mod" {
+	if m.Module().Type() != manifest.ModuleTypeGo ||
+		m.Module().Root().String() != "." ||
+		m.Module().GoMod().String() != "go.mod" {
 		t.Fatalf("unexpected module identity defaults")
 	}
 	if len(m.Dependencies().Internal()) != 1 || len(m.Publish().Entries()) != 2 {

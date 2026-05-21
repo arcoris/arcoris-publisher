@@ -20,11 +20,15 @@ import (
 	"arcoris.dev/arcoris-publisher/internal/manifest"
 )
 
+type bm = manifest.BranchMappingSpec
+type mm = ModuleManifestDefaultsSpec
+type vs = manifest.VerificationSpec
+
 // DefaultsSpec is the raw top-level defaults declaration from arcpub.yaml.
 type DefaultsSpec struct {
-	Branches       []manifest.BranchMappingSpec `json:"branches,omitempty" yaml:"branches,omitempty"`
-	ModuleManifest ModuleManifestDefaultsSpec   `json:"moduleManifest,omitempty" yaml:"moduleManifest,omitempty"`
-	Verification   manifest.VerificationSpec    `json:"verification,omitempty" yaml:"verification,omitempty"`
+	Branches       []bm `json:"branches,omitempty" yaml:"branches,omitempty"`
+	ModuleManifest mm   `json:"moduleManifest,omitempty" yaml:"moduleManifest,omitempty"`
+	Verification   vs   `json:"verification,omitempty" yaml:"verification,omitempty"`
 }
 
 // Defaults is the validated top-level defaults declaration.
@@ -38,23 +42,33 @@ type Defaults struct {
 // NewDefaults validates spec and returns Defaults.
 func NewDefaults(spec DefaultsSpec) (Defaults, error) {
 	var collector manifest.IssueCollector
+
 	branches := make([]manifest.BranchMapping, 0, len(spec.Branches))
 	for i, branchSpec := range spec.Branches {
 		branch, err := manifest.NewBranchMapping(branchSpec)
 		if err != nil {
-			collector.AddError(fmt.Sprintf("defaults.branches[%d]", i), err)
+			collector.AddError(fmt.Sprintf("branches[%d]", i), err)
 			continue
 		}
 		branches = append(branches, branch)
 	}
+
 	moduleDefaults, err := NewModuleManifestDefaults(spec.ModuleManifest)
-	collector.AddError("defaults.moduleManifest", err)
+	collector.AddError("moduleManifest", err)
+
 	verification, err := manifest.NewVerificationOverride(spec.Verification)
-	collector.AddError("defaults.verification", err)
+	collector.AddError("verification", err)
+
 	if err := collector.Err(); err != nil {
 		return Defaults{}, err
 	}
-	return Defaults{branches: branches, branchesSet: spec.Branches != nil, moduleManifest: moduleDefaults, verification: verification}, nil
+
+	return Defaults{
+		branches:       branches,
+		branchesSet:    spec.Branches != nil,
+		moduleManifest: moduleDefaults,
+		verification:   verification,
+	}, nil
 }
 
 // Branches returns detached default branch mappings.

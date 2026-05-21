@@ -14,6 +14,35 @@
 
 package manifest_test
 
+import (
+	"errors"
+	"testing"
+
+	"arcoris.dev/arcoris-publisher/internal/manifest"
+)
+
 func stringPtr(value string) *string { return &value }
 
 func boolPtr(value bool) *bool { return &value }
+
+func requireValidationIssuePaths(t *testing.T, err error, want ...string) {
+	t.Helper()
+
+	var validation *manifest.ValidationError
+	if !errors.As(err, &validation) {
+		t.Fatalf("expected ValidationError, got %T: %v", err, err)
+	}
+	if len(validation.Issues) != len(want) {
+		t.Fatalf(
+			"unexpected issue count: got %d want %d: %#v",
+			len(validation.Issues),
+			len(want),
+			validation.Issues,
+		)
+	}
+	for i, issue := range validation.Issues {
+		if issue.Path != want[i] {
+			t.Fatalf("unexpected issue path at %d: got %q want %q", i, issue.Path, want[i])
+		}
+	}
+}

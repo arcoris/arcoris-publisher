@@ -30,10 +30,19 @@ type ModuleManifestDefaults struct {
 
 // NewModuleManifestDefaults validates spec and applies safe defaults.
 func NewModuleManifestDefaults(spec ModuleManifestDefaultsSpec) (ModuleManifestDefaults, error) {
-	path, err := manifest.ParseRelativePath("moduleManifest.path", stringOrDefault(spec.Path, "arcpub.module.yaml"), false)
-	if err != nil {
+	var collector manifest.IssueCollector
+
+	path, err := manifest.ParseRelativePath(
+		"moduleManifest.path",
+		stringOrDefault(spec.Path, "arcpub.module.yaml"),
+		false,
+	)
+	collector.AddError("path", err)
+
+	if err := collector.Err(); err != nil {
 		return ModuleManifestDefaults{}, err
 	}
+
 	return ModuleManifestDefaults{path: path, required: boolOrDefault(spec.Required, true)}, nil
 }
 

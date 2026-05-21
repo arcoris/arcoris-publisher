@@ -33,11 +33,18 @@ type Publish struct {
 // NewPublish validates spec and returns Publish.
 func NewPublish(spec PublishSpec) (Publish, error) {
 	var collector manifest.IssueCollector
+
 	if len(spec.Entries) == 0 {
-		collector.Add(manifest.IssueMissingField, "entries", "at least one explicit publish entry is required")
+		collector.Add(
+			manifest.IssueMissingField,
+			"entries",
+			"at least one explicit publish entry is required",
+		)
 	}
+
 	entries := make([]manifest.PublishEntry, 0, len(spec.Entries))
 	targets := make(map[manifest.RelativePath]int, len(spec.Entries))
+
 	for i, entrySpec := range spec.Entries {
 		entry, err := manifest.NewPublishEntry(entrySpec)
 		if err != nil {
@@ -45,17 +52,27 @@ func NewPublish(spec PublishSpec) (Publish, error) {
 			continue
 		}
 		if prev, exists := targets[entry.To()]; exists {
-			collector.Add(manifest.IssueDuplicateValue, fmt.Sprintf("entries[%d].to", i), "duplicate target path %q previously declared at entries[%d]", entry.To(), prev)
+			collector.Add(
+				manifest.IssueDuplicateValue,
+				fmt.Sprintf("entries[%d].to", i),
+				"duplicate target path %q previously declared at entries[%d]",
+				entry.To(),
+				prev,
+			)
 			continue
 		}
 		targets[entry.To()] = i
 		entries = append(entries, entry)
 	}
+
 	if err := collector.Err(); err != nil {
 		return Publish{}, err
 	}
+
 	return Publish{entries: entries}, nil
 }
 
 // Entries returns detached explicit publication entries.
-func (p Publish) Entries() []manifest.PublishEntry { return manifest.ClonePublishEntries(p.entries) }
+func (p Publish) Entries() []manifest.PublishEntry {
+	return manifest.ClonePublishEntries(p.entries)
+}

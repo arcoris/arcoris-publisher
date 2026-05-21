@@ -21,20 +21,38 @@ import (
 )
 
 func TestPublicationModuleCollectionAccessorsAreDetached(t *testing.T) {
-	set := resolvePublicationSet(t, stagingManifest(t, baseStagingSpec()), standardModules(t)...)
+	set := resolvePublicationSet(
+		t,
+		stagingManifest(t, baseStagingSpec()),
+		standardModules(t)...,
+	)
 	control := set.Modules()[1]
+
 	branches := control.Branches()
-	branches[0], _ = manifest.NewBranchMapping(manifest.BranchMappingSpec{Source: "dev", Target: "dev"})
+	branches[0], _ = manifest.NewBranchMapping(
+		manifest.BranchMappingSpec{
+			Source: "dev",
+			Target: "dev",
+		},
+	)
 	if control.Branches()[0].Source() == "dev" {
 		t.Fatalf("Branches accessor leaked internal slice")
 	}
+
 	deps := control.Dependencies()
 	deps[0] = "mutated"
 	if control.Dependencies()[0] == "mutated" {
 		t.Fatalf("Dependencies accessor leaked internal slice")
 	}
+
 	entries := control.PublishEntries()
-	entries[0], _ = manifest.NewPublishEntry(manifest.PublishEntrySpec{Type: "file", From: "README.md", To: "README.md"})
+	entries[0], _ = manifest.NewPublishEntry(
+		manifest.PublishEntrySpec{
+			Type: "file",
+			From: "README.md",
+			To:   "README.md",
+		},
+	)
 	if control.PublishEntries()[0].From() == "README.md" {
 		t.Fatalf("PublishEntries accessor leaked internal slice")
 	}

@@ -38,10 +38,15 @@ type TagPolicy struct {
 
 // NewTagPolicy validates spec and applies built-in tag defaults.
 func NewTagPolicy(spec TagPolicySpec) (TagPolicy, error) {
+	var collector IssueCollector
+
 	mode, err := ParseTagMode(stringValue(spec.Mode, string(TagModeSemver)))
-	if err != nil {
+	collector.AddError("mode", err)
+
+	if err := collector.Err(); err != nil {
 		return TagPolicy{}, err
 	}
+
 	return TagPolicy{enabled: boolValue(spec.Enabled, true), mode: mode}, nil
 }
 

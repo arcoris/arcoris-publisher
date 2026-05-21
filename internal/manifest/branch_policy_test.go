@@ -17,7 +17,17 @@ package manifest
 import "testing"
 
 func TestHasRejectedBranchShapeRejectsGitRefSyntaxHazards(t *testing.T) {
-	for _, value := range []string{"main?bad", "feature..main", "feature//main", "main.lock", "main@{upstream}", "/main", "main/", "main.", "."} {
+	for _, value := range []string{
+		"main?bad",
+		"feature..main",
+		"feature//main",
+		"main.lock",
+		"main@{upstream}",
+		"/main",
+		"main/",
+		"main.",
+		".",
+	} {
 		if !hasRejectedBranchShape(value) {
 			t.Fatalf("hasRejectedBranchShape(%q) = false", value)
 		}

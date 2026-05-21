@@ -46,12 +46,16 @@ type Module struct {
 // NewModule validates one top-level module routing declaration.
 func NewModule(spec ModuleSpec) (Module, error) {
 	var collector manifest.IssueCollector
+
 	name, err := manifest.ParseModuleName(spec.Name)
 	collector.AddError("name", err)
+
 	sourceDir, err := manifest.ParseSourceDir(spec.SourceDir)
 	collector.AddError("sourceDir", err)
+
 	repository, err := manifest.ParseRepositoryRef(spec.Repository)
 	collector.AddError("repository", err)
+
 	var manifestPath manifest.RelativePath
 	manifestSet := false
 	if spec.Manifest != nil {
@@ -59,6 +63,7 @@ func NewModule(spec ModuleSpec) (Module, error) {
 		manifestPath, err = manifest.ParseRelativePath("manifest", *spec.Manifest, false)
 		collector.AddError("manifest", err)
 	}
+
 	var visibility manifest.Visibility
 	visibilitySet := false
 	if spec.Visibility != nil {
@@ -66,6 +71,7 @@ func NewModule(spec ModuleSpec) (Module, error) {
 		visibility, err = manifest.ParseVisibility(*spec.Visibility)
 		collector.AddError("visibility", err)
 	}
+
 	branches := make([]manifest.BranchMapping, 0, len(spec.Branches))
 	for i, branchSpec := range spec.Branches {
 		branch, err := manifest.NewBranchMapping(branchSpec)
@@ -75,10 +81,22 @@ func NewModule(spec ModuleSpec) (Module, error) {
 		}
 		branches = append(branches, branch)
 	}
+
 	if err := collector.Err(); err != nil {
 		return Module{}, err
 	}
-	return Module{name: name, sourceDir: sourceDir, manifestPath: manifestPath, manifestSet: manifestSet, repository: repository, visibility: visibility, visibilitySet: visibilitySet, branches: branches, branchesSet: spec.Branches != nil}, nil
+
+	return Module{
+		name:          name,
+		sourceDir:     sourceDir,
+		manifestPath:  manifestPath,
+		manifestSet:   manifestSet,
+		repository:    repository,
+		visibility:    visibility,
+		visibilitySet: visibilitySet,
+		branches:      branches,
+		branchesSet:   spec.Branches != nil,
+	}, nil
 }
 
 // Name returns the top-level module name.

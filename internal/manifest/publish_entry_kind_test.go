@@ -21,7 +21,10 @@ import (
 )
 
 func TestParsePublishEntryKindAcceptsKnownKinds(t *testing.T) {
-	for _, want := range []manifest.PublishEntryKind{manifest.PublishEntryFile, manifest.PublishEntryDirectory} {
+	for _, want := range []manifest.PublishEntryKind{
+		manifest.PublishEntryFile,
+		manifest.PublishEntryDirectory,
+	} {
 		got, err := manifest.ParsePublishEntryKind(string(want))
 		if err != nil {
 			t.Fatalf("ParsePublishEntryKind(%q) returned error: %v", want, err)

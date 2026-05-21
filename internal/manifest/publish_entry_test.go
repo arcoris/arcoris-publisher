@@ -21,7 +21,11 @@ import (
 )
 
 func TestNewPublishEntryAppliesDirectoryDefaults(t *testing.T) {
-	entry, err := manifest.NewPublishEntry(manifest.PublishEntrySpec{Type: "directory", From: "runtime", To: "runtime"})
+	entry, err := manifest.NewPublishEntry(manifest.PublishEntrySpec{
+		Type: "directory",
+		From: "runtime",
+		To:   "runtime",
+	})
 	if err != nil {
 		t.Fatalf("NewPublishEntry returned error: %v", err)
 	}
@@ -64,4 +68,14 @@ func TestNewPublishEntryRejectsInvalidEntries(t *testing.T) {
 			t.Fatalf("NewPublishEntry(%#v) returned nil error", spec)
 		}
 	}
+}
+
+func TestNewPublishEntryCollectsInvalidFields(t *testing.T) {
+	_, err := manifest.NewPublishEntry(manifest.PublishEntrySpec{
+		Type: "symlink",
+		From: "../go.mod",
+		To:   "/go.mod",
+	})
+
+	requireValidationIssuePaths(t, err, "type", "from", "to")
 }

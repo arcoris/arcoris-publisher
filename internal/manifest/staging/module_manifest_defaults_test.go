@@ -31,7 +31,12 @@ func TestNewModuleManifestDefaultsAppliesBuiltInDefaults(t *testing.T) {
 }
 
 func TestNewModuleManifestDefaultsAcceptsExplicitValues(t *testing.T) {
-	defaults, err := staging.NewModuleManifestDefaults(staging.ModuleManifestDefaultsSpec{Path: stringPtr("publisher.yaml"), Required: boolPtr(false)})
+	defaults, err := staging.NewModuleManifestDefaults(
+		staging.ModuleManifestDefaultsSpec{
+			Path:     stringPtr("publisher.yaml"),
+			Required: boolPtr(false),
+		},
+	)
 	if err != nil {
 		t.Fatalf("NewModuleManifestDefaults returned error: %v", err)
 	}
@@ -41,7 +46,11 @@ func TestNewModuleManifestDefaultsAcceptsExplicitValues(t *testing.T) {
 }
 
 func TestNewModuleManifestDefaultsRejectsUnsafePath(t *testing.T) {
-	if _, err := staging.NewModuleManifestDefaults(staging.ModuleManifestDefaultsSpec{Path: stringPtr("../publisher.yaml")}); err == nil {
+	if _, err := staging.NewModuleManifestDefaults(
+		staging.ModuleManifestDefaultsSpec{
+			Path: stringPtr("../publisher.yaml"),
+		},
+	); err == nil {
 		t.Fatalf("expected invalid module manifest path")
 	}
 }

@@ -59,7 +59,12 @@ func moduleManifestSpec(name string, path string, deps []string) modulemanifest.
 	}
 }
 
-func moduleManifest(t *testing.T, name string, path string, deps []string) modulemanifest.Manifest {
+func moduleManifest(
+	t *testing.T,
+	name string,
+	path string,
+	deps []string,
+) modulemanifest.Manifest {
 	t.Helper()
 	m, err := modulemanifest.New(moduleManifestSpec(name, path, deps))
 	if err != nil {
@@ -68,9 +73,16 @@ func moduleManifest(t *testing.T, name string, path string, deps []string) modul
 	return m
 }
 
-func resolvePublicationSet(t *testing.T, stg staging.Manifest, modules ...modulemanifest.Manifest) resolved.PublicationSet {
+func resolvePublicationSet(
+	t *testing.T,
+	stg staging.Manifest,
+	modules ...modulemanifest.Manifest,
+) resolved.PublicationSet {
 	t.Helper()
-	set, err := resolved.Resolve(resolved.ResolveInput{Staging: stg, Modules: modules})
+	set, err := resolved.Resolve(resolved.ResolveInput{
+		Staging: stg,
+		Modules: modules,
+	})
 	if err != nil {
 		t.Fatalf("Resolve returned error: %v", err)
 	}

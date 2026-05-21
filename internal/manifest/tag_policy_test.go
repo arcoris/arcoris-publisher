@@ -44,7 +44,11 @@ func TestParseTagModeAcceptsSemverAndRejectsUnknownModes(t *testing.T) {
 }
 
 func TestNewTagPolicyRejectsInvalidMode(t *testing.T) {
-	if _, err := manifest.NewTagPolicy(manifest.TagPolicySpec{Mode: stringPtr("calendar")}); err == nil {
+	if _, err := manifest.NewTagPolicy(
+		manifest.TagPolicySpec{
+			Mode: stringPtr("calendar"),
+		},
+	); err == nil {
 		t.Fatalf("expected invalid tag policy error")
 	}
 }

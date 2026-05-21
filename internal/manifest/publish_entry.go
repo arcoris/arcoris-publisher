@@ -14,8 +14,6 @@
 
 package manifest
 
-import "fmt"
-
 // PublishEntrySpec is the raw explicit file or directory publication entry.
 type PublishEntrySpec struct {
 	Type      string `json:"type" yaml:"type"`
@@ -36,23 +34,33 @@ type PublishEntry struct {
 
 // NewPublishEntry validates a raw explicit publication entry.
 func NewPublishEntry(spec PublishEntrySpec) (PublishEntry, error) {
+	var collector IssueCollector
+
 	kind, err := ParsePublishEntryKind(spec.Type)
-	if err != nil {
-		return PublishEntry{}, err
-	}
+	collector.AddError("type", err)
+
 	from, err := ParseRelativePath("entry.from", spec.From, false)
-	if err != nil {
-		return PublishEntry{}, err
-	}
+	collector.AddError("from", err)
+
 	to, err := ParseRelativePath("entry.to", spec.To, true)
-	if err != nil {
+	collector.AddError("to", err)
+
+	recursiveDefault := kind == PublishEntryDirectory
+	entry := PublishEntry{
+		kind:      kind,
+		from:      from,
+		to:        to,
+		optional:  boolValue(spec.Optional, false),
+		recursive: boolValue(spec.Recursive, recursiveDefault),
+	}
+	if kind == PublishEntryFile && entry.recursive {
+		collector.Add(IssueInvalidValue, "recursive", "file entry must not be recursive")
+	}
+
+	if err := collector.Err(); err != nil {
 		return PublishEntry{}, err
 	}
-	recursiveDefault := kind == PublishEntryDirectory
-	entry := PublishEntry{kind: kind, from: from, to: to, optional: boolValue(spec.Optional, false), recursive: boolValue(spec.Recursive, recursiveDefault)}
-	if kind == PublishEntryFile && entry.recursive {
-		return PublishEntry{}, fmt.Errorf("file entry must not be recursive")
-	}
+
 	return entry, nil
 }
 
@@ -75,5 +83,11 @@ func (e PublishEntry) Recursive() bool { return e.recursive }
 func (e PublishEntry) Spec() PublishEntrySpec {
 	optional := e.optional
 	recursive := e.recursive
-	return PublishEntrySpec{Type: string(e.kind), From: string(e.from), To: string(e.to), Optional: &optional, Recursive: &recursive}
+	return PublishEntrySpec{
+		Type:      string(e.kind),
+		From:      string(e.from),
+		To:        string(e.to),
+		Optional:  &optional,
+		Recursive: &recursive,
+	}
 }

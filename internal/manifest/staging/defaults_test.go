@@ -24,16 +24,28 @@ import (
 func TestNewDefaultsAppliesOptionalBranchesAndVerification(t *testing.T) {
 	localPolicy := string(manifest.LocalReplacePolicyWarn)
 	defaults, err := staging.NewDefaults(staging.DefaultsSpec{
-		Branches:     []manifest.BranchMappingSpec{{Source: "main", Target: "release"}},
-		Verification: manifest.VerificationSpec{LocalReplacePolicy: &localPolicy},
+		Branches: []manifest.BranchMappingSpec{
+			{
+				Source: "main",
+				Target: "release",
+			},
+		},
+		Verification: manifest.VerificationSpec{
+			LocalReplacePolicy: &localPolicy,
+		},
 	})
 	if err != nil {
 		t.Fatalf("NewDefaults returned error: %v", err)
 	}
-	if !defaults.BranchesSet() || len(defaults.Branches()) != 1 || defaults.Branches()[0].Target() != "release" {
+	if !defaults.BranchesSet() ||
+		len(defaults.Branches()) != 1 ||
+		defaults.Branches()[0].Target() != "release" {
 		t.Fatalf("unexpected branches default")
 	}
-	merged := manifest.MergeVerification(manifest.BuiltInVerificationPolicy(), defaults.Verification())
+	merged := manifest.MergeVerification(
+		manifest.BuiltInVerificationPolicy(),
+		defaults.Verification(),
+	)
 	if merged.LocalReplacePolicy() != manifest.LocalReplacePolicyWarn {
 		t.Fatalf("verification override was not applied")
 	}
@@ -47,7 +59,9 @@ func TestNewDefaultsDistinguishesAbsentAndEmptyBranches(t *testing.T) {
 	if defaults.BranchesSet() || len(defaults.Branches()) != 0 {
 		t.Fatalf("absent branches should not be marked set")
 	}
-	defaults, err = staging.NewDefaults(staging.DefaultsSpec{Branches: []manifest.BranchMappingSpec{}})
+	defaults, err = staging.NewDefaults(staging.DefaultsSpec{
+		Branches: []manifest.BranchMappingSpec{},
+	})
 	if err != nil {
 		t.Fatalf("NewDefaults returned error: %v", err)
 	}
@@ -57,12 +71,24 @@ func TestNewDefaultsDistinguishesAbsentAndEmptyBranches(t *testing.T) {
 }
 
 func TestDefaultsBranchesReturnsDetachedSlice(t *testing.T) {
-	defaults, err := staging.NewDefaults(staging.DefaultsSpec{Branches: []manifest.BranchMappingSpec{{Source: "main", Target: "release"}}})
+	defaults, err := staging.NewDefaults(staging.DefaultsSpec{
+		Branches: []manifest.BranchMappingSpec{
+			{
+				Source: "main",
+				Target: "release",
+			},
+		},
+	})
 	if err != nil {
 		t.Fatalf("NewDefaults returned error: %v", err)
 	}
 	branches := defaults.Branches()
-	branches[0], _ = manifest.NewBranchMapping(manifest.BranchMappingSpec{Source: "dev", Target: "dev"})
+	branches[0], _ = manifest.NewBranchMapping(
+		manifest.BranchMappingSpec{
+			Source: "dev",
+			Target: "dev",
+		},
+	)
 	if defaults.Branches()[0].Source() != "main" {
 		t.Fatalf("Branches accessor leaked internal slice")
 	}

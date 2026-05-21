@@ -34,27 +34,38 @@ type PublishPolicy struct {
 
 // NewPublishPolicy validates spec and applies safe built-in publication defaults.
 func NewPublishPolicy(spec PublishSpec) (PublishPolicy, error) {
+	var collector IssueCollector
+
 	mode, err := ParsePublishMode(stringValue(spec.Mode, string(PublishModeExplicitProjection)))
-	if err != nil {
-		return PublishPolicy{}, err
-	}
-	versionPolicy, err := ParseVersionPolicy(stringValue(spec.VersionPolicy, string(VersionPolicyReleaseTrain)))
-	if err != nil {
-		return PublishPolicy{}, err
-	}
-	pushPolicy, err := ParsePushPolicy(stringValue(spec.PushPolicy, string(PushPolicyFastForwardOnly)))
-	if err != nil {
-		return PublishPolicy{}, err
-	}
+	collector.AddError("mode", err)
+
+	versionPolicy, err := ParseVersionPolicy(
+		stringValue(spec.VersionPolicy, string(VersionPolicyReleaseTrain)),
+	)
+	collector.AddError("versionPolicy", err)
+
+	pushPolicy, err := ParsePushPolicy(
+		stringValue(spec.PushPolicy, string(PushPolicyFastForwardOnly)),
+	)
+	collector.AddError("pushPolicy", err)
+
 	tags, err := NewTagPolicy(spec.Tags)
-	if err != nil {
-		return PublishPolicy{}, err
-	}
+	collector.AddError("tags", err)
+
 	provenance, err := NewProvenancePolicy(spec.Provenance)
-	if err != nil {
+	collector.AddError("provenance", err)
+
+	if err := collector.Err(); err != nil {
 		return PublishPolicy{}, err
 	}
-	return PublishPolicy{mode: mode, versionPolicy: versionPolicy, pushPolicy: pushPolicy, tags: tags, provenance: provenance}, nil
+
+	return PublishPolicy{
+		mode:          mode,
+		versionPolicy: versionPolicy,
+		pushPolicy:    pushPolicy,
+		tags:          tags,
+		provenance:    provenance,
+	}, nil
 }
 
 // Mode returns the publication construction mode.

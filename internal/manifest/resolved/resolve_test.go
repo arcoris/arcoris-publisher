@@ -23,15 +23,26 @@ import (
 
 func TestResolveBuildsPublicationSet(t *testing.T) {
 	spec := baseStagingSpec()
-	spec.Defaults.Branches = []manifest.BranchMappingSpec{{Source: "main", Target: "main"}}
-	set, err := resolved.Resolve(resolved.ResolveInput{Staging: stagingManifest(t, spec), Modules: standardModules(t)})
+	spec.Defaults.Branches = []manifest.BranchMappingSpec{
+		{
+			Source: "main",
+			Target: "main",
+		},
+	}
+
+	set, err := resolved.Resolve(resolved.ResolveInput{
+		Staging: stagingManifest(t, spec),
+		Modules: standardModules(t),
+	})
 	if err != nil {
 		t.Fatalf("Resolve returned error: %v", err)
 	}
+
 	mods := set.Modules()
 	if len(mods) != 2 {
 		t.Fatalf("expected two modules, got %d", len(mods))
 	}
+
 	control := mods[1]
 	if control.Name() != "control" || control.ModulePath() != "arcoris.dev/control" {
 		t.Fatalf("unexpected control module: %#v", control)
@@ -42,7 +53,10 @@ func TestResolveBuildsPublicationSet(t *testing.T) {
 }
 
 func TestResolveWithTraceRecordsValueSources(t *testing.T) {
-	result, err := resolved.ResolveWithTrace(resolved.ResolveInput{Staging: stagingManifest(t, baseStagingSpec()), Modules: standardModules(t)})
+	result, err := resolved.ResolveWithTrace(resolved.ResolveInput{
+		Staging: stagingManifest(t, baseStagingSpec()),
+		Modules: standardModules(t),
+	})
 	if err != nil {
 		t.Fatalf("ResolveWithTrace returned error: %v", err)
 	}

@@ -32,7 +32,10 @@ func TestNewProvenancePolicyAppliesDefaults(t *testing.T) {
 
 func TestNewProvenancePolicyAcceptsFileAndExplicitTrailers(t *testing.T) {
 	file := ".arcpub/provenance.json"
-	policy, err := manifest.NewProvenancePolicy(manifest.ProvenanceSpec{CommitTrailers: boolPtr(false), File: &file})
+	policy, err := manifest.NewProvenancePolicy(manifest.ProvenanceSpec{
+		CommitTrailers: boolPtr(false),
+		File:           &file,
+	})
 	if err != nil {
 		t.Fatalf("NewProvenancePolicy returned error: %v", err)
 	}

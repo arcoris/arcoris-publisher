@@ -22,10 +22,12 @@ import (
 )
 
 func TestNewPublishAcceptsUniqueEntries(t *testing.T) {
-	publish, err := modulemanifest.NewPublish(modulemanifest.PublishSpec{Entries: []manifest.PublishEntrySpec{
-		{Type: "file", From: "go.mod", To: "go.mod"},
-		{Type: "directory", From: "runtime", To: "runtime"},
-	}})
+	publish, err := modulemanifest.NewPublish(modulemanifest.PublishSpec{
+		Entries: []manifest.PublishEntrySpec{
+			{Type: "file", From: "go.mod", To: "go.mod"},
+			{Type: "directory", From: "runtime", To: "runtime"},
+		},
+	})
 	if err != nil {
 		t.Fatalf("NewPublish returned error: %v", err)
 	}
@@ -37,7 +39,11 @@ func TestNewPublishAcceptsUniqueEntries(t *testing.T) {
 func TestNewPublishRejectsEmptyInvalidAndDuplicateEntries(t *testing.T) {
 	for _, spec := range []modulemanifest.PublishSpec{
 		{},
-		{Entries: []manifest.PublishEntrySpec{{Type: "bad", From: "go.mod", To: "go.mod"}}},
+		{
+			Entries: []manifest.PublishEntrySpec{
+				{Type: "bad", From: "go.mod", To: "go.mod"},
+			},
+		},
 		{Entries: []manifest.PublishEntrySpec{
 			{Type: "file", From: "go.mod", To: "go.mod"},
 			{Type: "file", From: "other.mod", To: "go.mod"},
@@ -50,12 +56,22 @@ func TestNewPublishRejectsEmptyInvalidAndDuplicateEntries(t *testing.T) {
 }
 
 func TestPublishEntriesReturnsDetachedSlice(t *testing.T) {
-	publish, err := modulemanifest.NewPublish(modulemanifest.PublishSpec{Entries: []manifest.PublishEntrySpec{{Type: "file", From: "go.mod", To: "go.mod"}}})
+	publish, err := modulemanifest.NewPublish(modulemanifest.PublishSpec{
+		Entries: []manifest.PublishEntrySpec{
+			{Type: "file", From: "go.mod", To: "go.mod"},
+		},
+	})
 	if err != nil {
 		t.Fatalf("NewPublish returned error: %v", err)
 	}
 	entries := publish.Entries()
-	entries[0], _ = manifest.NewPublishEntry(manifest.PublishEntrySpec{Type: "file", From: "README.md", To: "README.md"})
+	entries[0], _ = manifest.NewPublishEntry(
+		manifest.PublishEntrySpec{
+			Type: "file",
+			From: "README.md",
+			To:   "README.md",
+		},
+	)
 	if publish.Entries()[0].From() == "README.md" {
 		t.Fatalf("Entries accessor leaked internal slice")
 	}

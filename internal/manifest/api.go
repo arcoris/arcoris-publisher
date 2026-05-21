@@ -37,7 +37,12 @@ func ValidateAPIVersion(value string) (APIVersion, error) {
 	}
 	version := APIVersion(value)
 	if version != APIVersionV1Alpha1 {
-		return "", NewFieldError(IssueInvalidAPIVersion, "apiVersion", "unsupported apiVersion %q", value)
+		return "", NewFieldError(
+			IssueInvalidAPIVersion,
+			"apiVersion",
+			"unsupported apiVersion %q",
+			value,
+		)
 	}
 	return version, nil
 }
@@ -49,7 +54,13 @@ func ValidateKind(value string, expected Kind) (Kind, error) {
 	}
 	kind := Kind(value)
 	if kind != expected {
-		return "", NewFieldError(IssueInvalidKind, "kind", "expected kind %q, got %q", expected, value)
+		return "", NewFieldError(
+			IssueInvalidKind,
+			"kind",
+			"expected kind %q, got %q",
+			expected,
+			value,
+		)
 	}
 	return kind, nil
 }

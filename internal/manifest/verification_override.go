@@ -22,18 +22,24 @@ type VerificationOverride struct {
 
 // NewVerificationOverride validates a partial verification policy declaration.
 func NewVerificationOverride(spec VerificationSpec) (VerificationOverride, error) {
+	var collector IssueCollector
 	var override VerificationOverride
+
 	if spec.LocalReplacePolicy != nil {
 		policy, err := ParseLocalReplacePolicy(*spec.LocalReplacePolicy)
-		if err != nil {
-			return VerificationOverride{}, err
+		collector.AddError("localReplacePolicy", err)
+		if err == nil {
+			override.localReplacePolicy = &policy
 		}
-		override.localReplacePolicy = &policy
 	}
+
 	goOverride, err := NewGoVerificationOverride(spec.Go)
-	if err != nil {
+	collector.AddError("go", err)
+	override.goPolicy = goOverride
+
+	if err := collector.Err(); err != nil {
 		return VerificationOverride{}, err
 	}
-	override.goPolicy = goOverride
+
 	return override, nil
 }

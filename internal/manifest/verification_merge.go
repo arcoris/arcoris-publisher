@@ -25,7 +25,10 @@ func MergeVerification(base VerificationPolicy, override VerificationOverride) V
 }
 
 // MergeGoVerification applies override over base and returns a complete Go policy.
-func MergeGoVerification(base GoVerificationPolicy, override GoVerificationOverride) GoVerificationPolicy {
+func MergeGoVerification(
+	base GoVerificationPolicy,
+	override GoVerificationOverride,
+) GoVerificationPolicy {
 	out := base
 	if override.workspaceMode != nil {
 		out.workspaceMode = *override.workspaceMode

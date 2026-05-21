@@ -23,7 +23,8 @@ import (
 func TestMergeVerificationKeepsInheritedValuesWhenOverrideIsEmpty(t *testing.T) {
 	base := manifest.BuiltInVerificationPolicy()
 	merged := manifest.MergeVerification(base, manifest.VerificationOverride{})
-	if merged.LocalReplacePolicy() != base.LocalReplacePolicy() || merged.Go().WorkspaceMode() != base.Go().WorkspaceMode() {
+	if merged.LocalReplacePolicy() != base.LocalReplacePolicy() ||
+		merged.Go().WorkspaceMode() != base.Go().WorkspaceMode() {
 		t.Fatalf("empty override changed base policy")
 	}
 }
@@ -33,7 +34,14 @@ func TestMergeVerificationAppliesNestedOverride(t *testing.T) {
 	test := false
 	tidy := false
 	patterns := []string{"./contracts/..."}
-	override, err := manifest.NewVerificationOverride(manifest.VerificationSpec{Go: manifest.GoVerifySpec{List: &list, Test: &test, Tidy: &tidy, Patterns: patterns}})
+	override, err := manifest.NewVerificationOverride(manifest.VerificationSpec{
+		Go: manifest.GoVerifySpec{
+			List:     &list,
+			Test:     &test,
+			Tidy:     &tidy,
+			Patterns: patterns,
+		},
+	})
 	if err != nil {
 		t.Fatalf("NewVerificationOverride returned error: %v", err)
 	}

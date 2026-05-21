@@ -31,7 +31,16 @@ func TestParseRepositoryRefAcceptsOwnerName(t *testing.T) {
 }
 
 func TestParseRepositoryRefRejectsUnsafeForms(t *testing.T) {
-	for _, value := range []string{"", "arcoris", "arcoris/", "/publisher", "arc/or/is", "arc oris/publisher", ".arc/publisher", "arc/../publisher"} {
+	for _, value := range []string{
+		"",
+		"arcoris",
+		"arcoris/",
+		"/publisher",
+		"arc/or/is",
+		"arc oris/publisher",
+		".arc/publisher",
+		"arc/../publisher",
+	} {
 		if _, err := manifest.ParseRepositoryRef(value); err == nil {
 			t.Fatalf("ParseRepositoryRef(%q) returned nil error", value)
 		}

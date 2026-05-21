@@ -21,7 +21,11 @@ import (
 )
 
 func TestParseDirtyPolicyAcceptsKnownPolicies(t *testing.T) {
-	for _, want := range []manifest.DirtyPolicy{manifest.DirtyPolicyFail, manifest.DirtyPolicyWarn, manifest.DirtyPolicyAllow} {
+	for _, want := range []manifest.DirtyPolicy{
+		manifest.DirtyPolicyFail,
+		manifest.DirtyPolicyWarn,
+		manifest.DirtyPolicyAllow,
+	} {
 		got, err := manifest.ParseDirtyPolicy(string(want))
 		if err != nil {
 			t.Fatalf("ParseDirtyPolicy(%q) returned error: %v", want, err)

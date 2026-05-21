@@ -28,12 +28,24 @@ func (m Manifest) Validate() error {
 	for i, mod := range m.modules {
 		path := fmt.Sprintf("modules[%d]", i)
 		if prev, ok := names[mod.Name()]; ok {
-			collector.Add(manifest.IssueDuplicateValue, path+".name", "duplicate module name %q previously declared at modules[%d]", mod.Name(), prev)
+			collector.Add(
+				manifest.IssueDuplicateValue,
+				path+".name",
+				"duplicate module name %q previously declared at modules[%d]",
+				mod.Name(),
+				prev,
+			)
 		} else {
 			names[mod.Name()] = i
 		}
 		if prev, ok := sourceDirs[mod.SourceDir()]; ok {
-			collector.Add(manifest.IssueDuplicateValue, path+".sourceDir", "duplicate sourceDir %q previously declared at modules[%d]", mod.SourceDir(), prev)
+			collector.Add(
+				manifest.IssueDuplicateValue,
+				path+".sourceDir",
+				"duplicate sourceDir %q previously declared at modules[%d]",
+				mod.SourceDir(),
+				prev,
+			)
 		} else {
 			sourceDirs[mod.SourceDir()] = i
 		}

@@ -21,11 +21,16 @@ import (
 )
 
 func TestNewModuleIdentityAppliesDefaults(t *testing.T) {
-	identity, err := manifest.NewModuleIdentity(manifest.ModuleIdentitySpec{Path: "arcoris.dev/control"})
+	identity, err := manifest.NewModuleIdentity(manifest.ModuleIdentitySpec{
+		Path: "arcoris.dev/control",
+	})
 	if err != nil {
 		t.Fatalf("NewModuleIdentity returned error: %v", err)
 	}
-	if identity.Type() != manifest.ModuleTypeGo || identity.Path() != "arcoris.dev/control" || identity.Root().String() != "." || identity.GoMod().String() != "go.mod" {
+	if identity.Type() != manifest.ModuleTypeGo ||
+		identity.Path() != "arcoris.dev/control" ||
+		identity.Root().String() != "." ||
+		identity.GoMod().String() != "go.mod" {
 		t.Fatalf("unexpected identity defaults")
 	}
 }
@@ -34,7 +39,12 @@ func TestNewModuleIdentityAcceptsOverrides(t *testing.T) {
 	moduleType := string(manifest.ModuleTypeGo)
 	root := "packages/control"
 	goMod := "module/go.mod"
-	identity, err := manifest.NewModuleIdentity(manifest.ModuleIdentitySpec{Type: &moduleType, Path: "arcoris.dev/control", Root: &root, GoMod: &goMod})
+	identity, err := manifest.NewModuleIdentity(manifest.ModuleIdentitySpec{
+		Type:  &moduleType,
+		Path:  "arcoris.dev/control",
+		Root:  &root,
+		GoMod: &goMod,
+	})
 	if err != nil {
 		t.Fatalf("NewModuleIdentity returned error: %v", err)
 	}
@@ -55,4 +65,16 @@ func TestNewModuleIdentityRejectsInvalidFields(t *testing.T) {
 			t.Fatalf("NewModuleIdentity(%#v) returned nil error", spec)
 		}
 	}
+}
+
+func TestNewModuleIdentityCollectsInvalidFields(t *testing.T) {
+	badType := "rust"
+	_, err := manifest.NewModuleIdentity(manifest.ModuleIdentitySpec{
+		Type:  &badType,
+		Path:  "control",
+		Root:  stringPtr("../control"),
+		GoMod: stringPtr("."),
+	})
+
+	requireValidationIssuePaths(t, err, "type", "path", "root", "goMod")
 }

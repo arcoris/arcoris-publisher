@@ -25,7 +25,9 @@ func TestNewPublishPolicyAppliesBuiltInDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPublishPolicy returned error: %v", err)
 	}
-	if policy.Mode() != manifest.PublishModeExplicitProjection || policy.VersionPolicy() != manifest.VersionPolicyReleaseTrain || policy.PushPolicy() != manifest.PushPolicyFastForwardOnly {
+	if policy.Mode() != manifest.PublishModeExplicitProjection ||
+		policy.VersionPolicy() != manifest.VersionPolicyReleaseTrain ||
+		policy.PushPolicy() != manifest.PushPolicyFastForwardOnly {
 		t.Fatalf("unexpected publish defaults")
 	}
 	if !policy.Tags().Enabled() || policy.Tags().Mode() != manifest.TagModeSemver {
@@ -39,11 +41,15 @@ func TestNewPublishPolicyAppliesBuiltInDefaults(t *testing.T) {
 func TestNewPublishPolicyAcceptsExplicitValues(t *testing.T) {
 	versionPolicy := string(manifest.VersionPolicySnapshot)
 	pushPolicy := string(manifest.PushPolicyCreateOnly)
-	policy, err := manifest.NewPublishPolicy(manifest.PublishSpec{VersionPolicy: &versionPolicy, PushPolicy: &pushPolicy})
+	policy, err := manifest.NewPublishPolicy(manifest.PublishSpec{
+		VersionPolicy: &versionPolicy,
+		PushPolicy:    &pushPolicy,
+	})
 	if err != nil {
 		t.Fatalf("NewPublishPolicy returned error: %v", err)
 	}
-	if policy.VersionPolicy() != manifest.VersionPolicySnapshot || policy.PushPolicy() != manifest.PushPolicyCreateOnly {
+	if policy.VersionPolicy() != manifest.VersionPolicySnapshot ||
+		policy.PushPolicy() != manifest.PushPolicyCreateOnly {
 		t.Fatalf("explicit publish values were not applied")
 	}
 }

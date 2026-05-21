@@ -22,19 +22,33 @@ import (
 
 func TestResolutionTraceRecordsFieldsInOrder(t *testing.T) {
 	var trace resolved.ResolutionTrace
-	trace.Add("modules[0].visibility", "public", resolved.ValueSource{Kind: resolved.SourceBuiltInDefault, Path: "visibility"})
-	trace.Add("modules[0].manifest", "arcpub.module.yaml", resolved.ValueSource{Kind: resolved.SourceStagingDefault, Path: "defaults.moduleManifest.path"})
+
+	trace.AddBuiltInDefault(
+		"modules[0].visibility",
+		"public",
+		"visibility",
+	)
+	trace.AddStagingDefault(
+		"modules[0].manifest",
+		"arcpub.module.yaml",
+		"defaults.moduleManifest.path",
+	)
+
 	fields := trace.Fields()
-	if len(fields) != 2 || fields[0].Path != "modules[0].visibility" || fields[1].Source.Kind != resolved.SourceStagingDefault {
+	if len(fields) != 2 ||
+		fields[0].Path != "modules[0].visibility" ||
+		fields[1].Source.Kind != resolved.SourceStagingDefault {
 		t.Fatalf("unexpected trace fields: %#v", fields)
 	}
 }
 
 func TestResolutionTraceFieldsReturnsDetachedSlice(t *testing.T) {
 	var trace resolved.ResolutionTrace
-	trace.Add("path", "value", resolved.ValueSource{Kind: resolved.SourceBuiltInDefault, Path: "path"})
+	trace.AddBuiltInDefault("path", "value", "path")
+
 	fields := trace.Fields()
 	fields[0].Value = "mutated"
+
 	if trace.Fields()[0].Value == "mutated" {
 		t.Fatalf("Fields accessor leaked internal slice")
 	}

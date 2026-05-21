@@ -33,8 +33,10 @@ type Dependencies struct {
 // NewDependencies validates spec and returns Dependencies.
 func NewDependencies(spec DependenciesSpec) (Dependencies, error) {
 	var collector manifest.IssueCollector
+
 	internal := make([]manifest.ModuleName, 0, len(spec.Internal))
 	seen := make(map[manifest.ModuleName]int, len(spec.Internal))
+
 	for i, raw := range spec.Internal {
 		name, err := manifest.ParseModuleName(raw)
 		if err != nil {
@@ -42,17 +44,27 @@ func NewDependencies(spec DependenciesSpec) (Dependencies, error) {
 			continue
 		}
 		if prev, exists := seen[name]; exists {
-			collector.Add(manifest.IssueDuplicateValue, fmt.Sprintf("internal[%d]", i), "duplicate dependency %q previously declared at internal[%d]", name, prev)
+			collector.Add(
+				manifest.IssueDuplicateValue,
+				fmt.Sprintf("internal[%d]", i),
+				"duplicate dependency %q previously declared at internal[%d]",
+				name,
+				prev,
+			)
 			continue
 		}
 		seen[name] = i
 		internal = append(internal, name)
 	}
+
 	if err := collector.Err(); err != nil {
 		return Dependencies{}, err
 	}
+
 	return Dependencies{internal: internal}, nil
 }
 
 // Internal returns detached internal module dependency names.
-func (d Dependencies) Internal() []manifest.ModuleName { return manifest.CloneModuleNames(d.internal) }
+func (d Dependencies) Internal() []manifest.ModuleName {
+	return manifest.CloneModuleNames(d.internal)
+}

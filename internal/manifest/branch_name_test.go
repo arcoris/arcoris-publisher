@@ -31,7 +31,17 @@ func TestParseBranchNameAcceptsSafeBranch(t *testing.T) {
 }
 
 func TestParseBranchNameRejectsUnsafeRefs(t *testing.T) {
-	for _, value := range []string{"", "bad branch", "-branch", "feature..main", "feature//main", "/main", "main/", "main.lock", "main@{upstream}"} {
+	for _, value := range []string{
+		"",
+		"bad branch",
+		"-branch",
+		"feature..main",
+		"feature//main",
+		"/main",
+		"main/",
+		"main.lock",
+		"main@{upstream}",
+	} {
 		if _, err := manifest.ParseBranchName(value); err == nil {
 			t.Fatalf("ParseBranchName(%q) returned nil error", value)
 		}

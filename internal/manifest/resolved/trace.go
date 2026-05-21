@@ -50,7 +50,44 @@ type ResolutionTrace struct {
 
 // Add appends one resolved field to the trace.
 func (t *ResolutionTrace) Add(path string, value string, source ValueSource) {
-	t.fields = append(t.fields, ResolvedField{Path: path, Value: value, Source: source})
+	t.fields = append(t.fields, ResolvedField{
+		Path:   path,
+		Value:  value,
+		Source: source,
+	})
+}
+
+// AddBuiltInDefault records a value supplied by code-level defaults.
+func (t *ResolutionTrace) AddBuiltInDefault(path string, value string, sourcePath string) {
+	t.addSource(path, value, SourceBuiltInDefault, sourcePath)
+}
+
+// AddStagingDefault records a value supplied by arcpub.yaml defaults.
+func (t *ResolutionTrace) AddStagingDefault(path string, value string, sourcePath string) {
+	t.addSource(path, value, SourceStagingDefault, sourcePath)
+}
+
+// AddStagingModule records a value supplied by arcpub.yaml modules[].
+func (t *ResolutionTrace) AddStagingModule(path string, value string) {
+	t.addSource(path, value, SourceStagingModule, path)
+}
+
+// AddModuleManifest records a value supplied by arcpub.module.yaml.
+func (t *ResolutionTrace) AddModuleManifest(path string, value string, sourcePath string) {
+	t.addSource(path, value, SourceModuleManifest, sourcePath)
+}
+
+// addSource appends one resolved field with a compact source declaration.
+func (t *ResolutionTrace) addSource(
+	path string,
+	value string,
+	kind ValueSourceKind,
+	sourcePath string,
+) {
+	t.Add(path, value, ValueSource{
+		Kind: kind,
+		Path: sourcePath,
+	})
 }
 
 // Fields returns detached resolved fields.

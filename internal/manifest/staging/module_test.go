@@ -28,12 +28,19 @@ func TestNewModuleTracksOptionalOverrides(t *testing.T) {
 		Manifest:   stringPtr("publisher.yaml"),
 		Repository: "arcoris/control",
 		Visibility: stringPtr("internal"),
-		Branches:   []manifest.BranchMappingSpec{{Source: "main", Target: "release"}},
+		Branches: []manifest.BranchMappingSpec{
+			{
+				Source: "main",
+				Target: "release",
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("NewModule returned error: %v", err)
 	}
-	if mod.Name() != "control" || mod.SourceDir().String() != "src/arcoris.dev/control" || mod.Repository() != "arcoris/control" {
+	if mod.Name() != "control" ||
+		mod.SourceDir().String() != "src/arcoris.dev/control" ||
+		mod.Repository() != "arcoris/control" {
 		t.Fatalf("unexpected module core fields")
 	}
 	if got, ok := mod.ManifestPathOverride(); !ok || got.String() != "publisher.yaml" {
@@ -42,13 +49,19 @@ func TestNewModuleTracksOptionalOverrides(t *testing.T) {
 	if got, ok := mod.VisibilityOverride(); !ok || got != manifest.VisibilityInternal {
 		t.Fatalf("visibility override not tracked")
 	}
-	if branches, ok := mod.BranchesOverride(); !ok || len(branches) != 1 || branches[0].Target() != "release" {
+	if branches, ok := mod.BranchesOverride(); !ok ||
+		len(branches) != 1 ||
+		branches[0].Target() != "release" {
 		t.Fatalf("branch override not tracked")
 	}
 }
 
 func TestNewModuleDistinguishesAbsentOverrides(t *testing.T) {
-	mod, err := staging.NewModule(staging.ModuleSpec{Name: "control", SourceDir: "src/arcoris.dev/control", Repository: "arcoris/control"})
+	mod, err := staging.NewModule(staging.ModuleSpec{
+		Name:       "control",
+		SourceDir:  "src/arcoris.dev/control",
+		Repository: "arcoris/control",
+	})
 	if err != nil {
 		t.Fatalf("NewModule returned error: %v", err)
 	}
@@ -68,7 +81,12 @@ func TestModuleBranchesOverrideReturnsDetachedSlice(t *testing.T) {
 		Name:       "control",
 		SourceDir:  "src/arcoris.dev/control",
 		Repository: "arcoris/control",
-		Branches:   []manifest.BranchMappingSpec{{Source: "main", Target: "release"}},
+		Branches: []manifest.BranchMappingSpec{
+			{
+				Source: "main",
+				Target: "release",
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("NewModule returned error: %v", err)
@@ -77,7 +95,12 @@ func TestModuleBranchesOverrideReturnsDetachedSlice(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected branch override")
 	}
-	branches[0], _ = manifest.NewBranchMapping(manifest.BranchMappingSpec{Source: "dev", Target: "dev"})
+	branches[0], _ = manifest.NewBranchMapping(
+		manifest.BranchMappingSpec{
+			Source: "dev",
+			Target: "dev",
+		},
+	)
 	got, _ := mod.BranchesOverride()
 	if got[0].Source() != "main" {
 		t.Fatalf("BranchesOverride leaked internal slice")
@@ -89,9 +112,29 @@ func TestNewModuleRejectsInvalidFields(t *testing.T) {
 		{Name: "Control", SourceDir: "src/arcoris.dev/control", Repository: "arcoris/control"},
 		{Name: "control", SourceDir: ".", Repository: "arcoris/control"},
 		{Name: "control", SourceDir: "src/arcoris.dev/control", Repository: "arcoris"},
-		{Name: "control", SourceDir: "src/arcoris.dev/control", Repository: "arcoris/control", Manifest: stringPtr("../publisher.yaml")},
-		{Name: "control", SourceDir: "src/arcoris.dev/control", Repository: "arcoris/control", Visibility: stringPtr("private")},
-		{Name: "control", SourceDir: "src/arcoris.dev/control", Repository: "arcoris/control", Branches: []manifest.BranchMappingSpec{{Source: "bad branch", Target: "main"}}},
+		{
+			Name:       "control",
+			SourceDir:  "src/arcoris.dev/control",
+			Repository: "arcoris/control",
+			Manifest:   stringPtr("../publisher.yaml"),
+		},
+		{
+			Name:       "control",
+			SourceDir:  "src/arcoris.dev/control",
+			Repository: "arcoris/control",
+			Visibility: stringPtr("private"),
+		},
+		{
+			Name:       "control",
+			SourceDir:  "src/arcoris.dev/control",
+			Repository: "arcoris/control",
+			Branches: []manifest.BranchMappingSpec{
+				{
+					Source: "bad branch",
+					Target: "main",
+				},
+			},
+		},
 	} {
 		if _, err := staging.NewModule(spec); err == nil {
 			t.Fatalf("NewModule(%#v) returned nil error", spec)

@@ -21,14 +21,19 @@ import (
 )
 
 func TestNewSourceAppliesDefaultsAndRoundTripsSpec(t *testing.T) {
-	source, err := manifest.NewSource(manifest.SourceSpec{Repository: "arcoris/arcoris", DefaultBranch: "main"})
+	source, err := manifest.NewSource(manifest.SourceSpec{
+		Repository:    "arcoris/arcoris",
+		DefaultBranch: "main",
+	})
 	if err != nil {
 		t.Fatalf("NewSource returned error: %v", err)
 	}
 	if source.Repository() != "arcoris/arcoris" || source.DefaultBranch() != "main" {
 		t.Fatalf("unexpected source values")
 	}
-	if source.StagingRoot().String() != "." || source.ModuleRoot().String() != "." || source.DirtyPolicy() != manifest.DirtyPolicyFail {
+	if source.StagingRoot().String() != "." ||
+		source.ModuleRoot().String() != "." ||
+		source.DirtyPolicy() != manifest.DirtyPolicyFail {
 		t.Fatalf("unexpected source defaults")
 	}
 	spec := source.Spec()
@@ -51,7 +56,9 @@ func TestNewSourceAcceptsExplicitRootsAndDirtyPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSource returned error: %v", err)
 	}
-	if source.StagingRoot().String() != stagingRoot || source.ModuleRoot().String() != moduleRoot || source.DirtyPolicy() != manifest.DirtyPolicyWarn {
+	if source.StagingRoot().String() != stagingRoot ||
+		source.ModuleRoot().String() != moduleRoot ||
+		source.DirtyPolicy() != manifest.DirtyPolicyWarn {
 		t.Fatalf("explicit source values were not applied")
 	}
 }
@@ -69,4 +76,25 @@ func TestNewSourceRejectsInvalidFields(t *testing.T) {
 			t.Fatalf("NewSource(%#v) returned nil error", spec)
 		}
 	}
+}
+
+func TestNewSourceCollectsInvalidFields(t *testing.T) {
+	badDirty := "explode"
+	_, err := manifest.NewSource(manifest.SourceSpec{
+		Repository:    "arcoris",
+		DefaultBranch: "bad branch",
+		StagingRoot:   stringPtr("../src"),
+		ModuleRoot:    stringPtr("/modules"),
+		DirtyPolicy:   &badDirty,
+	})
+
+	requireValidationIssuePaths(
+		t,
+		err,
+		"repository",
+		"defaultBranch",
+		"stagingRoot",
+		"moduleRoot",
+		"dirtyPolicy",
+	)
 }

@@ -14,8 +14,6 @@
 
 package manifest
 
-import "fmt"
-
 // SourceSpec is the raw top-level source repository declaration.
 type SourceSpec struct {
 	Repository    string  `json:"repository" yaml:"repository"`
@@ -36,29 +34,36 @@ type Source struct {
 
 // NewSource validates spec and applies safe built-in source defaults.
 func NewSource(spec SourceSpec) (Source, error) {
+	var collector IssueCollector
+
 	repository, err := ParseRepositoryRef(spec.Repository)
-	if err != nil {
-		return Source{}, fmt.Errorf("repository: %w", err)
-	}
+	collector.AddError("repository", err)
+
 	defaultBranch, err := ParseBranchName(spec.DefaultBranch)
-	if err != nil {
-		return Source{}, fmt.Errorf("defaultBranch: %w", err)
-	}
+	collector.AddError("defaultBranch", err)
+
 	stagingRootValue := stringValue(spec.StagingRoot, ".")
 	stagingRoot, err := ParseRelativePath("stagingRoot", stagingRootValue, true)
-	if err != nil {
-		return Source{}, err
-	}
+	collector.AddError("stagingRoot", err)
+
 	moduleRootValue := stringValue(spec.ModuleRoot, ".")
 	moduleRoot, err := ParseRelativePath("moduleRoot", moduleRootValue, true)
-	if err != nil {
-		return Source{}, err
-	}
+	collector.AddError("moduleRoot", err)
+
 	dirtyPolicy, err := ParseDirtyPolicy(stringValue(spec.DirtyPolicy, string(DirtyPolicyFail)))
-	if err != nil {
+	collector.AddError("dirtyPolicy", err)
+
+	if err := collector.Err(); err != nil {
 		return Source{}, err
 	}
-	return Source{repository: repository, defaultBranch: defaultBranch, stagingRoot: stagingRoot, moduleRoot: moduleRoot, dirtyPolicy: dirtyPolicy}, nil
+
+	return Source{
+		repository:    repository,
+		defaultBranch: defaultBranch,
+		stagingRoot:   stagingRoot,
+		moduleRoot:    moduleRoot,
+		dirtyPolicy:   dirtyPolicy,
+	}, nil
 }
 
 // Repository returns the authoritative source repository reference.
@@ -81,5 +86,11 @@ func (s Source) Spec() SourceSpec {
 	stagingRoot := string(s.stagingRoot)
 	moduleRoot := string(s.moduleRoot)
 	dirtyPolicy := string(s.dirtyPolicy)
-	return SourceSpec{Repository: string(s.repository), DefaultBranch: string(s.defaultBranch), StagingRoot: &stagingRoot, ModuleRoot: &moduleRoot, DirtyPolicy: &dirtyPolicy}
+	return SourceSpec{
+		Repository:    string(s.repository),
+		DefaultBranch: string(s.defaultBranch),
+		StagingRoot:   &stagingRoot,
+		ModuleRoot:    &moduleRoot,
+		DirtyPolicy:   &dirtyPolicy,
+	}
 }

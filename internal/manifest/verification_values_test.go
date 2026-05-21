@@ -21,7 +21,11 @@ import (
 )
 
 func TestParseLocalReplacePolicyAcceptsKnownPolicies(t *testing.T) {
-	for _, want := range []manifest.LocalReplacePolicy{manifest.LocalReplacePolicyForbid, manifest.LocalReplacePolicyWarn, manifest.LocalReplacePolicyAllow} {
+	for _, want := range []manifest.LocalReplacePolicy{
+		manifest.LocalReplacePolicyForbid,
+		manifest.LocalReplacePolicyWarn,
+		manifest.LocalReplacePolicyAllow,
+	} {
 		got, err := manifest.ParseLocalReplacePolicy(string(want))
 		if err != nil {
 			t.Fatalf("ParseLocalReplacePolicy(%q) returned error: %v", want, err)
@@ -33,7 +37,10 @@ func TestParseLocalReplacePolicyAcceptsKnownPolicies(t *testing.T) {
 }
 
 func TestParseGoWorkspaceModeAcceptsKnownModes(t *testing.T) {
-	for _, want := range []manifest.GoWorkspaceMode{manifest.GoWorkspaceModeOff, manifest.GoWorkspaceModeDefault} {
+	for _, want := range []manifest.GoWorkspaceMode{
+		manifest.GoWorkspaceModeOff,
+		manifest.GoWorkspaceModeDefault,
+	} {
 		got, err := manifest.ParseGoWorkspaceMode(string(want))
 		if err != nil {
 			t.Fatalf("ParseGoWorkspaceMode(%q) returned error: %v", want, err)

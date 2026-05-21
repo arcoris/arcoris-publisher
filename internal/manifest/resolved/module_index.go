@@ -22,13 +22,22 @@ import (
 )
 
 // indexModuleManifests builds a deterministic lookup by metadata.name.
-func (r *resolver) indexModuleManifests() (map[manifest.ModuleName]modulemanifest.Manifest, error) {
+func (r *resolver) indexModuleManifests() (
+	map[manifest.ModuleName]modulemanifest.Manifest,
+	error,
+) {
 	var collector manifest.IssueCollector
 	out := make(map[manifest.ModuleName]modulemanifest.Manifest, len(r.input.Modules))
 	for i, mod := range r.input.Modules {
 		name := manifest.ModuleName(mod.Metadata().Name())
 		if prev, exists := out[name]; exists {
-			collector.Add(manifest.IssueDuplicateValue, fmt.Sprintf("moduleManifests[%d].metadata.name", i), "duplicate module manifest name %q also declared by %q", name, prev.Metadata().Name())
+			collector.Add(
+				manifest.IssueDuplicateValue,
+				fmt.Sprintf("moduleManifests[%d].metadata.name", i),
+				"duplicate module manifest name %q also declared by %q",
+				name,
+				prev.Metadata().Name(),
+			)
 			continue
 		}
 		out[name] = mod

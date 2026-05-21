@@ -21,15 +21,25 @@ import (
 )
 
 func TestResolvedModuleCarriesModuleManifestIdentityAndPublishData(t *testing.T) {
-	set := resolvePublicationSet(t, stagingManifest(t, baseStagingSpec()), standardModules(t)...)
+	set := resolvePublicationSet(
+		t,
+		stagingManifest(t, baseStagingSpec()),
+		standardModules(t)...,
+	)
 	control := set.Modules()[1]
-	if control.ModuleType() != manifest.ModuleTypeGo || control.ModuleRoot().String() != "." || control.GoMod().String() != "go.mod" {
+
+	if control.ModuleType() != manifest.ModuleTypeGo ||
+		control.ModuleRoot().String() != "." ||
+		control.GoMod().String() != "go.mod" {
 		t.Fatalf("unexpected module identity data")
 	}
+
 	if len(control.PublishEntries()) != 2 {
 		t.Fatalf("unexpected publish entry count")
 	}
-	if control.Repository() != "arcoris/control" || control.SourceDir().String() != "src/arcoris.dev/control" {
+
+	if control.Repository() != "arcoris/control" ||
+		control.SourceDir().String() != "src/arcoris.dev/control" {
 		t.Fatalf("unexpected staging routing data")
 	}
 }

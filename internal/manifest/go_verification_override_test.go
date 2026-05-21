@@ -23,12 +23,22 @@ import (
 func TestNewGoVerificationOverrideAppliesOnlyDeclaredFields(t *testing.T) {
 	mode := string(manifest.GoWorkspaceModeDefault)
 	list := false
-	override, err := manifest.NewGoVerificationOverride(manifest.GoVerifySpec{WorkspaceMode: &mode, List: &list, Patterns: []string{"./contracts/..."}})
+	override, err := manifest.NewGoVerificationOverride(manifest.GoVerifySpec{
+		WorkspaceMode: &mode,
+		List:          &list,
+		Patterns:      []string{"./contracts/..."},
+	})
 	if err != nil {
 		t.Fatalf("NewGoVerificationOverride returned error: %v", err)
 	}
-	merged := manifest.MergeGoVerification(manifest.BuiltInVerificationPolicy().Go(), override)
-	if merged.WorkspaceMode() != manifest.GoWorkspaceModeDefault || merged.List() || !merged.Test() || !merged.Tidy() {
+	merged := manifest.MergeGoVerification(
+		manifest.BuiltInVerificationPolicy().Go(),
+		override,
+	)
+	if merged.WorkspaceMode() != manifest.GoWorkspaceModeDefault ||
+		merged.List() ||
+		!merged.Test() ||
+		!merged.Tidy() {
 		t.Fatalf("unexpected merged Go verification policy")
 	}
 	if got := merged.Patterns(); len(got) != 1 || got[0] != "./contracts/..." {

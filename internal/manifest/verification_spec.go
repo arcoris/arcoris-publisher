@@ -14,13 +14,17 @@
 
 package manifest
 
+type text = string
+type ptr = *text
+type g = GoVerifySpec
+
 // VerificationSpec is a partial verification-policy declaration.
 //
 // VerificationSpec is intentionally an override shape. Missing fields mean
 // "inherit from a lower-precedence default", not false or empty.
 type VerificationSpec struct {
-	LocalReplacePolicy *string      `json:"localReplacePolicy,omitempty" yaml:"localReplacePolicy,omitempty"`
-	Go                 GoVerifySpec `json:"go,omitempty" yaml:"go,omitempty"`
+	LocalReplacePolicy ptr `json:"localReplacePolicy,omitempty" yaml:"localReplacePolicy,omitempty"`
+	Go                 g   `json:"go,omitempty" yaml:"go,omitempty"`
 }
 
 // GoVerifySpec is the partial Go verification declaration.

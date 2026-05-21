@@ -26,10 +26,15 @@ type Metadata struct {
 
 // NewMetadata validates spec and returns a Metadata value.
 func NewMetadata(spec MetadataSpec) (Metadata, error) {
+	var collector IssueCollector
+
 	name, err := ParseManifestName(spec.Name)
-	if err != nil {
+	collector.AddError("name", err)
+
+	if err := collector.Err(); err != nil {
 		return Metadata{}, err
 	}
+
 	return Metadata{name: name}, nil
 }
 

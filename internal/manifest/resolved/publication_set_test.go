@@ -17,16 +17,29 @@ package resolved_test
 import "testing"
 
 func TestPublicationSetAccessorsReturnResolvedTopLevelValues(t *testing.T) {
-	set := resolvePublicationSet(t, stagingManifest(t, baseStagingSpec()), standardModules(t)...)
-	if set.Metadata().Name() != "arcoris" || set.Source().Repository() != "arcoris/arcoris" || set.Publish().Mode() == "" {
+	set := resolvePublicationSet(
+		t,
+		stagingManifest(t, baseStagingSpec()),
+		standardModules(t)...,
+	)
+
+	if set.Metadata().Name() != "arcoris" ||
+		set.Source().Repository() != "arcoris/arcoris" ||
+		set.Publish().Mode() == "" {
 		t.Fatalf("unexpected top-level publication set values")
 	}
 }
 
 func TestPublicationSetModulesReturnsDetachedSlice(t *testing.T) {
-	set := resolvePublicationSet(t, stagingManifest(t, baseStagingSpec()), standardModules(t)...)
+	set := resolvePublicationSet(
+		t,
+		stagingManifest(t, baseStagingSpec()),
+		standardModules(t)...,
+	)
+
 	mods := set.Modules()
 	mods[0] = mods[1]
+
 	if set.Modules()[0].Name() != "foundation" {
 		t.Fatalf("Modules accessor leaked internal slice")
 	}

@@ -18,5 +18,13 @@ import "fmt"
 
 // NewFieldError creates a single-issue validation error for one field.
 func NewFieldError(code IssueCode, path string, format string, args ...any) error {
-	return &ValidationError{Issues: []Issue{{Code: code, Path: path, Message: fmt.Sprintf(format, args...)}}}
+	return &ValidationError{
+		Issues: []Issue{
+			{
+				Code:    code,
+				Path:    path,
+				Message: fmt.Sprintf(format, args...),
+			},
+		},
+	}
 }

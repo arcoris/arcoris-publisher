@@ -20,7 +20,13 @@ package manifest
 // "C:/work" from being accepted on non-Windows hosts where path.Clean would not
 // treat it as absolute.
 func looksWindowsAbsolute(value string) bool {
-	return len(value) >= 3 && isASCIILetter(value[0]) && value[1] == ':' && (value[2] == '/' || value[2] == '\\')
+	if len(value) < 3 {
+		return false
+	}
+
+	return isASCIILetter(value[0]) &&
+		value[1] == ':' &&
+		(value[2] == '/' || value[2] == '\\')
 }
 
 // isASCIILetter reports whether b is an English alphabetic byte.

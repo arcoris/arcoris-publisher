@@ -14,8 +14,6 @@
 
 package manifest
 
-import "fmt"
-
 // ProvenanceSpec is the raw provenance policy declaration.
 type ProvenanceSpec struct {
 	CommitTrailers *bool   `json:"commitTrailers,omitempty" yaml:"commitTrailers,omitempty"`
@@ -35,10 +33,16 @@ func NewProvenancePolicy(spec ProvenanceSpec) (ProvenancePolicy, error) {
 	if spec.File == nil || *spec.File == "" {
 		return ProvenancePolicy{commitTrailers: commitTrailers}, nil
 	}
+
+	var collector IssueCollector
+
 	file, err := ParseRelativePath("provenance.file", *spec.File, false)
-	if err != nil {
-		return ProvenancePolicy{}, fmt.Errorf("provenance.file: %w", err)
+	collector.AddError("file", err)
+
+	if err := collector.Err(); err != nil {
+		return ProvenancePolicy{}, err
 	}
+
 	return ProvenancePolicy{commitTrailers: commitTrailers, file: file, fileEnabled: true}, nil
 }
 

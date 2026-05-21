@@ -24,9 +24,3 @@ type ResolveInput struct {
 	Staging staging.Manifest
 	Modules []modulemanifest.Manifest
 }
-
-// ResolveResult contains the effective publication set and value origin trace.
-type ResolveResult struct {
-	Set   PublicationSet
-	Trace ResolutionTrace
-}

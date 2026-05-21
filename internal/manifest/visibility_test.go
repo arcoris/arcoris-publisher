@@ -21,7 +21,11 @@ import (
 )
 
 func TestParseVisibilityAcceptsKnownValues(t *testing.T) {
-	for _, want := range []manifest.Visibility{manifest.VisibilityPublic, manifest.VisibilityInternal, manifest.VisibilityDisabled} {
+	for _, want := range []manifest.Visibility{
+		manifest.VisibilityPublic,
+		manifest.VisibilityInternal,
+		manifest.VisibilityDisabled,
+	} {
 		got, err := manifest.ParseVisibility(string(want))
 		if err != nil {
 			t.Fatalf("ParseVisibility(%q) returned error: %v", want, err)

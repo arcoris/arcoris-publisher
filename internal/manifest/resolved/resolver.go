@@ -14,12 +14,6 @@
 
 package resolved
 
-import (
-	"fmt"
-
-	"arcoris.dev/arcoris-publisher/internal/manifest"
-)
-
 // resolver owns one resolution pass and its trace.
 type resolver struct {
 	input ResolveInput
@@ -32,32 +26,16 @@ func (r *resolver) resolve() (ResolveResult, error) {
 	if err != nil {
 		return ResolveResult{}, err
 	}
-	stagingModules := r.input.Staging.Modules()
-	resolvedModules := make([]PublicationModule, 0, len(stagingModules))
-	var collector manifest.IssueCollector
-	used := make(map[manifest.ModuleName]struct{}, len(stagingModules))
-	for i, stagingModule := range stagingModules {
-		path := fmt.Sprintf("modules[%d]", i)
-		moduleManifest, ok := moduleByName[stagingModule.Name()]
-		if !ok {
-			collector.Add(manifest.IssueMissingModuleManifest, path, "missing module manifest for %q", stagingModule.Name())
-			continue
-		}
-		used[stagingModule.Name()] = struct{}{}
-		publicationModule := r.resolveModule(path, stagingModule, moduleManifest)
-		resolvedModules = append(resolvedModules, publicationModule)
-	}
-	for name := range moduleByName {
-		if _, ok := used[name]; !ok {
-			collector.Add(manifest.IssueUnknownModule, "moduleManifests", "module manifest %q is not referenced by staging manifest", name)
-		}
-	}
-	if err := collector.Err(); err != nil {
+
+	resolvedModules, err := r.resolveModules(moduleByName)
+	if err != nil {
 		return ResolveResult{}, err
 	}
-	set := PublicationSet{metadata: r.input.Staging.Metadata(), source: r.input.Staging.Source(), publish: r.input.Staging.Publish(), modules: resolvedModules}
+
+	set := r.publicationSet(resolvedModules)
 	if err := validatePublicationSet(set); err != nil {
 		return ResolveResult{}, err
 	}
+
 	return ResolveResult{Set: set, Trace: r.trace}, nil
 }

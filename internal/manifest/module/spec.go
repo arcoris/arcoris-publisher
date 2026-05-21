@@ -16,13 +16,17 @@ package module
 
 import "arcoris.dev/arcoris-publisher/internal/manifest"
 
+type metadataSpec = manifest.MetadataSpec
+type moduleIdentitySpec = manifest.ModuleIdentitySpec
+type verificationSpec = manifest.VerificationSpec
+
 // Spec is the raw serializable shape of arcpub.module.yaml.
 type Spec struct {
-	APIVersion   string                      `json:"apiVersion" yaml:"apiVersion"`
-	Kind         string                      `json:"kind" yaml:"kind"`
-	Metadata     manifest.MetadataSpec       `json:"metadata" yaml:"metadata"`
-	Module       manifest.ModuleIdentitySpec `json:"module" yaml:"module"`
-	Dependencies DependenciesSpec            `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`
-	Publish      PublishSpec                 `json:"publish" yaml:"publish"`
-	Verification manifest.VerificationSpec   `json:"verification,omitempty" yaml:"verification,omitempty"`
+	APIVersion   string             `json:"apiVersion" yaml:"apiVersion"`
+	Kind         string             `json:"kind" yaml:"kind"`
+	Metadata     metadataSpec       `json:"metadata" yaml:"metadata"`
+	Module       moduleIdentitySpec `json:"module" yaml:"module"`
+	Dependencies DependenciesSpec   `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`
+	Publish      PublishSpec        `json:"publish" yaml:"publish"`
+	Verification verificationSpec   `json:"verification,omitempty" yaml:"verification,omitempty"`
 }

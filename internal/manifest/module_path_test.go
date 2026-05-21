@@ -31,7 +31,16 @@ func TestParseModulePathAcceptsGoModulePath(t *testing.T) {
 }
 
 func TestParseModulePathRejectsUnsafeForms(t *testing.T) {
-	for _, value := range []string{"", "control", " arcoris.dev/control", "arcoris.dev//control", "/arcoris.dev/control", "arcoris.dev/control/", "arcoris.dev/../control", "arcoris.dev\\.control"} {
+	for _, value := range []string{
+		"",
+		"control",
+		" arcoris.dev/control",
+		"arcoris.dev//control",
+		"/arcoris.dev/control",
+		"arcoris.dev/control/",
+		"arcoris.dev/../control",
+		"arcoris.dev\\.control",
+	} {
 		if _, err := manifest.ParseModulePath(value); err == nil {
 			t.Fatalf("ParseModulePath(%q) returned nil error", value)
 		}

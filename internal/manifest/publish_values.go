@@ -26,7 +26,8 @@ type VersionPolicy string
 type PushPolicy string
 
 const (
-	// PublishModeExplicitProjection means target content is built only from explicit module publish entries.
+	// PublishModeExplicitProjection means target content is built only from
+	// explicit module publish entries.
 	PublishModeExplicitProjection PublishMode = "explicit-projection"
 
 	// VersionPolicyReleaseTrain assigns one version to all publishable modules.
@@ -38,7 +39,8 @@ const (
 	PushPolicyFastForwardOnly PushPolicy = "fast-forward-only"
 	// PushPolicyCreateOnly allows only creation of missing remote refs.
 	PushPolicyCreateOnly PushPolicy = "create-only"
-	// PushPolicyForceWithLease allows force-with-lease updates when explicitly supported by workflow.
+	// PushPolicyForceWithLease allows force-with-lease updates when explicitly
+	// supported by workflow.
 	PushPolicyForceWithLease PushPolicy = "force-with-lease"
 )
 

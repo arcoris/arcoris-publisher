@@ -20,7 +20,11 @@ import (
 )
 
 // resolveModule combines one staging module and its matching module manifest.
-func (r *resolver) resolveModule(path string, sm staging.Module, mm modulemanifest.Manifest) PublicationModule {
+func (r *resolver) resolveModule(
+	path string,
+	sm staging.Module,
+	mm modulemanifest.Manifest,
+) PublicationModule {
 	manifestPath := r.resolveManifestPath(path, sm)
 	visibility := r.resolveVisibility(path, sm)
 	branches := r.resolveBranches(path, sm)

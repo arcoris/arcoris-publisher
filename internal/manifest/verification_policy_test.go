@@ -25,7 +25,10 @@ func TestBuiltInVerificationPolicyUsesSafeDefaults(t *testing.T) {
 	if policy.LocalReplacePolicy() != manifest.LocalReplacePolicyForbid {
 		t.Fatalf("unexpected local replace policy: %q", policy.LocalReplacePolicy())
 	}
-	if policy.Go().WorkspaceMode() != manifest.GoWorkspaceModeOff || !policy.Go().List() || !policy.Go().Test() || !policy.Go().Tidy() {
+	if policy.Go().WorkspaceMode() != manifest.GoWorkspaceModeOff ||
+		!policy.Go().List() ||
+		!policy.Go().Test() ||
+		!policy.Go().Tidy() {
 		t.Fatalf("unexpected Go verification defaults")
 	}
 	if got := policy.Go().Patterns(); len(got) != 1 || got[0] != "./..." {

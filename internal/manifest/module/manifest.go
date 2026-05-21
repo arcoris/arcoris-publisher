@@ -30,24 +30,41 @@ type Manifest struct {
 // New validates spec and returns a module manifest.
 func New(spec Spec) (Manifest, error) {
 	var collector manifest.IssueCollector
+
 	apiVersion, err := manifest.ValidateAPIVersion(spec.APIVersion)
 	collector.AddError("apiVersion", err)
+
 	kind, err := manifest.ValidateKind(spec.Kind, manifest.KindModuleManifest)
 	collector.AddError("kind", err)
+
 	metadata, err := manifest.NewMetadata(spec.Metadata)
 	collector.AddError("metadata", err)
+
 	identity, err := manifest.NewModuleIdentity(spec.Module)
 	collector.AddError("module", err)
+
 	dependencies, err := NewDependencies(spec.Dependencies)
 	collector.AddError("dependencies", err)
+
 	publish, err := NewPublish(spec.Publish)
 	collector.AddError("publish", err)
+
 	verification, err := manifest.NewVerificationOverride(spec.Verification)
 	collector.AddError("verification", err)
+
 	if err := collector.Err(); err != nil {
 		return Manifest{}, err
 	}
-	return Manifest{apiVersion: apiVersion, kind: kind, metadata: metadata, module: identity, dependencies: dependencies, publish: publish, verification: verification}, nil
+
+	return Manifest{
+		apiVersion:   apiVersion,
+		kind:         kind,
+		metadata:     metadata,
+		module:       identity,
+		dependencies: dependencies,
+		publish:      publish,
+		verification: verification,
+	}, nil
 }
 
 // APIVersion returns the module manifest API version.

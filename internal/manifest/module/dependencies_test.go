@@ -22,7 +22,9 @@ import (
 )
 
 func TestNewDependenciesAcceptsUniqueInternalModules(t *testing.T) {
-	deps, err := modulemanifest.NewDependencies(modulemanifest.DependenciesSpec{Internal: []string{"foundation", "runtime"}})
+	deps, err := modulemanifest.NewDependencies(modulemanifest.DependenciesSpec{
+		Internal: []string{"foundation", "runtime"},
+	})
 	if err != nil {
 		t.Fatalf("NewDependencies returned error: %v", err)
 	}
@@ -44,7 +46,9 @@ func TestNewDependenciesRejectsInvalidAndDuplicateNames(t *testing.T) {
 }
 
 func TestDependenciesInternalReturnsDetachedSlice(t *testing.T) {
-	deps, err := modulemanifest.NewDependencies(modulemanifest.DependenciesSpec{Internal: []string{"foundation"}})
+	deps, err := modulemanifest.NewDependencies(modulemanifest.DependenciesSpec{
+		Internal: []string{"foundation"},
+	})
 	if err != nil {
 		t.Fatalf("NewDependencies returned error: %v", err)
 	}

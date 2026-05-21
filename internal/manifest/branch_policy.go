@@ -26,10 +26,14 @@ func hasRejectedBranchShape(value string) bool {
 	if strings.ContainsAny(value, "~^:?*[\\") {
 		return true
 	}
-	if strings.Contains(value, "..") || strings.Contains(value, "//") || strings.Contains(value, "@{") {
+	if strings.Contains(value, "..") ||
+		strings.Contains(value, "//") ||
+		strings.Contains(value, "@{") {
 		return true
 	}
-	if strings.HasPrefix(value, "/") || strings.HasSuffix(value, "/") || strings.HasSuffix(value, ".") {
+	if strings.HasPrefix(value, "/") ||
+		strings.HasSuffix(value, "/") ||
+		strings.HasSuffix(value, ".") {
 		return true
 	}
 	return value == "." || strings.HasSuffix(value, ".lock")

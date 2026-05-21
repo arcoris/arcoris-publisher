@@ -39,7 +39,10 @@ func TestValidateAPIVersionRejectsMissingAndUnsupportedVersions(t *testing.T) {
 }
 
 func TestValidateKindAcceptsExpectedKind(t *testing.T) {
-	got, err := manifest.ValidateKind(string(manifest.KindStagingManifest), manifest.KindStagingManifest)
+	got, err := manifest.ValidateKind(
+		string(manifest.KindStagingManifest),
+		manifest.KindStagingManifest,
+	)
 	if err != nil {
 		t.Fatalf("ValidateKind returned error: %v", err)
 	}

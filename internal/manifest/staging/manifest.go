@@ -34,18 +34,25 @@ type Manifest struct {
 // New validates spec and returns a staging manifest.
 func New(spec Spec) (Manifest, error) {
 	var collector manifest.IssueCollector
+
 	apiVersion, err := manifest.ValidateAPIVersion(spec.APIVersion)
 	collector.AddError("apiVersion", err)
+
 	kind, err := manifest.ValidateKind(spec.Kind, manifest.KindStagingManifest)
 	collector.AddError("kind", err)
+
 	metadata, err := manifest.NewMetadata(spec.Metadata)
 	collector.AddError("metadata", err)
+
 	source, err := manifest.NewSource(spec.Source)
 	collector.AddError("source", err)
+
 	publish, err := manifest.NewPublishPolicy(spec.Publish)
 	collector.AddError("publish", err)
+
 	defaults, err := NewDefaults(spec.Defaults)
 	collector.AddError("defaults", err)
+
 	modules := make([]Module, 0, len(spec.Modules))
 	for i, moduleSpec := range spec.Modules {
 		mod, err := NewModule(moduleSpec)
@@ -58,13 +65,24 @@ func New(spec Spec) (Manifest, error) {
 	if len(spec.Modules) == 0 {
 		collector.Add(manifest.IssueMissingField, "modules", "at least one module is required")
 	}
+
 	if err := collector.Err(); err != nil {
 		return Manifest{}, err
 	}
-	out := Manifest{apiVersion: apiVersion, kind: kind, metadata: metadata, source: source, publish: publish, defaults: defaults, modules: modules}
+
+	out := Manifest{
+		apiVersion: apiVersion,
+		kind:       kind,
+		metadata:   metadata,
+		source:     source,
+		publish:    publish,
+		defaults:   defaults,
+		modules:    modules,
+	}
 	if err := out.Validate(); err != nil {
 		return Manifest{}, err
 	}
+
 	return out, nil
 }
 

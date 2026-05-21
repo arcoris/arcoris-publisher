@@ -22,7 +22,9 @@ import (
 
 func TestNewVerificationOverrideAppliesLocalReplacePolicy(t *testing.T) {
 	local := string(manifest.LocalReplacePolicyWarn)
-	override, err := manifest.NewVerificationOverride(manifest.VerificationSpec{LocalReplacePolicy: &local})
+	override, err := manifest.NewVerificationOverride(manifest.VerificationSpec{
+		LocalReplacePolicy: &local,
+	})
 	if err != nil {
 		t.Fatalf("NewVerificationOverride returned error: %v", err)
 	}
@@ -34,11 +36,17 @@ func TestNewVerificationOverrideAppliesLocalReplacePolicy(t *testing.T) {
 
 func TestNewVerificationOverrideRejectsInvalidNestedPolicy(t *testing.T) {
 	local := "ignore"
-	if _, err := manifest.NewVerificationOverride(manifest.VerificationSpec{LocalReplacePolicy: &local}); err == nil {
+	if _, err := manifest.NewVerificationOverride(manifest.VerificationSpec{
+		LocalReplacePolicy: &local,
+	}); err == nil {
 		t.Fatalf("expected invalid local replace policy error")
 	}
 	mode := "workspace"
-	if _, err := manifest.NewVerificationOverride(manifest.VerificationSpec{Go: manifest.GoVerifySpec{WorkspaceMode: &mode}}); err == nil {
+	if _, err := manifest.NewVerificationOverride(manifest.VerificationSpec{
+		Go: manifest.GoVerifySpec{
+			WorkspaceMode: &mode,
+		},
+	}); err == nil {
 		t.Fatalf("expected invalid Go verification override error")
 	}
 }

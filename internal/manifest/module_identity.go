@@ -32,22 +32,24 @@ type ModuleIdentity struct {
 
 // NewModuleIdentity validates spec and applies module identity defaults.
 func NewModuleIdentity(spec ModuleIdentitySpec) (ModuleIdentity, error) {
+	var collector IssueCollector
+
 	moduleType, err := ParseModuleType(stringValue(spec.Type, string(ModuleTypeGo)))
-	if err != nil {
-		return ModuleIdentity{}, err
-	}
+	collector.AddError("type", err)
+
 	modulePath, err := ParseModulePath(spec.Path)
-	if err != nil {
-		return ModuleIdentity{}, err
-	}
+	collector.AddError("path", err)
+
 	root, err := ParseRelativePath("module.root", stringValue(spec.Root, "."), true)
-	if err != nil {
-		return ModuleIdentity{}, err
-	}
+	collector.AddError("root", err)
+
 	goMod, err := ParseRelativePath("module.goMod", stringValue(spec.GoMod, "go.mod"), false)
-	if err != nil {
+	collector.AddError("goMod", err)
+
+	if err := collector.Err(); err != nil {
 		return ModuleIdentity{}, err
 	}
+
 	return ModuleIdentity{moduleType: moduleType, path: modulePath, root: root, goMod: goMod}, nil
 }
 

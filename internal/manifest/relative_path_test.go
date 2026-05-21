@@ -44,7 +44,15 @@ func TestParseRelativePathHandlesDotPolicy(t *testing.T) {
 }
 
 func TestParseRelativePathRejectsUnsafePaths(t *testing.T) {
-	for _, value := range []string{"", "../secret", "safe/../secret", "/absolute", "C:/absolute", "dir\\file", " dir/file"} {
+	for _, value := range []string{
+		"",
+		"../secret",
+		"safe/../secret",
+		"/absolute",
+		"C:/absolute",
+		"dir\\file",
+		" dir/file",
+	} {
 		if _, err := manifest.ParseRelativePath("path", value, false); err == nil {
 			t.Fatalf("ParseRelativePath(%q) returned nil error", value)
 		}

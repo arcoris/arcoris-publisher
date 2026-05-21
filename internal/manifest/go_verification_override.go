@@ -28,27 +28,37 @@ type GoVerificationOverride struct {
 
 // NewGoVerificationOverride validates a partial Go verification policy.
 func NewGoVerificationOverride(spec GoVerifySpec) (GoVerificationOverride, error) {
+	var collector IssueCollector
 	var override GoVerificationOverride
+
 	if spec.WorkspaceMode != nil {
 		mode, err := ParseGoWorkspaceMode(*spec.WorkspaceMode)
-		if err != nil {
-			return GoVerificationOverride{}, err
+		collector.AddError("workspaceMode", err)
+		if err == nil {
+			override.workspaceMode = &mode
 		}
-		override.workspaceMode = &mode
 	}
+
 	override.list = spec.List
 	override.test = spec.Test
 	override.tidy = spec.Tidy
+
 	if spec.Patterns != nil {
 		patterns := make([]string, 0, len(spec.Patterns))
 		for i, pattern := range spec.Patterns {
 			if pattern == "" {
-				return GoVerificationOverride{}, fmt.Errorf("go.patterns[%d] is empty", i)
+				collector.Add(IssueInvalidValue, fmt.Sprintf("patterns[%d]", i), "must not be empty")
+				continue
 			}
 			patterns = append(patterns, pattern)
 		}
 		override.patterns = patterns
 		override.patternsSet = true
 	}
+
+	if err := collector.Err(); err != nil {
+		return GoVerificationOverride{}, err
+	}
+
 	return override, nil
 }

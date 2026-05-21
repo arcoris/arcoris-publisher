@@ -31,7 +31,10 @@ func TestParsePublishModeAcceptsExplicitProjection(t *testing.T) {
 }
 
 func TestParseVersionPolicyAcceptsKnownPolicies(t *testing.T) {
-	for _, want := range []manifest.VersionPolicy{manifest.VersionPolicyReleaseTrain, manifest.VersionPolicySnapshot} {
+	for _, want := range []manifest.VersionPolicy{
+		manifest.VersionPolicyReleaseTrain,
+		manifest.VersionPolicySnapshot,
+	} {
 		got, err := manifest.ParseVersionPolicy(string(want))
 		if err != nil {
 			t.Fatalf("ParseVersionPolicy(%q) returned error: %v", want, err)
@@ -43,7 +46,11 @@ func TestParseVersionPolicyAcceptsKnownPolicies(t *testing.T) {
 }
 
 func TestParsePushPolicyAcceptsKnownPolicies(t *testing.T) {
-	for _, want := range []manifest.PushPolicy{manifest.PushPolicyFastForwardOnly, manifest.PushPolicyCreateOnly, manifest.PushPolicyForceWithLease} {
+	for _, want := range []manifest.PushPolicy{
+		manifest.PushPolicyFastForwardOnly,
+		manifest.PushPolicyCreateOnly,
+		manifest.PushPolicyForceWithLease,
+	} {
 		got, err := manifest.ParsePushPolicy(string(want))
 		if err != nil {
 			t.Fatalf("ParsePushPolicy(%q) returned error: %v", want, err)

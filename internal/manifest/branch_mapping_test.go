@@ -21,7 +21,12 @@ import (
 )
 
 func TestNewBranchMappingRoundTripsSpec(t *testing.T) {
-	mapping, err := manifest.NewBranchMapping(manifest.BranchMappingSpec{Source: "main", Target: "release"})
+	mapping, err := manifest.NewBranchMapping(
+		manifest.BranchMappingSpec{
+			Source: "main",
+			Target: "release",
+		},
+	)
 	if err != nil {
 		t.Fatalf("NewBranchMapping returned error: %v", err)
 	}

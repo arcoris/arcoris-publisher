@@ -21,7 +21,11 @@ import (
 )
 
 func TestIssueErrorIncludesPathWhenPresent(t *testing.T) {
-	issue := manifest.Issue{Code: manifest.IssueInvalidValue, Path: "metadata.name", Message: "bad value"}
+	issue := manifest.Issue{
+		Code:    manifest.IssueInvalidValue,
+		Path:    "metadata.name",
+		Message: "bad value",
+	}
 	if got := issue.Error(); got != "invalid_value: metadata.name: bad value" {
 		t.Fatalf("unexpected issue error: %q", got)
 	}

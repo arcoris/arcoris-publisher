@@ -24,8 +24,11 @@ import (
 func TestResolveRejectsMissingModuleManifest(t *testing.T) {
 	_, err := resolved.Resolve(resolved.ResolveInput{
 		Staging: stagingManifest(t, baseStagingSpec()),
-		Modules: []modulemanifest.Manifest{moduleManifest(t, "foundation", "arcoris.dev/foundation", nil)},
+		Modules: []modulemanifest.Manifest{
+			moduleManifest(t, "foundation", "arcoris.dev/foundation", nil),
+		},
 	})
+
 	if err == nil {
 		t.Fatalf("expected missing module manifest error")
 	}
@@ -33,7 +36,11 @@ func TestResolveRejectsMissingModuleManifest(t *testing.T) {
 
 func TestResolveRejectsUnreferencedModuleManifest(t *testing.T) {
 	modules := append(standardModules(t), moduleManifest(t, "extra", "arcoris.dev/extra", nil))
-	_, err := resolved.Resolve(resolved.ResolveInput{Staging: stagingManifest(t, baseStagingSpec()), Modules: modules})
+	_, err := resolved.Resolve(resolved.ResolveInput{
+		Staging: stagingManifest(t, baseStagingSpec()),
+		Modules: modules,
+	})
+
 	if err == nil {
 		t.Fatalf("expected unreferenced module manifest error")
 	}

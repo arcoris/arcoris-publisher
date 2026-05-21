@@ -26,7 +26,17 @@ import (
 func TestIssueCollectorCollectsDirectAndNestedErrors(t *testing.T) {
 	var collector manifest.IssueCollector
 	collector.Add(manifest.IssueInvalidValue, "field", "bad %s", "value")
-	collector.AddError("nested", fmt.Errorf("wrapped: %w", manifest.NewFieldError(manifest.IssueMissingField, "name", "required")))
+	collector.AddError(
+		"nested",
+		fmt.Errorf(
+			"wrapped: %w",
+			manifest.NewFieldError(
+				manifest.IssueMissingField,
+				"name",
+				"required",
+			),
+		),
+	)
 	err := collector.Err()
 	if err == nil || !strings.Contains(err.Error(), "nested.name") {
 		t.Fatalf("unexpected collector error: %v", err)
@@ -37,7 +47,9 @@ func TestIssueCollectorWrapsPlainErrorsAtPath(t *testing.T) {
 	var collector manifest.IssueCollector
 	collector.AddError("source", errors.New("boom"))
 	issues := collector.Issues()
-	if len(issues) != 1 || issues[0].Path != "source" || issues[0].Code != manifest.IssueInvalidValue {
+	if len(issues) != 1 ||
+		issues[0].Path != "source" ||
+		issues[0].Code != manifest.IssueInvalidValue {
 		t.Fatalf("unexpected collected issues: %#v", issues)
 	}
 }
@@ -45,7 +57,17 @@ func TestIssueCollectorWrapsPlainErrorsAtPath(t *testing.T) {
 func TestIssueCollectorHandlesNilAndRootValidationErrors(t *testing.T) {
 	var collector manifest.IssueCollector
 	collector.AddError("ignored", nil)
-	collector.AddError("metadata", &manifest.ValidationError{Issues: []manifest.Issue{{Code: manifest.IssueMissingField, Message: "required"}}})
+	collector.AddError(
+		"metadata",
+		&manifest.ValidationError{
+			Issues: []manifest.Issue{
+				{
+					Code:    manifest.IssueMissingField,
+					Message: "required",
+				},
+			},
+		},
+	)
 	collector.AddError("", manifest.NewFieldError(manifest.IssueInvalidValue, "kind", "bad"))
 	issues := collector.Issues()
 	if len(issues) != 2 || issues[0].Path != "metadata" || issues[1].Path != "kind" {

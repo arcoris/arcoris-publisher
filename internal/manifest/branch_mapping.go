@@ -14,8 +14,6 @@
 
 package manifest
 
-import "fmt"
-
 // BranchMappingSpec is the raw source-to-target branch mapping declaration.
 type BranchMappingSpec struct {
 	Source string `json:"source" yaml:"source"`
@@ -34,14 +32,18 @@ type BranchMapping struct {
 
 // NewBranchMapping validates spec and returns a branch mapping.
 func NewBranchMapping(spec BranchMappingSpec) (BranchMapping, error) {
+	var collector IssueCollector
+
 	source, err := ParseBranchName(spec.Source)
-	if err != nil {
-		return BranchMapping{}, fmt.Errorf("source: %w", err)
-	}
+	collector.AddError("source", err)
+
 	target, err := ParseBranchName(spec.Target)
-	if err != nil {
-		return BranchMapping{}, fmt.Errorf("target: %w", err)
+	collector.AddError("target", err)
+
+	if err := collector.Err(); err != nil {
+		return BranchMapping{}, err
 	}
+
 	return BranchMapping{source: source, target: target}, nil
 }
 
