@@ -57,11 +57,19 @@ func TestErrorHelpersAssignCodes(t *testing.T) {
 		{name: "not found", err: configNotFoundError("path"), code: CodeConfigNotFound},
 		{name: "format", err: unsupportedFormatError("path"), code: CodeUnsupportedFormat},
 		{name: "decode", err: decodeError("path", cause, "module"), code: CodeDecodeFailed},
-		{name: "invalid", err: invalidManifestError("path", cause, "module"), code: CodeInvalidManifest},
+		{
+			name: "invalid",
+			err:  invalidManifestError("path", cause, "module"),
+			code: CodeInvalidManifest,
+		},
 		{name: "root", err: stagingRootError("path", cause), code: CodeUnsafePath},
 		{name: "abs", err: pathAbsError("path", cause), code: CodeUnsafePath},
 		{name: "source", err: sourceDirEscapeError("path", cause), code: CodeUnsafePath},
-		{name: "manifest", err: moduleManifestEscapeError("path", cause), code: CodeUnsafePath},
+		{
+			name: "manifest",
+			err:  moduleManifestEscapeError("path", cause),
+			code: CodeUnsafePath,
+		},
 		{name: "resolve", err: resolveError("path", cause), code: CodeResolveFailed},
 	}
 

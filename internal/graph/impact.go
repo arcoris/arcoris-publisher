@@ -60,22 +60,36 @@ func (g Graph) validateInputNames(
 	seen := make(map[manifest.ModuleName]struct{}, len(names))
 	out := make([]manifest.ModuleName, 0, len(names))
 	for _, name := range names {
-		issuePath := path
-		if len(names) > 1 {
-			issuePath = issuePath + "[]"
-		}
 		if !g.Contains(name) {
-			collector.add(IssueUnknownNode, issuePath, "unknown graph node %q", name)
+			collector.add(
+				IssueUnknownNode,
+				inputIssuePath(path, len(names)),
+				"unknown graph node %q",
+				name,
+			)
 			continue
 		}
+
 		if _, ok := seen[name]; ok {
 			continue
 		}
+
 		seen[name] = struct{}{}
 		out = append(out, name)
 	}
+
 	if err := collector.err(); err != nil {
 		return nil, err
 	}
+
 	return out, nil
+}
+
+// inputIssuePath marks repeated user input as a collection-level location.
+func inputIssuePath(path string, inputCount int) string {
+	if inputCount <= 1 {
+		return path
+	}
+
+	return path + "[]"
 }

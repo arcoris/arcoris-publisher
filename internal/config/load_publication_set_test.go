@@ -96,7 +96,11 @@ func TestLoadPublicationSetWithTraceReportsResolveFailure(t *testing.T) {
 	reader.add(controlModulePath(root), foundationModuleYAML())
 
 	loader := NewLoader(LoaderOptions{Reader: reader})
-	if _, err := loader.LoadPublicationSetWithTrace(context.Background(), stagingPath); err == nil {
+	_, err := loader.LoadPublicationSetWithTrace(
+		context.Background(),
+		stagingPath,
+	)
+	if err == nil {
 		t.Fatal("expected resolve failure")
 	}
 }

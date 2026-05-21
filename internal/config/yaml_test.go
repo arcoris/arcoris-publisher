@@ -39,7 +39,9 @@ hash: "value # not comment"
 	if err := json.Unmarshal(jsonData, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded["name"] != "arcoris" || decoded["single"] != "it's ok" || decoded["enabled"] != false {
+	if decoded["name"] != "arcoris" ||
+		decoded["single"] != "it's ok" ||
+		decoded["enabled"] != false {
 		t.Fatalf("unexpected decoded map: %#v", decoded)
 	}
 	if decoded["hash"] != "value # not comment" {

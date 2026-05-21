@@ -87,9 +87,8 @@ func (g Graph) findCycleFrom(
 	stack *[]manifest.ModuleName,
 	index map[manifest.ModuleName]int,
 ) (Cycle, bool) {
-	state[name] = visiting
-	index[name] = len(*stack)
-	*stack = append(*stack, name)
+	pushCycleVisit(name, state, stack, index)
+
 	for _, dependent := range g.dependents[name] {
 		switch state[dependent] {
 		case unvisited:
@@ -97,14 +96,47 @@ func (g Graph) findCycleFrom(
 				return cycle, true
 			}
 		case visiting:
-			start := index[dependent]
-			nodes := append([]manifest.ModuleName(nil), (*stack)[start:]...)
-			nodes = append(nodes, dependent)
-			return Cycle{nodes: nodes}, true
+			return cycleFromBackEdge(dependent, *stack, index), true
 		}
 	}
+
+	popCycleVisit(name, state, stack, index)
+	return Cycle{}, false
+}
+
+// pushCycleVisit marks a node as active in the DFS recursion stack.
+func pushCycleVisit(
+	name manifest.ModuleName,
+	state map[manifest.ModuleName]visitState,
+	stack *[]manifest.ModuleName,
+	index map[manifest.ModuleName]int,
+) {
+	state[name] = visiting
+	index[name] = len(*stack)
+	*stack = append(*stack, name)
+}
+
+// popCycleVisit marks a DFS node as fully explored.
+func popCycleVisit(
+	name manifest.ModuleName,
+	state map[manifest.ModuleName]visitState,
+	stack *[]manifest.ModuleName,
+	index map[manifest.ModuleName]int,
+) {
 	delete(index, name)
 	*stack = (*stack)[:len(*stack)-1]
 	state[name] = visited
-	return Cycle{}, false
+}
+
+// cycleFromBackEdge reconstructs the repeated-node cycle path from the stack.
+func cycleFromBackEdge(
+	dependent manifest.ModuleName,
+	stack []manifest.ModuleName,
+	index map[manifest.ModuleName]int,
+) Cycle {
+	start := index[dependent]
+	nodes := append([]manifest.ModuleName(nil), stack[start:]...)
+	nodes = append(nodes, dependent)
+
+	return Cycle{nodes: nodes}
 }

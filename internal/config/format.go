@@ -50,7 +50,8 @@ func StagingManifestNames() []string {
 	}
 }
 
-// ModuleManifestNames returns the conventional module-level manifest names in lookup order.
+// ModuleManifestNames returns conventional module-level manifest names in
+// lookup order.
 func ModuleManifestNames() []string {
 	return []string{
 		"arcpub.module.yaml",

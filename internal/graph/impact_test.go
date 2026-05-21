@@ -76,6 +76,27 @@ func TestImpactUnknownNode(t *testing.T) {
 	}
 }
 
+func TestImpactUnknownNodesUseCollectionPath(t *testing.T) {
+	g := mustGraph(t, testModule{name: "foundation"})
+	_, err := g.AffectedBy(
+		manifest.ModuleName("missing-a"),
+		manifest.ModuleName("missing-b"),
+	)
+	if err == nil {
+		t.Fatal("AffectedBy(missing-a, missing-b) error = nil")
+	}
+
+	var validation *ValidationError
+	if !errors.As(err, &validation) {
+		t.Fatalf("error = %v, want validation error", err)
+	}
+	for _, issue := range validation.Issues {
+		if issue.Path != "changed[]" {
+			t.Fatalf("issue path = %q, want changed[]", issue.Path)
+		}
+	}
+}
+
 func TestPublishClosureUnknownNode(t *testing.T) {
 	g := mustGraph(t, testModule{name: "foundation"})
 	_, err := g.PublishClosure(manifest.ModuleName("missing"))

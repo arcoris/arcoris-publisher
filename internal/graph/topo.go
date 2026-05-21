@@ -14,11 +14,7 @@
 
 package graph
 
-import (
-	"fmt"
-
-	"arcoris.dev/arcoris-publisher/internal/manifest"
-)
+import "arcoris.dev/arcoris-publisher/internal/manifest"
 
 // TopologicalOrder returns all graph nodes in dependency-before-dependent order.
 //
@@ -51,25 +47,59 @@ type nodeFilter func(Node) bool
 // topologicalOrder returns dependency-before-dependent order and optionally
 // filters emitted nodes while still traversing the complete graph.
 func (g Graph) topologicalOrder(filter nodeFilter) ([]manifest.ModuleName, error) {
+	inDegree := g.inDegreeByName()
+	queue := g.initialTopologicalQueue(inDegree)
+	ordered := make([]manifest.ModuleName, 0, len(g.order))
+
+	visited := g.consumeTopologicalQueue(queue, inDegree, filter, &ordered)
+	if visited != len(g.order) {
+		return nil, g.dependencyCycleError()
+	}
+
+	return ordered, nil
+}
+
+// inDegreeByName counts unresolved dependencies for each node.
+func (g Graph) inDegreeByName() map[manifest.ModuleName]int {
 	inDegree := make(map[manifest.ModuleName]int, len(g.order))
 	for _, name := range g.order {
 		inDegree[name] = len(g.dependencies[name])
 	}
+
+	return inDegree
+}
+
+// initialTopologicalQueue keeps zero-dependency nodes in declaration order.
+func (g Graph) initialTopologicalQueue(
+	inDegree map[manifest.ModuleName]int,
+) []manifest.ModuleName {
 	queue := make([]manifest.ModuleName, 0, len(g.order))
 	for _, name := range g.order {
 		if inDegree[name] == 0 {
 			queue = append(queue, name)
 		}
 	}
+
+	return queue
+}
+
+// consumeTopologicalQueue performs the Kahn walk and appends emitted nodes.
+func (g Graph) consumeTopologicalQueue(
+	queue []manifest.ModuleName,
+	inDegree map[manifest.ModuleName]int,
+	filter nodeFilter,
+	ordered *[]manifest.ModuleName,
+) int {
 	visited := 0
-	ordered := make([]manifest.ModuleName, 0, len(g.order))
 	for len(queue) > 0 {
 		name := queue[0]
 		queue = queue[1:]
 		visited++
+
 		if filter == nil || filter(g.nodes[name]) {
-			ordered = append(ordered, name)
+			*ordered = append(*ordered, name)
 		}
+
 		for _, dependent := range g.dependents[name] {
 			inDegree[dependent]--
 			if inDegree[dependent] == 0 {
@@ -77,20 +107,23 @@ func (g Graph) topologicalOrder(filter nodeFilter) ([]manifest.ModuleName, error
 			}
 		}
 	}
-	if visited != len(g.order) {
-		cycle, ok := g.FindCycle()
-		message := "dependency cycle detected"
-		if ok {
-			message = fmt.Sprintf("dependency cycle detected: %s", cycle.String())
-		}
-		return nil, dependencyCycleError(message)
-	}
-	return ordered, nil
+
+	return visited
 }
 
-// dependencyCycleError builds the common cycle validation error used by ordering
-// and explicit acyclicity checks.
-func dependencyCycleError(message string) error {
+// dependencyCycleError reports the discovered cycle when one is available.
+func (g Graph) dependencyCycleError() error {
+	message := "dependency cycle detected"
+	if cycle, ok := g.FindCycle(); ok {
+		message = "dependency cycle detected: " + cycle.String()
+	}
+
+	return dependencyCycleError(message)
+}
+
+// dependencyCycleError builds the shared validation error used by ordering and
+// explicit acyclicity checks.
+func dependencyCycleError(message string) *ValidationError {
 	return &ValidationError{
 		Issues: []Issue{
 			{

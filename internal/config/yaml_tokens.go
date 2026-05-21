@@ -69,7 +69,11 @@ func looksLikeInlineMapItem(item string) bool {
 	}
 
 	key := strings.TrimSpace(item[:idx])
-	return key != "" && !strings.ContainsAny(key, " \t[]{}")
+	if key == "" {
+		return false
+	}
+
+	return !strings.ContainsAny(key, " \t[]{}")
 }
 
 // expectedYAMLKeyValueError reports a non-empty map line that has no colon.

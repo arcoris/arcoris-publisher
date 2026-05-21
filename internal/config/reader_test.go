@@ -58,7 +58,10 @@ func TestOSReaderReadFileHonorsCancelledContext(t *testing.T) {
 }
 
 func TestOSReaderExistsReturnsFalseForMissingPath(t *testing.T) {
-	exists, err := (OSReader{}).Exists(context.Background(), filepath.Join(t.TempDir(), "missing"))
+	exists, err := (OSReader{}).Exists(
+		context.Background(),
+		filepath.Join(t.TempDir(), "missing"),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

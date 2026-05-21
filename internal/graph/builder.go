@@ -94,21 +94,15 @@ func (b *builder) indexNodes() {
 		if module.Visibility() == manifest.VisibilityDisabled {
 			continue
 		}
+
 		name := module.Name()
 		path := fmt.Sprintf("modules[%d]", i)
 		if _, exists := b.nodes[name]; exists {
-			b.issues.add(IssueDuplicateNode, path+".name", "duplicate graph node %q", name)
+			b.addDuplicateNodeIssue(path+".name", name)
 			continue
 		}
 
-		b.order = append(b.order, name)
-		b.nodes[name] = Node{
-			name:       name,
-			modulePath: module.ModulePath(),
-			visibility: module.Visibility(),
-		}
-		b.dependencies[name] = nil
-		b.dependents[name] = nil
+		b.addNode(module)
 	}
 }
 
@@ -119,6 +113,7 @@ func (b *builder) indexEdges() {
 		if module.Visibility() == manifest.VisibilityDisabled {
 			continue
 		}
+
 		moduleName := module.Name()
 		for j, dependency := range module.Dependencies() {
 			path := fmt.Sprintf("modules[%d].dependencies[%d]", i, j)
@@ -135,30 +130,94 @@ func (b *builder) addDependency(
 	dependency manifest.ModuleName,
 ) {
 	if dependency == moduleName {
-		b.issues.add(IssueSelfDependency, path, "module %q cannot depend on itself", moduleName)
+		b.addSelfDependencyIssue(path, moduleName)
 		return
 	}
+
 	depModule, ok := b.registry.ModuleByName(dependency)
 	if !ok {
-		b.issues.add(IssueUnknownDependency, path, "unknown dependency %q", dependency)
+		b.addUnknownDependencyIssue(path, dependency)
 		return
 	}
+
 	if depModule.Visibility() == manifest.VisibilityDisabled {
-		b.issues.add(
-			IssueDisabledDependency,
-			path,
-			"module %q depends on disabled module %q",
-			moduleName,
-			dependency,
-		)
+		b.addDisabledDependencyIssue(path, moduleName, dependency)
 		return
 	}
+
 	if _, ok := b.nodes[dependency]; !ok {
-		b.issues.add(IssueUnknownDependency, path, "dependency %q is not present in graph", dependency)
+		b.addMissingDependencyNodeIssue(path, dependency)
 		return
 	}
+
+	b.addEdge(moduleName, dependency)
+}
+
+// addNode stores one non-disabled module in every node index.
+func (b *builder) addNode(module resolved.PublicationModule) {
+	name := module.Name()
+
+	b.order = append(b.order, name)
+	b.nodes[name] = Node{
+		name:       name,
+		modulePath: module.ModulePath(),
+		visibility: module.Visibility(),
+	}
+	b.dependencies[name] = nil
+	b.dependents[name] = nil
+}
+
+// addEdge stores one dependency edge in both traversal directions.
+func (b *builder) addEdge(moduleName manifest.ModuleName, dependency manifest.ModuleName) {
 	b.dependencies[moduleName] = append(b.dependencies[moduleName], dependency)
 	b.dependents[dependency] = append(b.dependents[dependency], moduleName)
+}
+
+func (b *builder) addDuplicateNodeIssue(path string, name manifest.ModuleName) {
+	b.issues.add(IssueDuplicateNode, path, "duplicate graph node %q", name)
+}
+
+// addSelfDependencyIssue records a direct module-to-itself dependency.
+func (b *builder) addSelfDependencyIssue(path string, moduleName manifest.ModuleName) {
+	b.issues.add(
+		IssueSelfDependency,
+		path,
+		"module %q cannot depend on itself",
+		moduleName,
+	)
+}
+
+// addUnknownDependencyIssue records a dependency absent from the registry.
+func (b *builder) addUnknownDependencyIssue(path string, dependency manifest.ModuleName) {
+	b.issues.add(IssueUnknownDependency, path, "unknown dependency %q", dependency)
+}
+
+// addDisabledDependencyIssue records a dependency on a disabled module.
+func (b *builder) addDisabledDependencyIssue(
+	path string,
+	moduleName manifest.ModuleName,
+	dependency manifest.ModuleName,
+) {
+	b.issues.add(
+		IssueDisabledDependency,
+		path,
+		"module %q depends on disabled module %q",
+		moduleName,
+		dependency,
+	)
+}
+
+// addMissingDependencyNodeIssue records a registry module omitted from the graph.
+func (b *builder) addMissingDependencyNodeIssue(
+	path string,
+	dependency manifest.ModuleName,
+) {
+	b.issues.add(
+		IssueUnknownDependency,
+		path,
+		"dependency %q is not present in graph",
+		dependency,
+	)
 }
 
 // cloneNodes detaches the graph's node index from the mutable builder.
