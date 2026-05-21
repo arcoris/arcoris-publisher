@@ -1,0 +1,27 @@
+apiVersion: arcpub.arcoris.dev/v1alpha1
+kind: StagingManifest
+metadata:
+  name: arcoris
+source:
+  repository: arcoris/arcoris
+  defaultBranch: main
+  stagingRoot: .
+  moduleRoot: src/arcoris.dev
+publish:
+  mode: explicit-projection
+  versionPolicy: release-train
+  pushPolicy: fast-forward-only
+defaults:
+  branches:
+    - source: main
+      target: main
+modules:
+  - name: foundation
+    sourceDir: src/arcoris.dev/foundation
+    repository: arcoris/foundation
+  - name: control
+    sourceDir: src/arcoris.dev/control
+    repository: arcoris/control
+    branches:
+      - source: release
+        target: stable

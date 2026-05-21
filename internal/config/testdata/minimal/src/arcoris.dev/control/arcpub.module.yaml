@@ -1,0 +1,18 @@
+apiVersion: arcpub.arcoris.dev/v1alpha1
+kind: ModuleManifest
+metadata:
+  name: control
+module:
+  type: go
+  path: arcoris.dev/control
+dependencies:
+  internal:
+    - foundation
+publish:
+  entries:
+    - type: file
+      from: go.mod
+      to: go.mod
+    - type: directory
+      from: runtime
+      to: runtime

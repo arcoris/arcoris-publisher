@@ -1,0 +1,11 @@
+apiVersion: arcpub.arcoris.dev/v1alpha1
+kind: StagingManifest
+metadata:
+  name: arcoris
+source:
+  repository: arcoris/arcoris
+  defaultBranch: main
+modules:
+  - name: foundation
+    sourceDir: src/arcoris.dev/foundation
+    repository: arcoris/foundation
