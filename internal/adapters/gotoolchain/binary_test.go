@@ -12,16 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package exec
+package gotoolchain
 
 import "testing"
 
-func TestNewDetachesBaseEnvironment(t *testing.T) {
-	env := []string{"A=1"}
-	runner := New(Options{Env: env})
-	env[0] = "A=mutated"
-
-	if got := runner.baseEnv[0]; got != "A=1" {
-		t.Fatalf("New() base env = %q, want A=1", got)
+func TestBinary(t *testing.T) {
+	if got := binary("go", ""); got != "go" {
+		t.Fatalf("binary default = %q", got)
+	}
+	if got := binary("go", "custom"); got != "custom" {
+		t.Fatalf("binary override = %q", got)
 	}
 }

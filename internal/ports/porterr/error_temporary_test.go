@@ -12,16 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package exec
+package porterr
 
 import "testing"
 
-func TestNewDetachesBaseEnvironment(t *testing.T) {
-	env := []string{"A=1"}
-	runner := New(Options{Env: env})
-	env[0] = "A=mutated"
+func TestErrorWithTemporaryReturnsUpdatedCopy(t *testing.T) {
+	base := New(KindProcess, Code("process_failed"), "failed", nil)
+	err := base.WithTemporary(true)
 
-	if got := runner.baseEnv[0]; got != "A=1" {
-		t.Fatalf("New() base env = %q, want A=1", got)
+	if !err.Temporary {
+		t.Fatalf("WithTemporary(true) did not set temporary flag")
+	}
+	if base.Temporary {
+		t.Fatalf("WithTemporary should not mutate receiver")
+	}
+}
+
+func TestErrorWithTemporaryNilReceiver(t *testing.T) {
+	if (*Error)(nil).WithTemporary(true) != nil {
+		t.Fatalf("WithTemporary() on nil receiver should return nil")
 	}
 }

@@ -18,21 +18,19 @@ import (
 	"context"
 	"testing"
 
-	processport "arcoris.dev/arcoris-publisher/internal/ports/process"
+	gitport "arcoris.dev/arcoris-publisher/internal/ports/git"
 )
 
-func TestStatusParsesPorcelain(t *testing.T) {
-	runner := &fakeRunner{results: []processport.Result{{Stdout: []byte(" M file.txt\x00R  new.txt\x00old.txt\x00")}}}
+func TestCreateBranchBuildsCommand(t *testing.T) {
+	runner := &fakeRunner{}
 	client := New(runner, Options{})
 
-	status, err := client.Status(context.Background(), "/repo")
-	if err != nil {
-		t.Fatalf("Status() error = %v", err)
+	if err := client.CreateBranch(context.Background(), "/repo", gitport.BranchName("next"), "HEAD", gitport.CreateBranchOptions{Force: true}); err != nil {
+		t.Fatalf("CreateBranch() error = %v", err)
 	}
-	if status.Clean || len(status.Entries) != 2 {
-		t.Fatalf("Status() = %#v, want 2 dirty entries", status)
-	}
-	if status.Entries[1].Code != "R " || status.Entries[1].Path != "new.txt" {
-		t.Fatalf("rename entry = %#v", status.Entries[1])
-	}
+	assertStringSlice(t, runner.specs[0].Args, []string{"branch", "-f", "next", "HEAD"})
+}
+
+func TestCreateBranchArgsOmitEmptyStartPoint(t *testing.T) {
+	assertStringSlice(t, createBranchArgs(gitport.BranchName("next"), "", gitport.CreateBranchOptions{}), []string{"branch", "next"})
 }

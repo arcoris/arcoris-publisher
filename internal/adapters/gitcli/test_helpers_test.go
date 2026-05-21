@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"os/exec"
+	"strconv"
 	"testing"
 
 	"arcoris.dev/arcoris-publisher/internal/ports/porterr"
@@ -90,4 +91,13 @@ func assertStringSlice(t *testing.T, got, want []string) {
 			t.Fatalf("item %d = %q, want %q in %#v", i, got[i], want[i], got)
 		}
 	}
+}
+
+// intsOf renders integer slices for reuse with assertStringSlice.
+func intsOf(values []int) []string {
+	out := make([]string, len(values))
+	for i, value := range values {
+		out[i] = strconv.Itoa(value)
+	}
+	return out
 }

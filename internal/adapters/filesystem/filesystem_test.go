@@ -12,16 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package exec
+package filesystem
 
 import "testing"
 
-func TestNewDetachesBaseEnvironment(t *testing.T) {
-	env := []string{"A=1"}
-	runner := New(Options{Env: env})
-	env[0] = "A=mutated"
-
-	if got := runner.baseEnv[0]; got != "A=1" {
-		t.Fatalf("New() base env = %q, want A=1", got)
+func TestNewReturnsStatelessFileSystem(t *testing.T) {
+	if New() == nil {
+		t.Fatalf("New() returned nil")
 	}
 }

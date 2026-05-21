@@ -45,3 +45,27 @@ func TestSlash(t *testing.T) {
 		t.Fatalf("slash() = %q, want pkg/x.go", got)
 	}
 }
+
+func TestMatchPatternDialects(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		path    string
+		want    bool
+	}{
+		{name: "empty", pattern: "", path: "pkg/x.go", want: false},
+		{name: "exact", pattern: "pkg/x.go", path: "pkg/x.go", want: true},
+		{name: "subtree", pattern: "pkg/**", path: "pkg/nested/x.go", want: true},
+		{name: "basename anywhere", pattern: "**/*.go", path: "pkg/x.go", want: true},
+		{name: "basename glob", pattern: "*.go", path: "pkg/x.go", want: true},
+		{name: "miss", pattern: "*.txt", path: "pkg/x.go", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := matchPattern(tt.pattern, tt.path); got != tt.want {
+				t.Fatalf("matchPattern(%q, %q) = %v, want %v", tt.pattern, tt.path, got, tt.want)
+			}
+		})
+	}
+}

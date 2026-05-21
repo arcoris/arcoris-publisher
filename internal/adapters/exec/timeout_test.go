@@ -12,27 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package gitcli
+package exec
 
 import (
 	"context"
 	"testing"
-
-	processport "arcoris.dev/arcoris-publisher/internal/ports/process"
+	"time"
 )
 
-func TestStatusParsesPorcelain(t *testing.T) {
-	runner := &fakeRunner{results: []processport.Result{{Stdout: []byte(" M file.txt\x00R  new.txt\x00old.txt\x00")}}}
-	client := New(runner, Options{})
+func TestContextWithOptionalTimeoutReusesParentWithoutTimeout(t *testing.T) {
+	parent := context.Background()
+	ctx, cancel := contextWithOptionalTimeout(parent, 0)
+	defer cancel()
 
-	status, err := client.Status(context.Background(), "/repo")
-	if err != nil {
-		t.Fatalf("Status() error = %v", err)
+	if ctx != parent {
+		t.Fatalf("contextWithOptionalTimeout() should reuse parent when timeout is zero")
 	}
-	if status.Clean || len(status.Entries) != 2 {
-		t.Fatalf("Status() = %#v, want 2 dirty entries", status)
-	}
-	if status.Entries[1].Code != "R " || status.Entries[1].Path != "new.txt" {
-		t.Fatalf("rename entry = %#v", status.Entries[1])
+}
+
+func TestContextWithOptionalTimeoutCreatesDeadline(t *testing.T) {
+	ctx, cancel := contextWithOptionalTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	if _, ok := ctx.Deadline(); !ok {
+		t.Fatalf("contextWithOptionalTimeout() should create a deadline")
 	}
 }

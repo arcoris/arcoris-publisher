@@ -12,16 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package exec
+package porterr
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
-func TestNewDetachesBaseEnvironment(t *testing.T) {
-	env := []string{"A=1"}
-	runner := New(Options{Env: env})
-	env[0] = "A=mutated"
+func TestErrorUnwrapReturnsCause(t *testing.T) {
+	cause := errors.New("root cause")
+	err := New(KindGit, Code("git_failed"), "git failed", cause)
 
-	if got := runner.baseEnv[0]; got != "A=1" {
-		t.Fatalf("New() base env = %q, want A=1", got)
+	if !errors.Is(err, cause) {
+		t.Fatalf("Unwrap() cause was not discoverable")
+	}
+}
+
+func TestErrorUnwrapNilReceiver(t *testing.T) {
+	if (*Error)(nil).Unwrap() != nil {
+		t.Fatalf("Unwrap() on nil receiver should return nil")
 	}
 }

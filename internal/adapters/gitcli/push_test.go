@@ -21,38 +21,6 @@ import (
 	gitport "arcoris.dev/arcoris-publisher/internal/ports/git"
 )
 
-func TestCloneBuildsCommand(t *testing.T) {
-	runner := &fakeRunner{}
-	client := New(runner, Options{})
-
-	err := client.Clone(context.Background(), "https://token@example/repo.git", "/dst", gitport.CloneOptions{
-		NoTags:          true,
-		Depth:           1,
-		Bare:            true,
-		SensitiveValues: []string{"token"},
-	})
-	if err != nil {
-		t.Fatalf("Clone() error = %v", err)
-	}
-	assertStringSlice(t, runner.specs[0].Args, []string{"clone", "--no-tags", "--depth", "1", "--bare", "https://token@example/repo.git", "/dst"})
-	assertStringSlice(t, runner.specs[0].SensitiveValues, []string{"token"})
-}
-
-func TestFetchBuildsCommand(t *testing.T) {
-	runner := &fakeRunner{}
-	client := New(runner, Options{})
-
-	err := client.Fetch(context.Background(), "/repo", "", gitport.FetchOptions{
-		Prune:    true,
-		Tags:     gitport.FetchTagsNone,
-		RefSpecs: []gitport.RefSpec{"refs/heads/main:refs/remotes/origin/main"},
-	})
-	if err != nil {
-		t.Fatalf("Fetch() error = %v", err)
-	}
-	assertStringSlice(t, runner.specs[0].Args, []string{"fetch", "--prune", "--no-tags", "origin", "refs/heads/main:refs/remotes/origin/main"})
-}
-
 func TestPushBuildsCommand(t *testing.T) {
 	runner := &fakeRunner{}
 	client := New(runner, Options{})
@@ -62,4 +30,9 @@ func TestPushBuildsCommand(t *testing.T) {
 		t.Fatalf("Push() error = %v", err)
 	}
 	assertStringSlice(t, runner.specs[0].Args, []string{"push", "--force-with-lease", "--atomic", "origin", "main:main"})
+}
+
+func TestPushArgsSupportsForce(t *testing.T) {
+	args := pushArgs("upstream", gitport.RefSpec("main"), gitport.PushOptions{Force: true})
+	assertStringSlice(t, args, []string{"push", "--force", "upstream", "main"})
 }

@@ -18,21 +18,21 @@ import (
 	"context"
 	"testing"
 
+	gitport "arcoris.dev/arcoris-publisher/internal/ports/git"
 	processport "arcoris.dev/arcoris-publisher/internal/ports/process"
 )
 
-func TestStatusParsesPorcelain(t *testing.T) {
-	runner := &fakeRunner{results: []processport.Result{{Stdout: []byte(" M file.txt\x00R  new.txt\x00old.txt\x00")}}}
-	client := New(runner, Options{})
+func TestCurrentBranchReadsBranchName(t *testing.T) {
+	client := New(&fakeRunner{results: []processport.Result{{Stdout: []byte("main\n")}}}, Options{})
 
-	status, err := client.Status(context.Background(), "/repo")
-	if err != nil {
-		t.Fatalf("Status() error = %v", err)
+	branch, err := client.CurrentBranch(context.Background(), "/repo")
+	if err != nil || branch != "main" {
+		t.Fatalf("CurrentBranch() = %q, %v", branch, err)
 	}
-	if status.Clean || len(status.Entries) != 2 {
-		t.Fatalf("Status() = %#v, want 2 dirty entries", status)
-	}
-	if status.Entries[1].Code != "R " || status.Entries[1].Path != "new.txt" {
-		t.Fatalf("rename entry = %#v", status.Entries[1])
-	}
+}
+
+func TestCurrentBranchDetachedHead(t *testing.T) {
+	client := New(&fakeRunner{results: []processport.Result{{Stdout: []byte("\n")}}}, Options{})
+	_, err := client.CurrentBranch(context.Background(), "/repo")
+	assertPortCode(t, err, gitport.CodeRefNotFound)
 }

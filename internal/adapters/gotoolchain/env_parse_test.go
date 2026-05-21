@@ -12,27 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package gitcli
+package gotoolchain
 
 import (
-	"context"
 	"testing"
 
-	processport "arcoris.dev/arcoris-publisher/internal/ports/process"
+	goport "arcoris.dev/arcoris-publisher/internal/ports/gotoolchain"
 )
 
-func TestStatusParsesPorcelain(t *testing.T) {
-	runner := &fakeRunner{results: []processport.Result{{Stdout: []byte(" M file.txt\x00R  new.txt\x00old.txt\x00")}}}
-	client := New(runner, Options{})
-
-	status, err := client.Status(context.Background(), "/repo")
+func TestParseEnvResult(t *testing.T) {
+	result, err := parseEnvResult([]byte(`{"GOWORK":"off","GOFLAGS":""}`))
 	if err != nil {
-		t.Fatalf("Status() error = %v", err)
+		t.Fatalf("parseEnvResult() error = %v", err)
 	}
-	if status.Clean || len(status.Entries) != 2 {
-		t.Fatalf("Status() = %#v, want 2 dirty entries", status)
+	if result.Value("GOWORK") != "off" || !result.HasValue("GOFLAGS") {
+		t.Fatalf("parseEnvResult() = %#v", result)
 	}
-	if status.Entries[1].Code != "R " || status.Entries[1].Path != "new.txt" {
-		t.Fatalf("rename entry = %#v", status.Entries[1])
-	}
+}
+
+func TestParseEnvResultRejectsMalformedJSON(t *testing.T) {
+	_, err := parseEnvResult([]byte(`{`))
+	assertPortCode(t, err, goport.CodeCommandFailed)
 }

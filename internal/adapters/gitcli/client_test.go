@@ -12,16 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package exec
+package gitcli
 
 import "testing"
 
-func TestNewDetachesBaseEnvironment(t *testing.T) {
+func TestNewAppliesDefaultsAndDetachesEnvironment(t *testing.T) {
 	env := []string{"A=1"}
-	runner := New(Options{Env: env})
+	client := New(&fakeRunner{}, Options{Env: env})
 	env[0] = "A=mutated"
 
-	if got := runner.baseEnv[0]; got != "A=1" {
-		t.Fatalf("New() base env = %q, want A=1", got)
+	if client.gitBin != defaultGitBinary {
+		t.Fatalf("gitBin = %q, want %q", client.gitBin, defaultGitBinary)
+	}
+	if client.env[0] != "A=1" {
+		t.Fatalf("env = %#v, want detached copy", client.env)
+	}
+}
+
+func TestNewUsesConfiguredGitBinary(t *testing.T) {
+	client := New(&fakeRunner{}, Options{GitBinary: "custom-git"})
+	if client.gitBin != "custom-git" {
+		t.Fatalf("gitBin = %q, want custom-git", client.gitBin)
 	}
 }

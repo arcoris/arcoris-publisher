@@ -12,16 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package exec
+package gotoolchain
 
-import "testing"
+import (
+	"testing"
 
-func TestNewDetachesBaseEnvironment(t *testing.T) {
-	env := []string{"A=1"}
-	runner := New(Options{Env: env})
-	env[0] = "A=mutated"
+	goport "arcoris.dev/arcoris-publisher/internal/ports/gotoolchain"
+)
 
-	if got := runner.baseEnv[0]; got != "A=1" {
-		t.Fatalf("New() base env = %q, want A=1", got)
-	}
+func TestListArgs(t *testing.T) {
+	args := listArgs(goport.ListOptions{
+		CommonOptions: goport.CommonOptions{Tags: []string{"integration", "linux"}},
+		JSON:          true,
+		Deps:          true,
+		Test:          true,
+		Patterns:      []string{"./pkg"},
+	})
+	assertStringSlice(t, args, []string{"list", "-json", "-deps", "-test", "-tags", "integration,linux", "./pkg"})
 }

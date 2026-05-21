@@ -21,18 +21,11 @@ import (
 	processport "arcoris.dev/arcoris-publisher/internal/ports/process"
 )
 
-func TestStatusParsesPorcelain(t *testing.T) {
-	runner := &fakeRunner{results: []processport.Result{{Stdout: []byte(" M file.txt\x00R  new.txt\x00old.txt\x00")}}}
-	client := New(runner, Options{})
+func TestHeadReadsCommitHash(t *testing.T) {
+	client := New(&fakeRunner{results: []processport.Result{{Stdout: []byte("abc\n")}}}, Options{})
 
-	status, err := client.Status(context.Background(), "/repo")
-	if err != nil {
-		t.Fatalf("Status() error = %v", err)
-	}
-	if status.Clean || len(status.Entries) != 2 {
-		t.Fatalf("Status() = %#v, want 2 dirty entries", status)
-	}
-	if status.Entries[1].Code != "R " || status.Entries[1].Path != "new.txt" {
-		t.Fatalf("rename entry = %#v", status.Entries[1])
+	head, err := client.Head(context.Background(), "/repo")
+	if err != nil || head != "abc" {
+		t.Fatalf("Head() = %q, %v", head, err)
 	}
 }

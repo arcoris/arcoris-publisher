@@ -16,43 +16,18 @@ package filesystem
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"testing"
 
 	fsport "arcoris.dev/arcoris-publisher/internal/ports/filesystem"
 )
 
-func TestWriteFileCreatesParentsAndRespectsOverwrite(t *testing.T) {
-	fs := New()
-	file := filepath.Join(t.TempDir(), "nested", "file.txt")
-
-	err := fs.WriteFile(context.Background(), file, []byte("one"), fsport.WriteFileOptions{CreateDirs: true})
-	if err != nil {
-		t.Fatalf("WriteFile() create error = %v", err)
-	}
-	err = fs.WriteFile(context.Background(), file, []byte("two"), fsport.WriteFileOptions{})
-	assertPortCode(t, err, fsport.CodePermissionDenied)
-
-	err = fs.WriteFile(context.Background(), file, []byte("two"), fsport.WriteFileOptions{Overwrite: true})
-	if err != nil {
-		t.Fatalf("WriteFile() overwrite error = %v", err)
-	}
-	data, err := os.ReadFile(file)
-	if err != nil || string(data) != "two" {
-		t.Fatalf("ReadFile() = %q, %v; want two, nil", data, err)
-	}
-}
-
-func TestMkdirAllAndRemoveAll(t *testing.T) {
-	fs := New()
+func TestRemoveAllRemovesPathInsideSafetyRoot(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "dir")
+	writeFile(t, filepath.Join(dir, "file.txt"), "content")
 
-	if err := fs.MkdirAll(context.Background(), dir, fsport.MkdirOptions{}); err != nil {
-		t.Fatalf("MkdirAll() error = %v", err)
-	}
-	if err := fs.RemoveAll(context.Background(), dir, fsport.RemoveOptions{SafetyRoot: root}); err != nil {
+	if err := New().RemoveAll(context.Background(), dir, fsport.RemoveOptions{SafetyRoot: root}); err != nil {
 		t.Fatalf("RemoveAll() error = %v", err)
 	}
 	assertMissing(t, dir)
@@ -68,4 +43,24 @@ func TestRemoveAllAllowMissingAndUnsafe(t *testing.T) {
 	}
 	err = fs.RemoveAll(context.Background(), filepath.Dir(root), fsport.RemoveOptions{SafetyRoot: root})
 	assertPortCode(t, err, fsport.CodeUnsafeRemove)
+}
+
+func TestValidateRemoveTargetMissingRequiresAllowMissing(t *testing.T) {
+	err := validateRemoveTarget(filepath.Join(t.TempDir(), "missing"), fsport.RemoveOptions{})
+	assertPortCode(t, err, fsport.CodePathNotFound)
+}
+
+func TestRemoveAllMissingRequiresAllowMissing(t *testing.T) {
+	root := t.TempDir()
+	err := New().RemoveAll(context.Background(), filepath.Join(root, "missing"), fsport.RemoveOptions{SafetyRoot: root})
+	assertPortCode(t, err, fsport.CodePathNotFound)
+}
+
+func TestRemoveAllContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := New().RemoveAll(ctx, filepath.Join(t.TempDir(), "dir"), fsport.RemoveOptions{}); err == nil {
+		t.Fatalf("RemoveAll() should return context cancellation")
+	}
 }

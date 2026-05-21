@@ -12,16 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package exec
+package filesystem
 
 import "testing"
 
-func TestNewDetachesBaseEnvironment(t *testing.T) {
-	env := []string{"A=1"}
-	runner := New(Options{Env: env})
-	env[0] = "A=mutated"
+func TestPorterrDetailsBuildsPairsAndIgnoresOddTail(t *testing.T) {
+	details := porterrDetails("path", "/repo", "dangling")
 
-	if got := runner.baseEnv[0]; got != "A=1" {
-		t.Fatalf("New() base env = %q, want A=1", got)
+	if details["path"] != "/repo" {
+		t.Fatalf("porterrDetails() = %#v", details)
+	}
+	if _, ok := details["dangling"]; ok {
+		t.Fatalf("porterrDetails() should ignore odd trailing values: %#v", details)
 	}
 }

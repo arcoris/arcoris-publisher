@@ -77,3 +77,13 @@ func TestTreeHashMissingRoot(t *testing.T) {
 	_, err := New().TreeHash(context.Background(), filepath.Join(t.TempDir(), "missing"), fsport.TreeHashOptions{})
 	assertPortCode(t, err, fsport.CodePathNotFound)
 }
+
+func TestTreeHashContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := New().TreeHash(ctx, t.TempDir(), fsport.TreeHashOptions{})
+	if err == nil {
+		t.Fatalf("TreeHash() should return context cancellation")
+	}
+}

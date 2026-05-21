@@ -24,50 +24,6 @@ import (
 	processport "arcoris.dev/arcoris-publisher/internal/ports/process"
 )
 
-func TestCheckoutAndBranchCommands(t *testing.T) {
-	runner := &fakeRunner{}
-	client := New(runner, Options{})
-
-	if err := client.Checkout(context.Background(), "/repo", "main", gitport.CheckoutOptions{Force: true, Create: true}); err != nil {
-		t.Fatalf("Checkout() error = %v", err)
-	}
-	if err := client.CreateBranch(context.Background(), "/repo", gitport.BranchName("next"), "HEAD", gitport.CreateBranchOptions{Force: true}); err != nil {
-		t.Fatalf("CreateBranch() error = %v", err)
-	}
-	assertStringSlice(t, runner.specs[0].Args, []string{"checkout", "--force", "-b", "main"})
-	assertStringSlice(t, runner.specs[1].Args, []string{"branch", "-f", "next", "HEAD"})
-}
-
-func TestCleanFlags(t *testing.T) {
-	tests := []struct {
-		name string
-		opts gitport.CleanOptions
-		want []string
-	}{
-		{name: "noop", opts: gitport.CleanOptions{}, want: nil},
-		{name: "untracked", opts: gitport.CleanOptions{RemoveUntracked: true}, want: []string{"clean", "-f"}},
-		{name: "ignored only", opts: gitport.CleanOptions{RemoveIgnored: true, Directories: true}, want: []string{"clean", "-fdX"}},
-		{name: "all forced", opts: gitport.CleanOptions{RemoveUntracked: true, RemoveIgnored: true, Directories: true, Force: true}, want: []string{"clean", "-ffdx"}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			runner := &fakeRunner{}
-			client := New(runner, Options{})
-			if err := client.Clean(context.Background(), "/repo", tt.opts); err != nil {
-				t.Fatalf("Clean() error = %v", err)
-			}
-			if tt.want == nil {
-				if len(runner.specs) != 0 {
-					t.Fatalf("Clean() should not run command: %#v", runner.specs)
-				}
-				return
-			}
-			assertStringSlice(t, runner.specs[0].Args, tt.want)
-		})
-	}
-}
-
 func TestCommitRequiresStagedChangesAndDoesNotAddAll(t *testing.T) {
 	runner := &fakeRunner{results: []processport.Result{{ExitCode: 0}}}
 	client := New(runner, Options{})
@@ -120,4 +76,9 @@ func TestCommitWrapsDiffError(t *testing.T) {
 
 	_, err := client.Commit(context.Background(), "/repo", "msg", gitport.CommitOptions{})
 	assertPortCode(t, err, gitport.CodeCommandFailed)
+}
+
+func TestCommitArgsSupportsAllowEmpty(t *testing.T) {
+	args := commitArgs("msg", gitport.CommitOptions{AllowEmpty: true})
+	assertStringSlice(t, args, []string{"commit", "-m", "msg", "--allow-empty"})
 }

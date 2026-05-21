@@ -21,18 +21,22 @@ import (
 	processport "arcoris.dev/arcoris-publisher/internal/ports/process"
 )
 
-func TestStatusParsesPorcelain(t *testing.T) {
-	runner := &fakeRunner{results: []processport.Result{{Stdout: []byte(" M file.txt\x00R  new.txt\x00old.txt\x00")}}}
+func TestCommitMessageDefaultsToHead(t *testing.T) {
+	runner := &fakeRunner{results: []processport.Result{{Stdout: []byte("subject\n\nbody\n")}}}
 	client := New(runner, Options{})
 
-	status, err := client.Status(context.Background(), "/repo")
-	if err != nil {
-		t.Fatalf("Status() error = %v", err)
+	message, err := client.CommitMessage(context.Background(), "/repo", "")
+	if err != nil || message != "subject\n\nbody\n" {
+		t.Fatalf("CommitMessage() = %q, %v", message, err)
 	}
-	if status.Clean || len(status.Entries) != 2 {
-		t.Fatalf("Status() = %#v, want 2 dirty entries", status)
+	assertStringSlice(t, runner.specs[0].Args, []string{"log", "-1", "--format=%B", "HEAD"})
+}
+
+func TestDefaultRef(t *testing.T) {
+	if got := defaultRef(""); got != "HEAD" {
+		t.Fatalf("defaultRef(empty) = %q, want HEAD", got)
 	}
-	if status.Entries[1].Code != "R " || status.Entries[1].Path != "new.txt" {
-		t.Fatalf("rename entry = %#v", status.Entries[1])
+	if got := defaultRef("main"); got != "main" {
+		t.Fatalf("defaultRef(main) = %q, want main", got)
 	}
 }

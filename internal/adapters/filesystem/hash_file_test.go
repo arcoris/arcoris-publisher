@@ -12,27 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package gitcli
+package filesystem
 
 import (
-	"context"
+	"path/filepath"
 	"testing"
-
-	processport "arcoris.dev/arcoris-publisher/internal/ports/process"
 )
 
-func TestStatusParsesPorcelain(t *testing.T) {
-	runner := &fakeRunner{results: []processport.Result{{Stdout: []byte(" M file.txt\x00R  new.txt\x00old.txt\x00")}}}
-	client := New(runner, Options{})
+func TestFileDigestHashesRegularFileContent(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "file.txt")
+	writeFile(t, file, "content")
 
-	status, err := client.Status(context.Background(), "/repo")
+	got, err := fileDigest(file)
 	if err != nil {
-		t.Fatalf("Status() error = %v", err)
+		t.Fatalf("fileDigest() error = %v", err)
 	}
-	if status.Clean || len(status.Entries) != 2 {
-		t.Fatalf("Status() = %#v, want 2 dirty entries", status)
+	want := "ed7002b439e9ac845f22357d822bac1444730fbdb6016d3ec9432297b9ec9f73"
+	if got != want {
+		t.Fatalf("fileDigest() = %s, want %s", got, want)
 	}
-	if status.Entries[1].Code != "R " || status.Entries[1].Path != "new.txt" {
-		t.Fatalf("rename entry = %#v", status.Entries[1])
+}
+
+func TestFileDigestReturnsOpenError(t *testing.T) {
+	if _, err := fileDigest(filepath.Join(t.TempDir(), "missing.txt")); err == nil {
+		t.Fatalf("fileDigest() should return source open error")
 	}
 }

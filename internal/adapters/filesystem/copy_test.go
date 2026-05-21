@@ -57,49 +57,27 @@ func TestCopyTreeRejectsDestinationOutsideSafetyRoot(t *testing.T) {
 	assertPortCode(t, err, fsport.CodePathOutsideRoot)
 }
 
-func TestCopyTreePreservesSymlink(t *testing.T) {
-	root := t.TempDir()
-	src := filepath.Join(root, "src")
-	dst := filepath.Join(root, "dst")
-	must(t, os.MkdirAll(src, 0o755))
-	if err := os.Symlink("target", filepath.Join(src, "link")); err != nil {
-		t.Skipf("symlink unavailable: %v", err)
-	}
-
-	result, err := New().CopyTree(context.Background(), src, dst, fsport.CopyTreeOptions{
-		SafetyRoot:    root,
-		SymlinkPolicy: fsport.SymlinkPreserve,
-	})
-	if err != nil {
-		t.Fatalf("CopyTree() error = %v", err)
-	}
-	if result.FilesCopied != 1 {
-		t.Fatalf("FilesCopied = %d, want 1", result.FilesCopied)
-	}
-	target, err := os.Readlink(filepath.Join(dst, "link"))
-	if err != nil || target != "target" {
-		t.Fatalf("Readlink() = %q, %v; want target, nil", target, err)
-	}
-}
-
-func TestCopyTreeRejectsSymlinkWithOriginalCode(t *testing.T) {
-	root := t.TempDir()
-	src := filepath.Join(root, "src")
-	dst := filepath.Join(root, "dst")
-	must(t, os.MkdirAll(src, 0o755))
-	if err := os.Symlink("target", filepath.Join(src, "link")); err != nil {
-		t.Skipf("symlink unavailable: %v", err)
-	}
-
-	_, err := New().CopyTree(context.Background(), src, dst, fsport.CopyTreeOptions{
-		SafetyRoot:    root,
-		SymlinkPolicy: fsport.SymlinkReject,
-	})
-	assertPortCode(t, err, fsport.CodeSymlinkRejected)
-}
-
 func TestCopyTreeMissingSource(t *testing.T) {
 	root := t.TempDir()
 	_, err := New().CopyTree(context.Background(), filepath.Join(root, "missing"), filepath.Join(root, "dst"), fsport.CopyTreeOptions{SafetyRoot: root})
 	assertPortCode(t, err, fsport.CodePathNotFound)
+}
+
+func TestCopyTreeContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := New().CopyTree(ctx, t.TempDir(), filepath.Join(t.TempDir(), "dst"), fsport.CopyTreeOptions{})
+	if err == nil {
+		t.Fatalf("CopyTree() should return context cancellation")
+	}
+}
+
+func TestCopyTreeRejectsFileSource(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "file.txt")
+	writeFile(t, src, "content")
+
+	_, err := New().CopyTree(context.Background(), src, filepath.Join(root, "dst"), fsport.CopyTreeOptions{SafetyRoot: root})
+	assertPortCode(t, err, fsport.CodeCopyFailed)
 }

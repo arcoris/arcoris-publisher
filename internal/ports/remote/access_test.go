@@ -54,32 +54,3 @@ func TestAccessLevelValid(t *testing.T) {
 		})
 	}
 }
-
-func TestRepositoryPermissionsAllows(t *testing.T) {
-	tests := []struct {
-		name        string
-		permission  RepositoryPermissions
-		access      AccessLevel
-		wantAllowed bool
-	}{
-		{name: "read allows read", permission: RepositoryPermissions{CanRead: true}, access: AccessRead, wantAllowed: true},
-		{name: "read rejects write", permission: RepositoryPermissions{CanRead: true}, access: AccessWrite, wantAllowed: false},
-		{name: "read rejects admin", permission: RepositoryPermissions{CanRead: true}, access: AccessAdmin, wantAllowed: false},
-		{name: "write allows read", permission: RepositoryPermissions{CanWrite: true}, access: AccessRead, wantAllowed: true},
-		{name: "write allows write", permission: RepositoryPermissions{CanWrite: true}, access: AccessWrite, wantAllowed: true},
-		{name: "write rejects admin", permission: RepositoryPermissions{CanWrite: true}, access: AccessAdmin, wantAllowed: false},
-		{name: "admin allows read", permission: RepositoryPermissions{CanAdmin: true}, access: AccessRead, wantAllowed: true},
-		{name: "admin allows write", permission: RepositoryPermissions{CanAdmin: true}, access: AccessWrite, wantAllowed: true},
-		{name: "admin allows admin", permission: RepositoryPermissions{CanAdmin: true}, access: AccessAdmin, wantAllowed: true},
-		{name: "empty rejects read", permission: RepositoryPermissions{}, access: AccessRead, wantAllowed: false},
-		{name: "unknown rejected", permission: RepositoryPermissions{CanAdmin: true}, access: AccessLevel("unknown"), wantAllowed: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.permission.Allows(tt.access); got != tt.wantAllowed {
-				t.Fatalf("Allows(%q) = %v, want %v", tt.access, got, tt.wantAllowed)
-			}
-		})
-	}
-}

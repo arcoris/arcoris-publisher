@@ -46,3 +46,38 @@ func TestReadFileMissing(t *testing.T) {
 	_, err := New().ReadFile(context.Background(), filepath.Join(t.TempDir(), "missing"))
 	assertPortCode(t, err, fsport.CodePathNotFound)
 }
+
+func TestReaderMissingAndFileDirectoryCases(t *testing.T) {
+	fs := New()
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	writeFile(t, file, "content")
+
+	exists, err := fs.Exists(context.Background(), filepath.Join(dir, "missing"))
+	if err != nil || exists {
+		t.Fatalf("Exists(missing) = %v, %v; want false, nil", exists, err)
+	}
+	isDir, err := fs.IsDir(context.Background(), file)
+	if err != nil || isDir {
+		t.Fatalf("IsDir(file) = %v, %v; want false, nil", isDir, err)
+	}
+	isDir, err = fs.IsDir(context.Background(), filepath.Join(dir, "missing"))
+	if err != nil || isDir {
+		t.Fatalf("IsDir(missing) = %v, %v; want false, nil", isDir, err)
+	}
+}
+
+func TestReaderContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := New().Exists(ctx, "path"); err == nil {
+		t.Fatalf("Exists() should return context cancellation")
+	}
+	if _, err := New().IsDir(ctx, "path"); err == nil {
+		t.Fatalf("IsDir() should return context cancellation")
+	}
+	if _, err := New().ReadFile(ctx, "path"); err == nil {
+		t.Fatalf("ReadFile() should return context cancellation")
+	}
+}

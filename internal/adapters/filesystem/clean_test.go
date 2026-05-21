@@ -16,7 +16,7 @@ package filesystem
 
 import (
 	"context"
-	"os"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -67,17 +67,13 @@ func TestCleanDirRequiresGitDir(t *testing.T) {
 	assertPortCode(t, err, fsport.CodePathNotFound)
 }
 
-func TestNormalizePreserve(t *testing.T) {
-	got := normalizePreserve([]string{"./b/c", "", ".", "a"})
-	want := []string{"a", "b/c"}
-	if len(got) != len(want) {
-		t.Fatalf("normalizePreserve() = %#v, want %#v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("normalizePreserve()[%d] = %q, want %q", i, got[i], want[i])
-		}
-	}
+func TestCleanDirRejectsFileTarget(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "file.txt")
+	writeFile(t, file, "content")
+
+	err := New().CleanDir(context.Background(), file, fsport.CleanDirOptions{SafetyRoot: root})
+	assertPortCode(t, err, fsport.CodePermissionDenied)
 }
 
 func TestCleanDirContextCancelled(t *testing.T) {
@@ -89,16 +85,36 @@ func TestCleanDirContextCancelled(t *testing.T) {
 	}
 }
 
-func assertExists(t *testing.T, path string) {
-	t.Helper()
-	if _, err := os.Lstat(path); err != nil {
-		t.Fatalf("expected %s to exist: %v", path, err)
+func TestCleanEntryPreservesDirectoryAndRemovesFile(t *testing.T) {
+	root := t.TempDir()
+	keep := filepath.Join(root, "keep")
+	drop := filepath.Join(root, "drop.txt")
+	writeFile(t, filepath.Join(keep, "nested.txt"), "keep")
+	writeFile(t, drop, "drop")
+
+	keepEntry := readDirEntry(t, root, "keep")
+	err := cleanEntry(context.Background(), root, keep, keepEntry, nil, []string{"keep"})
+	if !errors.Is(err, filepath.SkipDir) {
+		t.Fatalf("cleanEntry(preserve dir) = %v, want SkipDir", err)
 	}
+	assertExists(t, keep)
+
+	dropEntry := readDirEntry(t, root, "drop.txt")
+	if err := cleanEntry(context.Background(), root, drop, dropEntry, nil, nil); err != nil {
+		t.Fatalf("cleanEntry(file) error = %v", err)
+	}
+	assertMissing(t, drop)
 }
 
-func assertMissing(t *testing.T, path string) {
-	t.Helper()
-	if _, err := os.Lstat(path); !os.IsNotExist(err) {
-		t.Fatalf("expected %s to be missing, stat err = %v", path, err)
+func TestCleanEntryReturnsWalkAndContextErrors(t *testing.T) {
+	walkErr := errors.New("walk failed")
+	if err := cleanEntry(context.Background(), "/root", "/root/file", nil, walkErr, nil); !errors.Is(err, walkErr) {
+		t.Fatalf("cleanEntry(walkErr) = %v, want walk error", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := cleanEntry(ctx, "/root", "/root/file", nil, nil, nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cleanEntry(cancelled) = %v, want context canceled", err)
 	}
 }

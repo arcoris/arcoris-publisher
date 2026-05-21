@@ -49,3 +49,19 @@ func assertPortCode(t *testing.T, err error, code porterr.Code) {
 		t.Fatalf("expected code %s, got %s", code, perr.Code)
 	}
 }
+
+// assertExists verifies that a fixture path is present after an operation.
+func assertExists(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Lstat(path); err != nil {
+		t.Fatalf("expected %s to exist: %v", path, err)
+	}
+}
+
+// assertMissing verifies that a fixture path is absent after an operation.
+func assertMissing(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected %s to be missing, stat err = %v", path, err)
+	}
+}

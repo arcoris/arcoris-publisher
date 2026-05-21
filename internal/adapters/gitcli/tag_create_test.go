@@ -18,21 +18,21 @@ import (
 	"context"
 	"testing"
 
-	processport "arcoris.dev/arcoris-publisher/internal/ports/process"
+	gitport "arcoris.dev/arcoris-publisher/internal/ports/git"
 )
 
-func TestStatusParsesPorcelain(t *testing.T) {
-	runner := &fakeRunner{results: []processport.Result{{Stdout: []byte(" M file.txt\x00R  new.txt\x00old.txt\x00")}}}
+func TestCreateAnnotatedTagBuildsCommand(t *testing.T) {
+	runner := &fakeRunner{}
 	client := New(runner, Options{})
 
-	status, err := client.Status(context.Background(), "/repo")
+	err := client.CreateTag(context.Background(), "/repo", gitport.TagName("v1.0.0"), gitport.CommitHash("abc"), gitport.TagOptions{Annotated: true, Message: "release", Force: true})
 	if err != nil {
-		t.Fatalf("Status() error = %v", err)
+		t.Fatalf("CreateTag() error = %v", err)
 	}
-	if status.Clean || len(status.Entries) != 2 {
-		t.Fatalf("Status() = %#v, want 2 dirty entries", status)
-	}
-	if status.Entries[1].Code != "R " || status.Entries[1].Path != "new.txt" {
-		t.Fatalf("rename entry = %#v", status.Entries[1])
-	}
+	assertStringSlice(t, runner.specs[0].Args, []string{"tag", "-f", "-a", "v1.0.0", "abc", "-m", "release"})
+}
+
+func TestCreateTagArgsOmitsEmptyOptionalParts(t *testing.T) {
+	args := createTagArgs(gitport.TagName("v1.0.0"), "", gitport.TagOptions{})
+	assertStringSlice(t, args, []string{"tag", "v1.0.0"})
 }

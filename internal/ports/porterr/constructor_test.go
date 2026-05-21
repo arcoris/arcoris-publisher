@@ -12,16 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package exec
+package porterr
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
-func TestNewDetachesBaseEnvironment(t *testing.T) {
-	env := []string{"A=1"}
-	runner := New(Options{Env: env})
-	env[0] = "A=mutated"
+func TestNewPopulatesStructuredErrorFields(t *testing.T) {
+	cause := errors.New("root cause")
+	err := New(KindGit, Code("git_failed"), "git failed", cause)
 
-	if got := runner.baseEnv[0]; got != "A=1" {
-		t.Fatalf("New() base env = %q, want A=1", got)
+	if err.Kind != KindGit || err.Code != Code("git_failed") || err.Message != "git failed" || err.Cause != cause {
+		t.Fatalf("New() = %#v", err)
+	}
+	if err.Details != nil || err.Temporary {
+		t.Fatalf("New() should not attach optional metadata: %#v", err)
 	}
 }

@@ -12,16 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package exec
+package gotoolchain
 
 import "testing"
 
-func TestNewDetachesBaseEnvironment(t *testing.T) {
+func TestNewAppliesDefaultBinaryAndDetachesEnvironment(t *testing.T) {
 	env := []string{"A=1"}
-	runner := New(Options{Env: env})
+	tool := New(&fakeRunner{}, Options{Env: env})
 	env[0] = "A=mutated"
 
-	if got := runner.baseEnv[0]; got != "A=1" {
-		t.Fatalf("New() base env = %q, want A=1", got)
+	if tool.goBin != defaultGoBinary {
+		t.Fatalf("goBin = %q, want %q", tool.goBin, defaultGoBinary)
+	}
+	if tool.env[0] != "A=1" {
+		t.Fatalf("env = %#v, want detached copy", tool.env)
+	}
+}
+
+func TestNewUsesConfiguredBinary(t *testing.T) {
+	tool := New(&fakeRunner{}, Options{GoBinary: "custom-go"})
+	if tool.goBin != "custom-go" {
+		t.Fatalf("goBin = %q, want custom-go", tool.goBin)
 	}
 }

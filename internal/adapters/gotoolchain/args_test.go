@@ -12,16 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package exec
+package gotoolchain
 
 import "testing"
 
-func TestNewDetachesBaseEnvironment(t *testing.T) {
-	env := []string{"A=1"}
-	runner := New(Options{Env: env})
-	env[0] = "A=mutated"
+func TestDefaultPatterns(t *testing.T) {
+	assertStringSlice(t, defaultPatterns(nil), []string{"./..."})
 
-	if got := runner.baseEnv[0]; got != "A=1" {
-		t.Fatalf("New() base env = %q, want A=1", got)
-	}
+	patterns := []string{"./cmd"}
+	got := defaultPatterns(patterns)
+	patterns[0] = "./mutated"
+	assertStringSlice(t, got, []string{"./cmd"})
+}
+
+func TestAppendBuildTags(t *testing.T) {
+	assertStringSlice(t, appendBuildTags([]string{"test"}, nil), []string{"test"})
+	assertStringSlice(t, appendBuildTags([]string{"test"}, []string{"integration", "linux"}), []string{"test", "-tags", "integration,linux"})
 }

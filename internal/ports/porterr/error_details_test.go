@@ -12,16 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package exec
+package porterr
 
 import "testing"
 
-func TestNewDetachesBaseEnvironment(t *testing.T) {
-	env := []string{"A=1"}
-	runner := New(Options{Env: env})
-	env[0] = "A=mutated"
+func TestErrorWithDetailsClonesInput(t *testing.T) {
+	details := Details{"repo": "target"}
+	err := New(KindGit, Code("git_failed"), "git failed", nil).WithDetails(details)
+	details["repo"] = "mutated"
 
-	if got := runner.baseEnv[0]; got != "A=1" {
-		t.Fatalf("New() base env = %q, want A=1", got)
+	if got := err.Details["repo"]; got != "target" {
+		t.Fatalf("WithDetails() repo = %q, want target", got)
+	}
+}
+
+func TestErrorWithDetailsNilReceiver(t *testing.T) {
+	if (*Error)(nil).WithDetails(Details{"key": "value"}) != nil {
+		t.Fatalf("WithDetails() on nil receiver should return nil")
 	}
 }

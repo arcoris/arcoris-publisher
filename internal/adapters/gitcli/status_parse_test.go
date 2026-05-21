@@ -12,16 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package exec
+package gitcli
 
 import "testing"
 
-func TestNewDetachesBaseEnvironment(t *testing.T) {
-	env := []string{"A=1"}
-	runner := New(Options{Env: env})
-	env[0] = "A=mutated"
+func TestParseStatusHandlesMalformedEntry(t *testing.T) {
+	entries := parseStatus([]byte("?\x00"))
+	if len(entries) != 1 || entries[0].Path != "?" {
+		t.Fatalf("parseStatus() = %#v", entries)
+	}
+}
 
-	if got := runner.baseEnv[0]; got != "A=1" {
-		t.Fatalf("New() base env = %q, want A=1", got)
+func TestStatusCodeHasExtraPath(t *testing.T) {
+	if !statusCodeHasExtraPath("R ") || !statusCodeHasExtraPath("C ") {
+		t.Fatalf("statusCodeHasExtraPath() should accept rename/copy codes")
+	}
+	if statusCodeHasExtraPath(" M") {
+		t.Fatalf("statusCodeHasExtraPath() should reject ordinary modify code")
 	}
 }

@@ -49,12 +49,3 @@ func TestCommandBuildsProcessSpec(t *testing.T) {
 		t.Fatalf("expected stdout/stderr capture")
 	}
 }
-
-func TestBinary(t *testing.T) {
-	if got := binary("go", ""); got != "go" {
-		t.Fatalf("binary default = %q", got)
-	}
-	if got := binary("go", "custom"); got != "custom" {
-		t.Fatalf("binary override = %q", got)
-	}
-}
