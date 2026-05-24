@@ -14,7 +14,12 @@
 
 package verify
 
-import "strings"
+import (
+	"path/filepath"
+	"strings"
+
+	"golang.org/x/mod/modfile"
+)
 
 // goModInfo contains only go.mod data needed by verification.
 type goModInfo struct {
@@ -28,49 +33,38 @@ type goModInfo struct {
 	localReplaces []string
 }
 
-// parseGoMod extracts module, require, and local replace directives.
+// parseGoMod extracts module, require, and local replace directives using the
+// Go module parser so block directives, versions, and comments are interpreted
+// the same way as the Go toolchain.
 func parseGoMod(data []byte) goModInfo {
 	info := goModInfo{requires: map[string]string{}}
-	lines := strings.Split(string(data), "\n")
-	inRequire := false
-	for _, line := range lines {
-		t := strings.TrimSpace(line)
-		if t == "" || strings.HasPrefix(t, "//") {
-			continue
-		}
-		fields := strings.Fields(t)
-		if len(fields) >= 2 && fields[0] == "module" {
-			info.module = fields[1]
-			continue
-		}
-		if t == "require (" {
-			inRequire = true
-			continue
-		}
-		if inRequire && t == ")" {
-			inRequire = false
-			continue
-		}
-		if inRequire {
-			if len(fields) >= 2 {
-				info.requires[fields[0]] = fields[1]
-			}
-			continue
-		}
-		if len(fields) >= 3 && fields[0] == "require" {
-			info.requires[fields[1]] = fields[2]
-			continue
-		}
-		if strings.HasPrefix(t, "replace ") && strings.Contains(t, "=>") {
-			parts := strings.SplitN(strings.TrimPrefix(t, "replace "), "=>", 2)
-			if len(parts) == 2 {
-				newPath := strings.TrimSpace(parts[1])
-				if strings.HasPrefix(newPath, ".") || strings.HasPrefix(newPath, "/") {
-					oldPath := strings.Fields(strings.TrimSpace(parts[0]))[0]
-					info.localReplaces = append(info.localReplaces, oldPath)
-				}
-			}
+	file, err := modfile.Parse("go.mod", data, nil)
+	if err != nil {
+		return info
+	}
+
+	if file.Module != nil {
+		info.module = file.Module.Mod.Path
+	}
+	for _, req := range file.Require {
+		info.requires[req.Mod.Path] = req.Mod.Version
+	}
+	for _, replacement := range file.Replace {
+		if isLocalReplacePath(replacement.New.Path) {
+			info.localReplaces = append(info.localReplaces, replacement.Old.Path)
 		}
 	}
+
 	return info
+}
+
+func isLocalReplacePath(path string) bool {
+	if path == "." || path == ".." || filepath.IsAbs(path) {
+		return true
+	}
+
+	return strings.HasPrefix(path, "./") ||
+		strings.HasPrefix(path, "../") ||
+		strings.HasPrefix(path, ".\\") ||
+		strings.HasPrefix(path, "..\\")
 }

@@ -18,17 +18,33 @@ import (
 	"strings"
 	"testing"
 
-	"arcoris.dev/arcoris-publisher/internal/plan"
-	"arcoris.dev/arcoris-publisher/internal/workflow/source"
+	"arcoris.dev/arcoris-publisher/internal/testutil/publishertest"
 )
 
 func TestCommitMessageContainsArcorisTrailers(t *testing.T) {
-	message := commitMessage(plan.ModulePlan{}, source.Snapshot{})
-
-	if !strings.Contains(message, "Arcoris-Module:") {
-		t.Fatalf("commit message = %q", message)
+	p, err := publishertest.Plan(
+		publishertest.PlanOptions{},
+		publishertest.Module{Name: "foundation"},
+	)
+	if err != nil {
+		t.Fatalf("publishertest.Plan() error = %v", err)
 	}
-	if !strings.Contains(message, "Arcoris-Version:") {
-		t.Fatalf("commit message = %q", message)
+	mod, _ := p.ModuleByName("foundation")
+
+	message := commitMessage(mod, Request{Plan: p})
+
+	for _, required := range []string{
+		"Arcoris-Source-Repository:",
+		"Arcoris-Module:",
+		"Arcoris-Version:",
+		"Arcoris-Target-Repository:",
+		"Arcoris-Publish-Mode:",
+	} {
+		if !strings.Contains(message, required) {
+			t.Fatalf("commit message missing %q:\n%s", required, message)
+		}
+	}
+	if strings.Contains(message, "/repo") || strings.Contains(message, "/target") {
+		t.Fatalf("commit message leaks local path:\n%s", message)
 	}
 }

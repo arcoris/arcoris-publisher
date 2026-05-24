@@ -23,6 +23,7 @@ const (
 	IssueMissingSource    IssueCode = "missing_source_snapshot"
 	IssueMissingTarget    IssueCode = "missing_target_workspace"
 	IssueTargetPathEscape IssueCode = "target_path_escape"
+	IssueProjectionClash  IssueCode = "projection_collision"
 	IssueEntryCopyFailed  IssueCode = "entry_copy_failed"
 	IssueCleanFailed      IssueCode = "target_clean_failed"
 )

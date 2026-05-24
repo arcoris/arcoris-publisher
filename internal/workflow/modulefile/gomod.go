@@ -15,105 +15,127 @@
 package modulefile
 
 import (
+	"bytes"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	"arcoris.dev/arcoris-publisher/internal/manifest"
 	"arcoris.dev/arcoris-publisher/internal/plan"
+	"golang.org/x/mod/modfile"
 )
 
-// rewriteGoMod rewrites module identity and direct internal requirements using
-// the immutable plan. It preserves unrelated requirements and comments.
+// rewriteGoMod edits go.mod through the Go module parser instead of rebuilding
+// directive blocks by hand.
 func rewriteGoMod(
 	data []byte,
 	mod plan.ModulePlan,
 	removeLocalReplaces bool,
-) ([]byte, []RequirementUpdate, bool) {
-	original := string(data)
-	lines := strings.Split(strings.ReplaceAll(original, "\r\n", "\n"), "\n")
-	out := make([]string, 0, len(lines)+len(mod.Requirements())+4)
-	moduleSet := false
-	requirePaths := map[string]struct{}{}
-	for _, req := range mod.Requirements() {
-		requirePaths[req.ModulePath().String()] = struct{}{}
+) ([]byte, []RequirementUpdate, bool, error) {
+	file, err := modfile.Parse("go.mod", data, nil)
+	if err != nil {
+		return nil, nil, false, err
 	}
-	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "module ") {
-			out = append(out, "module "+mod.ModulePath().String())
-			moduleSet = true
-			continue
-		}
-		if strings.HasPrefix(trimmed, "replace ") && removeLocalReplaces {
-			old := strings.Fields(strings.TrimPrefix(trimmed, "replace "))
-			if len(old) > 0 {
-				if _, ok := requirePaths[old[0]]; ok {
-					continue
-				}
-			}
-		}
-		if strings.HasPrefix(trimmed, "require ") && !strings.HasPrefix(trimmed, "require (") {
-			fields := strings.Fields(strings.TrimPrefix(trimmed, "require "))
-			if len(fields) >= 2 {
-				if _, ok := requirePaths[fields[0]]; ok {
-					continue
-				}
-			}
-		}
-		if trimmed == "require (" {
-			out = append(out, line)
-			for i++; i < len(lines); i++ {
-				inner := lines[i]
-				innerTrimmed := strings.TrimSpace(inner)
-				if innerTrimmed == ")" {
-					out = append(out, inner)
-					break
-				}
-				fields := strings.Fields(innerTrimmed)
-				if len(fields) >= 2 {
-					if _, ok := requirePaths[fields[0]]; ok {
-						continue
-					}
-				}
-				out = append(out, inner)
-			}
-			continue
-		}
-		out = append(out, line)
+
+	managed := managedRequirements(mod)
+	if err := file.AddModuleStmt(mod.ModulePath().String()); err != nil {
+		return nil, nil, false, err
 	}
-	if !moduleSet {
-		out = append([]string{"module " + mod.ModulePath().String(), ""}, out...)
+
+	dropManagedRequirements(file, managed)
+	if removeLocalReplaces {
+		dropManagedLocalReplaces(file, managed)
 	}
+
 	updates := make([]RequirementUpdate, 0, len(mod.Requirements()))
-	reqs := mod.Requirements()
-	sort.SliceStable(reqs, func(i, j int) bool {
-		return reqs[i].ModulePath().String() < reqs[j].ModulePath().String()
-	})
-	if len(reqs) > 0 {
-		out = append(out, "")
-		out = append(out, "require (")
-		for _, req := range reqs {
-			out = append(out, "\t"+req.ModulePath().String()+" "+req.Version().String())
-			updates = append(updates, RequirementUpdate{
-				modulePath: req.ModulePath(),
-				version:    req.Version().String(),
-			})
+	for _, req := range sortedRequirements(mod.Requirements()) {
+		if err := file.AddRequire(req.ModulePath().String(), req.Version().String()); err != nil {
+			return nil, nil, false, err
 		}
-		out = append(out, ")")
+		updates = append(updates, RequirementUpdate{
+			modulePath: req.ModulePath(),
+			version:    req.Version().String(),
+		})
 	}
-	result := strings.TrimRight(strings.Join(out, "\n"), "\n") + "\n"
-	return []byte(result), updates, result != original
+
+	file.Cleanup()
+	out, err := file.Format()
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	return out, updates, !bytes.Equal(out, data), nil
 }
 
-// parseModuleLine returns the module path from go.mod data when present.
-func parseModuleLine(data []byte) manifest.ModulePath {
-	for _, line := range strings.Split(string(data), "\n") {
-		fields := strings.Fields(strings.TrimSpace(line))
-		if len(fields) == 2 && fields[0] == "module" {
-			p, _ := manifest.ParseModulePath(fields[1])
-			return p
+// managedRequirements indexes direct internal requirements controlled by the
+// plan so unrelated go.mod directives can be preserved untouched.
+func managedRequirements(mod plan.ModulePlan) map[string]struct{} {
+	managed := make(map[string]struct{}, len(mod.Requirements()))
+	for _, req := range mod.Requirements() {
+		managed[req.ModulePath().String()] = struct{}{}
+	}
+
+	return managed
+}
+
+// dropManagedRequirements removes stale internal requirements before the
+// current planned versions are added back.
+func dropManagedRequirements(file *modfile.File, managed map[string]struct{}) {
+	for _, req := range file.Require {
+		if _, ok := managed[req.Mod.Path]; ok {
+			_ = file.DropRequire(req.Mod.Path)
 		}
 	}
-	return ""
+}
+
+// dropManagedLocalReplaces removes local development replaces for managed
+// internal modules while leaving external or remote replacements intact.
+func dropManagedLocalReplaces(file *modfile.File, managed map[string]struct{}) {
+	for _, replacement := range file.Replace {
+		if _, ok := managed[replacement.Old.Path]; !ok {
+			continue
+		}
+		if !isLocalReplacePath(replacement.New.Path) {
+			continue
+		}
+
+		_ = file.DropReplace(replacement.Old.Path, replacement.Old.Version)
+	}
+}
+
+// isLocalReplacePath reports whether a replace target points at the local
+// filesystem rather than another module path.
+func isLocalReplacePath(path string) bool {
+	if path == "." || path == ".." || filepath.IsAbs(path) {
+		return true
+	}
+
+	return strings.HasPrefix(path, "./") ||
+		strings.HasPrefix(path, "../") ||
+		strings.HasPrefix(path, ".\\") ||
+		strings.HasPrefix(path, "..\\")
+}
+
+// sortedRequirements keeps added managed requirements deterministic even if a
+// future plan implementation changes its internal requirement order.
+func sortedRequirements(in []plan.DependencyRequirement) []plan.DependencyRequirement {
+	out := make([]plan.DependencyRequirement, len(in))
+	copy(out, in)
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].ModulePath().String() < out[j].ModulePath().String()
+	})
+
+	return out
+}
+
+// parseModuleLine returns the module path from go.mod data when present. The
+// verification workflow keeps this helper for lightweight module-path checks.
+func parseModuleLine(data []byte) manifest.ModulePath {
+	file, err := modfile.ParseLax("go.mod", data, nil)
+	if err != nil || file.Module == nil {
+		return ""
+	}
+
+	path, _ := manifest.ParseModulePath(file.Module.Mod.Path)
+	return path
 }

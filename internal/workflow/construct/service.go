@@ -16,8 +16,11 @@ package construct
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"path/filepath"
+	"sort"
 
 	"arcoris.dev/arcoris-publisher/internal/manifest"
 	"arcoris.dev/arcoris-publisher/internal/plan"
@@ -100,6 +103,10 @@ func (s Service) constructModule(
 ) (ModuleResult, bool) {
 	module, ok := resolveModuleContext(req, name, issues)
 	if !ok {
+		return ModuleResult{}, false
+	}
+
+	if !validateProjection(req, module, s.opts, issues) {
 		return ModuleResult{}, false
 	}
 
@@ -309,16 +316,54 @@ func (s Service) appendProvenanceFile(
 	return true
 }
 
-// provenancePayload renders the stable generated metadata file contents.
-func provenancePayload(req Request, module moduleContext) map[string]string {
-	return map[string]string{
-		"module":       module.plan.Name().String(),
-		"modulePath":   module.plan.ModulePath().String(),
-		"version":      module.plan.Version().String(),
-		"sourceCommit": req.Source.Repository().Head().String(),
-		"sourceBranch": req.Source.Repository().Branch().String(),
-		"sourceHash":   module.source.Hash().String(),
+// provenancePayload renders stable generated metadata without local absolute
+// source or target paths.
+func provenancePayload(req Request, module moduleContext) map[string]any {
+	return map[string]any{
+		"entryCount":       len(module.source.Entries()),
+		"module":           module.plan.Name().String(),
+		"modulePath":       module.plan.ModulePath().String(),
+		"projectionHash":   projectionHash(module.source.Entries()),
+		"publishMode":      string(req.Plan.PublishPolicy().Mode()),
+		"publisherVersion": "dev",
+		"pushPolicy":       string(req.Plan.PublishPolicy().PushPolicy()),
+		"sourceBranch":     req.Source.Repository().Branch().String(),
+		"sourceCommit":     req.Source.Repository().Head().String(),
+		"sourceDir":        module.plan.SourceDir().String(),
+		"sourceHash":       module.source.Hash().String(),
+		"sourceRepository": req.Plan.Source().Repository().String(),
+		"tagPolicy":        string(req.Plan.PublishPolicy().Tags().Mode()),
+		"targetBranches":   targetBranches(module.plan),
+		"targetRepository": module.plan.Repository().String(),
+		"version":          module.plan.Version().String(),
 	}
+}
+
+// projectionHash summarizes explicit target paths and present source hashes
+// without leaking local absolute paths.
+func projectionHash(entries []source.EntrySnapshot) string {
+	lines := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		lines = append(lines, entry.TargetPath().String()+"="+entry.Hash().String())
+	}
+	sort.Strings(lines)
+
+	hash := sha256.New()
+	for _, line := range lines {
+		_, _ = hash.Write([]byte(line))
+		_, _ = hash.Write([]byte{'\n'})
+	}
+
+	return "sha256:" + hex.EncodeToString(hash.Sum(nil))
+}
+
+func targetBranches(mod plan.ModulePlan) []string {
+	branches := mod.Branches()
+	out := make([]string, 0, len(branches))
+	for _, branch := range branches {
+		out = append(out, branch.Target().String())
+	}
+	return out
 }
 
 // findSourceModule locates an inspected source module by name.

@@ -1,0 +1,221 @@
+// Copyright 2026 The ARCORIS Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package porttest
+
+import (
+	"context"
+	"fmt"
+
+	"arcoris.dev/arcoris-publisher/internal/ports/git"
+)
+
+// GitCall records one fake Git operation.
+type GitCall struct {
+	// Op is the operation name.
+	Op string
+
+	// RepoDir is the repository worktree path.
+	RepoDir string
+
+	// Ref is a branch, tag, refspec, or commit depending on Op.
+	Ref string
+
+	// ForceWithLease records whether a push used lease protection.
+	ForceWithLease bool
+}
+
+// Git is a deterministic in-memory Git port for workflow tests.
+type Git struct {
+	// Statuses returns status by worktree path.
+	Statuses map[string]git.Status
+
+	// StatusErrors forces Status to fail for a worktree path.
+	StatusErrors map[string]error
+
+	// PushError forces Push to fail.
+	PushError error
+
+	// PushTagError forces PushTag to fail.
+	PushTagError error
+
+	// CommitHash is returned by Commit when non-empty.
+	CommitHash git.CommitHash
+
+	// Calls records mutating and transport operations in order.
+	Calls []GitCall
+}
+
+// NewGit returns a fake Git port with clean default status.
+func NewGit() *Git {
+	return &Git{
+		Statuses:     map[string]git.Status{},
+		StatusErrors: map[string]error{},
+		CommitHash:   "abcdef1234567890",
+	}
+}
+
+// Head returns a stable synthetic commit hash.
+func (g *Git) Head(context.Context, string) (git.CommitHash, error) {
+	return "abcdef1234567890", nil
+}
+
+// CurrentBranch returns a stable branch name.
+func (g *Git) CurrentBranch(context.Context, string) (git.BranchName, error) {
+	return "main", nil
+}
+
+// Status returns the configured worktree status or a clean default.
+func (g *Git) Status(_ context.Context, repoDir string) (git.Status, error) {
+	if err := g.StatusErrors[repoDir]; err != nil {
+		return git.Status{}, err
+	}
+	status, ok := g.Statuses[repoDir]
+	if !ok {
+		return git.Status{Clean: true}, nil
+	}
+
+	return cloneStatus(status), nil
+}
+
+// RefExists reports that refs are absent unless a test records them separately.
+func (g *Git) RefExists(context.Context, string, string) (bool, error) {
+	return false, nil
+}
+
+// RemoteRefExists reports that remote refs are absent.
+func (g *Git) RemoteRefExists(context.Context, string, string, string) (bool, error) {
+	return false, nil
+}
+
+// CommitMessage returns an empty synthetic message.
+func (g *Git) CommitMessage(context.Context, string, string) (string, error) {
+	return "", nil
+}
+
+// Checkout records a checkout operation.
+func (g *Git) Checkout(_ context.Context, repoDir string, ref string, _ git.CheckoutOptions) error {
+	g.record("checkout", repoDir, ref, false)
+	return nil
+}
+
+// CreateBranch records a branch creation operation.
+func (g *Git) CreateBranch(
+	_ context.Context,
+	repoDir string,
+	branch git.BranchName,
+	startPoint string,
+	_ git.CreateBranchOptions,
+) error {
+	g.record("create-branch", repoDir, fmt.Sprintf("%s@%s", branch, startPoint), false)
+	return nil
+}
+
+// ResetHard records a hard reset operation.
+func (g *Git) ResetHard(_ context.Context, repoDir string, ref string) error {
+	g.record("reset-hard", repoDir, ref, false)
+	return nil
+}
+
+// Clean records a Git clean operation.
+func (g *Git) Clean(_ context.Context, repoDir string, _ git.CleanOptions) error {
+	g.record("clean", repoDir, "", false)
+	return nil
+}
+
+// AddAll records a Git add operation.
+func (g *Git) AddAll(_ context.Context, repoDir string) error {
+	g.record("add", repoDir, "", false)
+	return nil
+}
+
+// Commit records a commit operation and returns CommitHash.
+func (g *Git) Commit(
+	_ context.Context,
+	repoDir string,
+	message string,
+	_ git.CommitOptions,
+) (git.CommitHash, error) {
+	g.record("commit", repoDir, message, false)
+	return g.CommitHash, nil
+}
+
+// Clone records a clone operation.
+func (g *Git) Clone(_ context.Context, remoteURL string, dir string, _ git.CloneOptions) error {
+	g.record("clone", dir, remoteURL, false)
+	return nil
+}
+
+// Fetch records a fetch operation.
+func (g *Git) Fetch(_ context.Context, repoDir string, remote string, _ git.FetchOptions) error {
+	g.record("fetch", repoDir, remote, false)
+	return nil
+}
+
+// Push records a branch push operation.
+func (g *Git) Push(
+	_ context.Context,
+	repoDir string,
+	_ string,
+	refspec git.RefSpec,
+	opts git.PushOptions,
+) error {
+	g.record("push", repoDir, string(refspec), opts.ForceWithLease)
+	return g.PushError
+}
+
+// TagExists reports that tags are absent.
+func (g *Git) TagExists(context.Context, string, git.TagName) (bool, error) {
+	return false, nil
+}
+
+// CreateTag records a tag creation operation.
+func (g *Git) CreateTag(
+	_ context.Context,
+	repoDir string,
+	tag git.TagName,
+	target git.CommitHash,
+	_ git.TagOptions,
+) error {
+	g.record("tag", repoDir, fmt.Sprintf("%s@%s", tag, target), false)
+	return nil
+}
+
+// PushTag records a tag push operation.
+func (g *Git) PushTag(
+	_ context.Context,
+	repoDir string,
+	_ string,
+	tag git.TagName,
+	opts git.PushOptions,
+) error {
+	g.record("push-tag", repoDir, string(tag), opts.ForceWithLease)
+	return g.PushTagError
+}
+
+func (g *Git) record(op, repoDir, ref string, forceWithLease bool) {
+	g.Calls = append(g.Calls, GitCall{
+		Op:             op,
+		RepoDir:        repoDir,
+		Ref:            ref,
+		ForceWithLease: forceWithLease,
+	})
+}
+
+func cloneStatus(status git.Status) git.Status {
+	return git.Status{
+		Clean:   status.Clean,
+		Entries: append([]git.StatusEntry(nil), status.Entries...),
+	}
+}

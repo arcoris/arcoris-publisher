@@ -16,7 +16,13 @@ package verify
 
 import (
 	"context"
+	"errors"
 	"testing"
+
+	"arcoris.dev/arcoris-publisher/internal/ports/filesystem"
+	"arcoris.dev/arcoris-publisher/internal/testutil/porttest"
+	"arcoris.dev/arcoris-publisher/internal/testutil/publishertest"
+	"arcoris.dev/arcoris-publisher/internal/workflow/target"
 )
 
 func TestVerifyRejectsInvalidRequest(t *testing.T) {
@@ -72,6 +78,143 @@ func TestTargetWorktreeCheck(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGoModTidyPassesWhenFilesAreUnchanged(t *testing.T) {
+	req, fs, _ := verifyRequest(t)
+	result, err := New(
+		Dependencies{FS: fs, Go: porttest.GoToolchain{}},
+		Options{},
+	).Verify(context.Background(), req)
+
+	if err != nil {
+		t.Fatalf("Verify() error = %v", err)
+	}
+	assertCheckStatus(t, result, "go-mod-tidy", StatusPassed)
+}
+
+func TestGoModTidyFailsWhenGoModChangesWithoutGit(t *testing.T) {
+	req, fs, moduleRoot := verifyRequest(t)
+	goTool := porttest.GoToolchain{
+		ModTidyHook: func(ctx context.Context, dir string) error {
+			return fs.WriteFile(
+				ctx,
+				dir+"/go.mod",
+				[]byte("module arcoris.dev/foundation\n\nrequire example.com/new v1.0.0\n"),
+				filesystem.WriteFileOptions{Overwrite: true},
+			)
+		},
+	}
+
+	result, err := New(
+		Dependencies{FS: fs, Go: goTool},
+		Options{},
+	).Verify(context.Background(), req)
+
+	if err != nil {
+		t.Fatalf("Verify() error = %v", err)
+	}
+	if moduleRoot == "" {
+		t.Fatal("moduleRoot is empty")
+	}
+	assertCheckStatus(t, result, "go-mod-tidy", StatusFailed)
+	if !result.Failed() {
+		t.Fatal("Failed() = false")
+	}
+}
+
+func TestGoModTidyFailsWhenGoSumChangesWithoutGit(t *testing.T) {
+	req, fs, _ := verifyRequest(t)
+	goTool := porttest.GoToolchain{
+		ModTidyHook: func(ctx context.Context, dir string) error {
+			return fs.WriteFile(
+				ctx,
+				dir+"/go.sum",
+				[]byte("example.com/new v1.0.0 h1:test\n"),
+				filesystem.WriteFileOptions{CreateDirs: true, Overwrite: true},
+			)
+		},
+	}
+
+	result, err := New(
+		Dependencies{FS: fs, Go: goTool},
+		Options{},
+	).Verify(context.Background(), req)
+
+	if err != nil {
+		t.Fatalf("Verify() error = %v", err)
+	}
+	assertCheckStatus(t, result, "go-mod-tidy", StatusFailed)
+}
+
+func TestGoModTidyFailureIsVerificationFailure(t *testing.T) {
+	req, fs, _ := verifyRequest(t)
+	goTool := porttest.GoToolchain{ModTidyError: errors.New("tidy failed")}
+
+	result, err := New(
+		Dependencies{FS: fs, Go: goTool},
+		Options{},
+	).Verify(context.Background(), req)
+
+	if err != nil {
+		t.Fatalf("Verify() error = %v", err)
+	}
+	assertCheckStatus(t, result, "go-mod-tidy", StatusFailed)
+	if !result.Failed() {
+		t.Fatal("Failed() = false")
+	}
+}
+
+func verifyRequest(t *testing.T) (Request, *porttest.FileSystem, string) {
+	t.Helper()
+
+	p, err := publishertest.Plan(
+		publishertest.PlanOptions{},
+		publishertest.Module{Name: "foundation"},
+	)
+	if err != nil {
+		t.Fatalf("publishertest.Plan() error = %v", err)
+	}
+
+	fs := porttest.NewFileSystem()
+	fakeGit := porttest.NewGit()
+	targets, err := target.New(
+		target.Dependencies{FS: fs, Git: fakeGit},
+		target.Options{CreateMissing: true},
+	).Prepare(context.Background(), target.Request{
+		Plan:    p,
+		RootDir: "/target",
+	})
+	if err != nil {
+		t.Fatalf("target.Prepare() error = %v", err)
+	}
+
+	ws, ok := targets.WorkspaceByModule("foundation")
+	if !ok {
+		t.Fatal("workspace for foundation not found")
+	}
+
+	moduleRoot := ws.WorktreeDir()
+	fs.AddFile(moduleRoot+"/go.mod", []byte("module arcoris.dev/foundation\n"))
+
+	return Request{Plan: p, Targets: targets}, fs, moduleRoot
+}
+
+func assertCheckStatus(t *testing.T, result Result, checkName CheckName, status Status) {
+	t.Helper()
+
+	for _, module := range result.Modules() {
+		for _, check := range module.Checks() {
+			if check.Name() == checkName {
+				if check.Status() != status {
+					t.Fatalf("%s status = %s, want %s", checkName, check.Status(), status)
+				}
+				return
+			}
+		}
+	}
+
+	t.Fatalf("check %q not found in %#v", checkName, result.Modules())
 }
 
 type fakePath struct {

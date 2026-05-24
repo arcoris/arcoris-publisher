@@ -12,26 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package verify
+package publishertest
 
 import "testing"
 
-func TestParseGoMod(t *testing.T) {
-	data := []byte(`module arcoris.dev/control
-
-go 1.25
-
-require arcoris.dev/foundation v0.1.0
-replace arcoris.dev/foundation => ../foundation
-`)
-	info := parseGoMod(data)
-	if info.module != "arcoris.dev/control" {
-		t.Fatalf("module = %q", info.module)
+func TestPlanBuildsDependencyOrderedFixture(t *testing.T) {
+	plan, err := Plan(
+		PlanOptions{},
+		Module{Name: "foundation"},
+		Module{Name: "control", Dependencies: []string{"foundation"}},
+	)
+	if err != nil {
+		t.Fatalf("Plan() error = %v", err)
 	}
-	if got := info.requires["arcoris.dev/foundation"]; got != "v0.1.0" {
-		t.Fatalf("require = %q", got)
-	}
-	if len(info.localReplaces) != 1 {
-		t.Fatalf("local replaces = %v", info.localReplaces)
+
+	got := plan.ModuleNames()
+	if len(got) != 2 || got[0] != "foundation" || got[1] != "control" {
+		t.Fatalf("ModuleNames() = %v", got)
 	}
 }

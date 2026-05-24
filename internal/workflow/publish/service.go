@@ -100,7 +100,9 @@ func (s Service) publishModule(
 			Message: fmt.Sprintf("target workspace for %s is missing", name),
 		}
 	}
-	if shouldSkipModule(req, name) {
+
+	skip := s.shouldSkipModule(ctx, req, name, worktree)
+	if skip {
 		return ModuleResult{module: name, skipped: true}, nil
 	}
 	if s.opts.DryRun {
@@ -112,12 +114,12 @@ func (s Service) publishModule(
 		return ModuleResult{}, err
 	}
 
-	tags, err := s.createAndPushTags(ctx, req, mod, worktree, commit)
-	if err != nil {
+	if err := s.pushBranches(ctx, req, mod, worktree); err != nil {
 		return ModuleResult{}, err
 	}
 
-	if err := s.pushBranches(ctx, req, mod, worktree); err != nil {
+	tags, err := s.createAndPushTags(ctx, req, mod, worktree, commit)
+	if err != nil {
 		return ModuleResult{}, err
 	}
 
@@ -134,10 +136,34 @@ func targetWorktree(req Request, name manifest.ModuleName) (string, bool) {
 	return ws.WorktreeDir(), true
 }
 
-// shouldSkipModule reports whether construction found no changes to publish.
-func shouldSkipModule(req Request, name manifest.ModuleName) bool {
-	constructResult, found := req.Construct.ModuleByName(name)
-	return !found || !constructResult.Changed()
+// shouldSkipModule reports whether the final target worktree has no publishable
+// changes. Git status is the source of truth when available because construct
+// and modulefile results can include no-op writes or later cleanup.
+func (s Service) shouldSkipModule(
+	ctx context.Context,
+	req Request,
+	name manifest.ModuleName,
+	worktree string,
+) bool {
+	status, err := s.deps.Git.Status(ctx, worktree)
+	if err == nil {
+		return !status.IsDirty()
+	}
+
+	return !stageResultsChanged(req, name)
+}
+
+// stageResultsChanged is the documented fallback for tests and degraded Git
+// ports that cannot return status after construction.
+func stageResultsChanged(req Request, name manifest.ModuleName) bool {
+	if result, ok := req.Construct.ModuleByName(name); ok && result.Changed() {
+		return true
+	}
+	if result, ok := req.ModuleFile.ModuleByName(name); ok && result.Changed() {
+		return true
+	}
+
+	return false
 }
 
 // commitWorktree stages and commits target worktree changes.
@@ -154,7 +180,7 @@ func (s Service) commitWorktree(
 	commit, err := s.deps.Git.Commit(
 		ctx,
 		worktree,
-		commitMessage(mod, req.Source),
+		commitMessage(mod, req),
 		git.CommitOptions{AllowEmpty: s.opts.AllowEmptyCommits},
 	)
 	if err != nil {
@@ -164,8 +190,8 @@ func (s Service) commitWorktree(
 	return commit, nil
 }
 
-// createAndPushTags creates the release tag when enabled and pushes it before
-// branch refs.
+// createAndPushTags creates and pushes the release tag after branch refs are
+// safely updated.
 func (s Service) createAndPushTags(
 	ctx context.Context,
 	req Request,

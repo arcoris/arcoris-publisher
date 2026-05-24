@@ -111,7 +111,11 @@ func (s Service) rewriteModule(
 		return ModuleResult{}, false
 	}
 
-	newData, updates, changed := rewriteGoMod(data, mod, s.opts.RemoveLocalReplaces)
+	newData, updates, changed, err := rewriteGoMod(data, mod, s.opts.RemoveLocalReplaces)
+	if err != nil {
+		issues.AddMessage(IssueGoModRewriteFailed, mod.Name(), goMod, err.Error())
+		return ModuleResult{}, false
+	}
 	if changed && !s.writeGoMod(ctx, mod, goMod, newData, issues) {
 		return ModuleResult{}, false
 	}

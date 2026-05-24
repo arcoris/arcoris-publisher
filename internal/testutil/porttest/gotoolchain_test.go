@@ -12,26 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package verify
+package porttest
 
-import "testing"
+import (
+	"context"
+	"testing"
 
-func TestParseGoMod(t *testing.T) {
-	data := []byte(`module arcoris.dev/control
+	"arcoris.dev/arcoris-publisher/internal/ports/gotoolchain"
+)
 
-go 1.25
-
-require arcoris.dev/foundation v0.1.0
-replace arcoris.dev/foundation => ../foundation
-`)
-	info := parseGoMod(data)
-	if info.module != "arcoris.dev/control" {
-		t.Fatalf("module = %q", info.module)
+func TestGoToolchainModTidyRunsHook(t *testing.T) {
+	called := false
+	fake := GoToolchain{
+		ModTidyHook: func(context.Context, string) error {
+			called = true
+			return nil
+		},
 	}
-	if got := info.requires["arcoris.dev/foundation"]; got != "v0.1.0" {
-		t.Fatalf("require = %q", got)
+
+	_, err := fake.ModTidy(context.Background(), "/module", gotoolchain.ModTidyOptions{})
+
+	if err != nil {
+		t.Fatalf("ModTidy() error = %v", err)
 	}
-	if len(info.localReplaces) != 1 {
-		t.Fatalf("local replaces = %v", info.localReplaces)
+	if !called {
+		t.Fatal("hook was not called")
 	}
 }

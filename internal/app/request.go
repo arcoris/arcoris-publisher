@@ -12,26 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package verify
+package app
 
-import "testing"
+import "arcoris.dev/arcoris-publisher/internal/versioning"
 
-func TestParseGoMod(t *testing.T) {
-	data := []byte(`module arcoris.dev/control
+// Request describes a high-level verify or publish use case.
+type Request struct {
+	// ManifestPath points at arcpub.yaml.
+	ManifestPath string
 
-go 1.25
+	// Version is the publication version to assign to public modules.
+	Version versioning.Version
 
-require arcoris.dev/foundation v0.1.0
-replace arcoris.dev/foundation => ../foundation
-`)
-	info := parseGoMod(data)
-	if info.module != "arcoris.dev/control" {
-		t.Fatalf("module = %q", info.module)
-	}
-	if got := info.requires["arcoris.dev/foundation"]; got != "v0.1.0" {
-		t.Fatalf("require = %q", got)
-	}
-	if len(info.localReplaces) != 1 {
-		t.Fatalf("local replaces = %v", info.localReplaces)
-	}
+	// SourceRepositoryDir is the local source Git checkout root.
+	SourceRepositoryDir string
+
+	// StagingDir is the local staging directory containing module sources.
+	StagingDir string
+
+	// TargetRootDir contains target worktrees.
+	TargetRootDir string
 }

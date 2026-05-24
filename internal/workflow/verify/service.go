@@ -15,10 +15,13 @@
 package verify
 
 import (
+	"bytes"
 	"context"
+	"path/filepath"
 
 	"arcoris.dev/arcoris-publisher/internal/manifest"
 	"arcoris.dev/arcoris-publisher/internal/plan"
+	"arcoris.dev/arcoris-publisher/internal/ports/git"
 	"arcoris.dev/arcoris-publisher/internal/ports/gotoolchain"
 	"arcoris.dev/arcoris-publisher/internal/workflow/pathutil"
 )
@@ -112,7 +115,7 @@ func (s Service) verifyModule(
 	checks = append(checks, goModModuleCheck(mod, info, goModPath))
 	checks = append(checks, localReplaceChecks(mod, info, goModPath)...)
 	checks = append(checks, requirementChecks(mod, info, goModPath)...)
-	checks = append(checks, s.goToolchainChecks(ctx, mod, moduleRoot)...)
+	checks = append(checks, s.goToolchainChecks(ctx, mod, ws.WorktreeDir(), moduleRoot)...)
 	checks = append(checks, s.gitCleanChecks(ctx, ws.WorktreeDir())...)
 
 	return ModuleResult{module: name, checks: checks}
@@ -250,6 +253,7 @@ func requirementChecks(
 func (s Service) goToolchainChecks(
 	ctx context.Context,
 	mod plan.ModulePlan,
+	worktree string,
 	moduleRoot string,
 ) []CheckResult {
 	if s.deps.Go == nil {
@@ -267,7 +271,7 @@ func (s Service) goToolchainChecks(
 		checks = append(checks, s.goTestCheck(ctx, moduleRoot, common, policy.Patterns()))
 	}
 	if policy.Tidy() {
-		checks = append(checks, s.goTidyCheck(ctx, moduleRoot, common))
+		checks = append(checks, s.goTidyCheck(ctx, worktree, moduleRoot, common))
 	}
 
 	return checks
@@ -330,9 +334,12 @@ func (s Service) goTestCheck(
 // goTidyCheck runs go mod tidy as a verification step.
 func (s Service) goTidyCheck(
 	ctx context.Context,
+	worktree string,
 	moduleRoot string,
 	common gotoolchain.CommonOptions,
 ) CheckResult {
+	before := s.snapshotGoModuleFiles(ctx, moduleRoot)
+
 	_, err := s.deps.Go.ModTidy(ctx, moduleRoot, gotoolchain.ModTidyOptions{
 		CommonOptions: common,
 	})
@@ -340,7 +347,117 @@ func (s Service) goTidyCheck(
 		return NewCheckResult("go-mod-tidy", StatusFailed, SeverityError, err.Error())
 	}
 
+	if status, ok := s.goModuleGitStatus(ctx, worktree, moduleRoot); ok && status.IsDirty() {
+		return NewCheckResult(
+			"go-mod-tidy",
+			StatusFailed,
+			SeverityError,
+			"go mod tidy changed go.mod or go.sum",
+		)
+	}
+
+	after := s.snapshotGoModuleFiles(ctx, moduleRoot)
+	if before.changed(after) {
+		return NewCheckResult(
+			"go-mod-tidy",
+			StatusFailed,
+			SeverityError,
+			"go mod tidy changed go.mod or go.sum",
+		)
+	}
+
 	return NewCheckResult("go-mod-tidy", StatusPassed, SeverityInfo, "go mod tidy succeeded")
+}
+
+// goModuleGitStatus returns a status containing only go.mod/go.sum entries when
+// Git status is available.
+func (s Service) goModuleGitStatus(
+	ctx context.Context,
+	worktree string,
+	moduleRoot string,
+) (git.Status, bool) {
+	if s.deps.Git == nil {
+		return git.Status{}, false
+	}
+
+	status, err := s.deps.Git.Status(ctx, worktree)
+	if err != nil {
+		return git.Status{}, false
+	}
+
+	paths := goModuleStatusPaths(worktree, moduleRoot)
+	entries := make([]git.StatusEntry, 0, len(status.Entries))
+	for _, entry := range status.Entries {
+		if _, ok := paths[filepath.ToSlash(filepath.Clean(entry.Path))]; ok {
+			entries = append(entries, entry)
+		}
+	}
+
+	return git.Status{Clean: len(entries) == 0, Entries: entries}, true
+}
+
+// goModuleStatusPaths returns repository-relative paths that go mod tidy may
+// mutate.
+func goModuleStatusPaths(worktree string, moduleRoot string) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, name := range []string{"go.mod", "go.sum"} {
+		rel, err := filepath.Rel(worktree, filepath.Join(moduleRoot, name))
+		if err != nil {
+			continue
+		}
+		out[filepath.ToSlash(filepath.Clean(rel))] = struct{}{}
+	}
+
+	return out
+}
+
+type goModuleFileSnapshot map[string]goModuleFile
+
+type goModuleFile struct {
+	exists bool
+	data   []byte
+}
+
+func (s Service) snapshotGoModuleFiles(
+	ctx context.Context,
+	moduleRoot string,
+) goModuleFileSnapshot {
+	snapshot := goModuleFileSnapshot{}
+	for _, name := range []string{"go.mod", "go.sum"} {
+		path := filepath.Join(moduleRoot, name)
+		snapshot[name] = s.snapshotGoModuleFile(ctx, path)
+	}
+
+	return snapshot
+}
+
+func (s Service) snapshotGoModuleFile(ctx context.Context, path string) goModuleFile {
+	exists, err := s.deps.FS.Exists(ctx, path)
+	if err != nil || !exists {
+		return goModuleFile{}
+	}
+
+	data, err := s.deps.FS.ReadFile(ctx, path)
+	if err != nil {
+		return goModuleFile{}
+	}
+
+	return goModuleFile{exists: true, data: data}
+}
+
+func (s goModuleFileSnapshot) changed(other goModuleFileSnapshot) bool {
+	for _, name := range []string{"go.mod", "go.sum"} {
+		left := s[name]
+		right := other[name]
+		if left.exists != right.exists {
+			return true
+		}
+		if !bytes.Equal(left.data, right.data) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // gitCleanChecks verifies that target verification did not leave the worktree

@@ -12,26 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package verify
+package app
 
-import "testing"
+import (
+	"arcoris.dev/arcoris-publisher/internal/config"
+	"arcoris.dev/arcoris-publisher/internal/workflow"
+)
 
-func TestParseGoMod(t *testing.T) {
-	data := []byte(`module arcoris.dev/control
+// Dependencies contains high-level application collaborators.
+type Dependencies struct {
+	// Loader reads arcpub.yaml and arcpub.module.yaml files.
+	Loader *config.Loader
 
-go 1.25
-
-require arcoris.dev/foundation v0.1.0
-replace arcoris.dev/foundation => ../foundation
-`)
-	info := parseGoMod(data)
-	if info.module != "arcoris.dev/control" {
-		t.Fatalf("module = %q", info.module)
-	}
-	if got := info.requires["arcoris.dev/foundation"]; got != "v0.1.0" {
-		t.Fatalf("require = %q", got)
-	}
-	if len(info.localReplaces) != 1 {
-		t.Fatalf("local replaces = %v", info.localReplaces)
-	}
+	// Workflow contains ports used by workflow stages.
+	Workflow workflow.Dependencies
 }
