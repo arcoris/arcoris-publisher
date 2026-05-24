@@ -19,6 +19,7 @@ import (
 	"strings"
 	"testing"
 
+	"arcoris.dev/arcoris-publisher/internal/buildinfo"
 	"arcoris.dev/arcoris-publisher/internal/manifest"
 	"arcoris.dev/arcoris-publisher/internal/testutil/porttest"
 	"arcoris.dev/arcoris-publisher/internal/testutil/publishertest"
@@ -39,6 +40,10 @@ func TestConstructRejectsInvalidRequest(t *testing.T) {
 }
 
 func TestConstructWritesStableProvenanceWithoutLocalPaths(t *testing.T) {
+	oldVersion := buildinfo.Version
+	buildinfo.Version = "v1.2.3"
+	t.Cleanup(func() { buildinfo.Version = oldVersion })
+
 	provenanceFile := "ARCPUB.json"
 	p, err := publishertest.Plan(
 		publishertest.PlanOptions{
@@ -95,9 +100,11 @@ func TestConstructWritesStableProvenanceWithoutLocalPaths(t *testing.T) {
 	}
 	text := string(data)
 	for _, required := range []string{
-		`"module": "foundation"`,
-		`"sourceRepository": "arcoris/arcoris"`,
-		`"targetRepository": "arcoris/foundation"`,
+		`"schemaVersion": "arcoris.provenance/v1"`,
+		`"version": "v1.2.3"`,
+		`"name": "foundation"`,
+		`"repository": "arcoris/arcoris"`,
+		`"repository": "arcoris/foundation"`,
 		`"publishMode": "explicit-projection"`,
 		`"projectionHash": "sha256:`,
 	} {

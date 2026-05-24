@@ -18,38 +18,36 @@ import (
 	"fmt"
 	"strings"
 
+	"arcoris.dev/arcoris-publisher/internal/buildinfo"
 	"arcoris.dev/arcoris-publisher/internal/plan"
+	"arcoris.dev/arcoris-publisher/internal/provenance"
+	"arcoris.dev/arcoris-publisher/internal/workflow/source"
 )
 
 // commitMessage renders deterministic publication provenance for one module.
 func commitMessage(mod plan.ModulePlan, req Request) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "sync: publish %s %s\n\n", mod.Name(), mod.Version())
-	if req.Plan.Source().Repository() != "" {
-		fmt.Fprintf(&b, "Arcoris-Source-Repository: %s\n", req.Plan.Source().Repository())
+
+	if req.Plan.PublishPolicy().Provenance().CommitTrailers() {
+		b.WriteString(provenance.BuildTrailers(provenance.Input{
+			Plan:         req.Plan,
+			Module:       mod,
+			Source:       req.Source,
+			SourceModule: sourceModuleForCommit(req, mod),
+			Build:        buildinfo.Current(),
+		}).Render())
 	}
-	if req.Source.Repository().Head() != "" {
-		fmt.Fprintf(&b, "Arcoris-Source-Commit: %s\n", req.Source.Repository().Head())
-	}
-	if req.Source.Repository().Branch() != "" {
-		fmt.Fprintf(&b, "Arcoris-Source-Branch: %s\n", req.Source.Repository().Branch())
-	}
-	fmt.Fprintf(&b, "Arcoris-Module: %s\n", mod.Name())
-	fmt.Fprintf(&b, "Arcoris-Module-Path: %s\n", mod.ModulePath())
-	fmt.Fprintf(&b, "Arcoris-Version: %s\n", mod.Version())
-	fmt.Fprintf(&b, "Arcoris-Target-Repository: %s\n", mod.Repository())
-	fmt.Fprintf(&b, "Arcoris-Target-Branches: %s\n", targetBranchTrailer(mod))
-	fmt.Fprintf(&b, "Arcoris-Publish-Mode: %s\n", req.Plan.PublishPolicy().Mode())
-	fmt.Fprintf(&b, "Arcoris-Push-Policy: %s\n", req.Plan.PublishPolicy().PushPolicy())
-	fmt.Fprintf(&b, "Arcoris-Tag-Policy: %s\n", req.Plan.PublishPolicy().Tags().Mode())
+
 	return b.String()
 }
 
-func targetBranchTrailer(mod plan.ModulePlan) string {
-	branches := mod.Branches()
-	values := make([]string, 0, len(branches))
-	for _, branch := range branches {
-		values = append(values, branch.Target().String())
+func sourceModuleForCommit(req Request, mod plan.ModulePlan) source.ModuleSnapshot {
+	for _, sourceModule := range req.Source.Modules() {
+		if sourceModule.Name() == mod.Name() {
+			return sourceModule
+		}
 	}
-	return strings.Join(values, ",")
+
+	return source.ModuleSnapshot{}
 }
