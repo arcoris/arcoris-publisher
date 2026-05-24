@@ -17,7 +17,6 @@ package target
 import (
 	"context"
 
-	"arcoris.dev/arcoris-publisher/internal/manifest"
 	"arcoris.dev/arcoris-publisher/internal/plan"
 	"arcoris.dev/arcoris-publisher/internal/ports/filesystem"
 	"arcoris.dev/arcoris-publisher/internal/ports/git"
@@ -44,10 +43,34 @@ func New(deps Dependencies, opts Options) Service {
 
 // Prepare validates and prepares target worktrees for req.
 func (s Service) Prepare(ctx context.Context, req Request) (WorkspaceSet, error) {
+	root, err := s.validateRequest(req)
+	if err != nil {
+		return WorkspaceSet{}, err
+	}
+
+	issues := newIssueCollector()
+	if err := s.ensureRoot(ctx, root, &issues); err != nil {
+		return WorkspaceSet{}, err
+	}
+	if err := issues.Err(); err != nil {
+		return WorkspaceSet{}, err
+	}
+
+	workspaces := s.prepareModules(ctx, root, req.Plan, &issues)
+	if err := issues.Err(); err != nil {
+		return WorkspaceSet{}, err
+	}
+
+	return WorkspaceSet{workspaces: workspaces}, nil
+}
+
+// validateRequest rejects malformed input before any filesystem or Git work.
+func (s Service) validateRequest(req Request) (string, error) {
 	issues := newIssueCollector()
 	if req.Plan.Empty() {
 		issues.Add(IssueInvalidRequest, "", "plan", "plan is empty")
 	}
+
 	root, err := pathutil.CleanAbs(req.RootDir)
 	if err != nil {
 		issues.AddMessage(IssueInvalidRequest, "", "rootDir", err.Error())
@@ -59,31 +82,53 @@ func (s Service) Prepare(ctx context.Context, req Request) (WorkspaceSet, error)
 		issues.Add(IssueInvalidRequest, "", "git", "git dependency is required")
 	}
 	if err := issues.Err(); err != nil {
-		return WorkspaceSet{}, err
+		return "", err
 	}
+
+	return root, nil
+}
+
+// ensureRoot creates the target root when needed and verifies that the final
+// path is a directory.
+func (s Service) ensureRoot(
+	ctx context.Context,
+	root string,
+	issues *issueCollector,
+) error {
 	if ok, err := s.deps.FS.Exists(ctx, root); err != nil {
-		return WorkspaceSet{}, err
+		return err
 	} else if !ok {
 		if err := s.deps.FS.MkdirAll(ctx, root, filesystem.MkdirOptions{}); err != nil {
-			return WorkspaceSet{}, err
+			return err
 		}
 	}
+
 	if isDir, err := s.deps.FS.IsDir(ctx, root); err != nil {
-		return WorkspaceSet{}, err
+		return err
 	} else if !isDir {
 		issues.Add(IssueRootNotDirectory, "", root, "target root is not a directory")
 	}
-	workspaces := make([]ModuleWorkspace, 0, req.Plan.Len())
-	for _, mod := range req.Plan.Modules() {
-		ws, ok := s.prepareModule(ctx, root, mod, &issues)
+
+	return nil
+}
+
+// prepareModules prepares all planned module worktrees in plan order and keeps
+// collecting module diagnostics after individual module failures.
+func (s Service) prepareModules(
+	ctx context.Context,
+	root string,
+	p plan.Plan,
+	issues *issueCollector,
+) []ModuleWorkspace {
+	workspaces := make([]ModuleWorkspace, 0, p.Len())
+	for _, mod := range p.Modules() {
+		ws, ok := s.prepareModule(ctx, root, mod, issues)
 		if ok {
 			workspaces = append(workspaces, ws)
 		}
 	}
-	if err := issues.Err(); err != nil {
-		return WorkspaceSet{}, err
-	}
-	return WorkspaceSet{workspaces: workspaces}, nil
+
+	return workspaces
 }
 
 // prepareModule ensures one module worktree exists, is clean, and has branch
@@ -95,73 +140,176 @@ func (s Service) prepareModule(
 	issues *issueCollector,
 ) (ModuleWorkspace, bool) {
 	worktree := repositoryWorktree(root, mod.Repository())
-	exists, err := s.deps.FS.Exists(ctx, worktree)
-	if err != nil {
-		issues.AddMessage(IssueWorktreeMissing, mod.Name(), worktree, err.Error())
+
+	if !s.ensureWorktreeExists(ctx, mod, worktree, issues) {
 		return ModuleWorkspace{}, false
 	}
-	if !exists {
-		if s.opts.RemoteURL != nil {
-			url := s.opts.RemoteURL(mod.Repository())
-			if url == "" {
-				issues.Add(
-					IssueCloneURLMissing,
-					mod.Name(),
-					worktree,
-					"remote URL resolver returned empty URL for %s",
-					mod.Repository(),
-				)
-				return ModuleWorkspace{}, false
-			}
-			if err := s.deps.Git.Clone(ctx, url, worktree, git.CloneOptions{}); err != nil {
-				issues.Add(IssueWorktreeMissing, mod.Name(), worktree, "clone failed: %v", err)
-				return ModuleWorkspace{}, false
-			}
-		} else if s.opts.CreateMissing {
-			if err := s.deps.FS.MkdirAll(ctx, worktree, filesystem.MkdirOptions{}); err != nil {
-				issues.AddMessage(IssueWorktreeMissing, mod.Name(), worktree, err.Error())
-				return ModuleWorkspace{}, false
-			}
-		} else {
-			issues.Add(IssueWorktreeMissing, mod.Name(), worktree, "target worktree is missing")
-			return ModuleWorkspace{}, false
-		}
-	}
-	if isDir, err := s.deps.FS.IsDir(ctx, worktree); err != nil {
-		issues.AddMessage(IssueWorktreeNotDirectory, mod.Name(), worktree, err.Error())
-		return ModuleWorkspace{}, false
-	} else if !isDir {
-		issues.Add(IssueWorktreeNotDirectory, mod.Name(), worktree, "target worktree is not a directory")
+
+	if !s.validateWorktreeDirectory(ctx, mod, worktree, issues) {
 		return ModuleWorkspace{}, false
 	}
-	if s.opts.Fetch {
-		_ = s.deps.Git.Fetch(ctx, worktree, s.opts.RemoteName, git.FetchOptions{
-			Prune: true,
-			Tags:  git.FetchTagsAll,
-		})
-	}
-	if s.opts.RequireClean {
-		status, err := s.deps.Git.Status(ctx, worktree)
-		if err == nil && (!status.Clean || status.HasEntries()) {
-			issues.Add(IssueWorktreeDirty, mod.Name(), worktree, "target worktree is dirty")
-		}
-	}
-	branchWorkspaces := make([]BranchWorkspace, 0, len(mod.Branches()))
-	for _, branch := range mod.Branches() {
-		branchWorkspaces = append(branchWorkspaces, newBranchWorkspace(branch.Source(), branch.Target()))
-	}
-	if s.opts.CheckoutBranch && len(branchWorkspaces) > 0 {
-		ref := branchWorkspaces[0].Target().String()
-		if err := s.deps.Git.Checkout(ctx, worktree, ref, git.CheckoutOptions{}); err != nil {
-			issues.Add(IssueInvalidRequest, mod.Name(), worktree, "checkout %s failed: %v", ref, err)
-		}
-	}
+
+	s.fetchWorktree(ctx, worktree)
+	s.checkCleanWorktree(ctx, mod, worktree, issues)
+
+	branches := branchWorkspaces(mod)
+	s.checkoutFirstBranch(ctx, mod, worktree, branches, issues)
+
 	return ModuleWorkspace{
 		module:      mod.Name(),
 		repository:  mod.Repository(),
 		worktreeDir: worktree,
-		branches:    branchWorkspaces,
+		branches:    branches,
 	}, true
 }
 
-var _ = manifest.ModuleName("")
+// ensureWorktreeExists creates, clones, or reports a missing worktree.
+func (s Service) ensureWorktreeExists(
+	ctx context.Context,
+	mod plan.ModulePlan,
+	worktree string,
+	issues *issueCollector,
+) bool {
+	exists, err := s.deps.FS.Exists(ctx, worktree)
+	if err != nil {
+		issues.AddMessage(IssueWorktreeMissing, mod.Name(), worktree, err.Error())
+		return false
+	}
+	if exists {
+		return true
+	}
+
+	if s.opts.RemoteURL != nil {
+		return s.cloneMissingWorktree(ctx, mod, worktree, issues)
+	}
+
+	if s.opts.CreateMissing {
+		return s.createMissingWorktree(ctx, mod, worktree, issues)
+	}
+
+	issues.Add(IssueWorktreeMissing, mod.Name(), worktree, "target worktree is missing")
+	return false
+}
+
+// cloneMissingWorktree clones a missing worktree when a remote URL resolver is
+// configured.
+func (s Service) cloneMissingWorktree(
+	ctx context.Context,
+	mod plan.ModulePlan,
+	worktree string,
+	issues *issueCollector,
+) bool {
+	url := s.opts.RemoteURL(mod.Repository())
+	if url == "" {
+		issues.Add(
+			IssueCloneURLMissing,
+			mod.Name(),
+			worktree,
+			"remote URL resolver returned empty URL for %s",
+			mod.Repository(),
+		)
+		return false
+	}
+
+	if err := s.deps.Git.Clone(ctx, url, worktree, git.CloneOptions{}); err != nil {
+		issues.Add(IssueWorktreeMissing, mod.Name(), worktree, "clone failed: %v", err)
+		return false
+	}
+
+	return true
+}
+
+// createMissingWorktree creates a missing local worktree directory.
+func (s Service) createMissingWorktree(
+	ctx context.Context,
+	mod plan.ModulePlan,
+	worktree string,
+	issues *issueCollector,
+) bool {
+	if err := s.deps.FS.MkdirAll(ctx, worktree, filesystem.MkdirOptions{}); err != nil {
+		issues.AddMessage(IssueWorktreeMissing, mod.Name(), worktree, err.Error())
+		return false
+	}
+
+	return true
+}
+
+// validateWorktreeDirectory rejects non-directory worktree paths.
+func (s Service) validateWorktreeDirectory(
+	ctx context.Context,
+	mod plan.ModulePlan,
+	worktree string,
+	issues *issueCollector,
+) bool {
+	isDir, err := s.deps.FS.IsDir(ctx, worktree)
+	if err != nil {
+		issues.AddMessage(IssueWorktreeNotDirectory, mod.Name(), worktree, err.Error())
+		return false
+	}
+	if !isDir {
+		issues.Add(IssueWorktreeNotDirectory, mod.Name(), worktree, "target worktree is not a directory")
+		return false
+	}
+
+	return true
+}
+
+// fetchWorktree refreshes remote state when requested. Fetch failures are
+// deliberately non-fatal because local checkout validation may still succeed.
+func (s Service) fetchWorktree(ctx context.Context, worktree string) {
+	if !s.opts.Fetch {
+		return
+	}
+
+	_ = s.deps.Git.Fetch(ctx, worktree, s.opts.RemoteName, git.FetchOptions{
+		Prune: true,
+		Tags:  git.FetchTagsAll,
+	})
+}
+
+// checkCleanWorktree records a dirty worktree when policy requires cleanliness.
+func (s Service) checkCleanWorktree(
+	ctx context.Context,
+	mod plan.ModulePlan,
+	worktree string,
+	issues *issueCollector,
+) {
+	if !s.opts.RequireClean {
+		return
+	}
+
+	status, err := s.deps.Git.Status(ctx, worktree)
+	if err == nil && (!status.Clean || status.HasEntries()) {
+		issues.Add(IssueWorktreeDirty, mod.Name(), worktree, "target worktree is dirty")
+	}
+}
+
+// branchWorkspaces converts plan branch mappings into target workspace metadata.
+func branchWorkspaces(mod plan.ModulePlan) []BranchWorkspace {
+	branches := mod.Branches()
+	out := make([]BranchWorkspace, 0, len(branches))
+	for _, branch := range branches {
+		out = append(out, newBranchWorkspace(branch.Source(), branch.Target()))
+	}
+
+	return out
+}
+
+// checkoutFirstBranch switches to the first target branch when checkout is
+// enabled. Later workflow stages use the same prepared worktree.
+func (s Service) checkoutFirstBranch(
+	ctx context.Context,
+	mod plan.ModulePlan,
+	worktree string,
+	branches []BranchWorkspace,
+	issues *issueCollector,
+) {
+	if !s.opts.CheckoutBranch || len(branches) == 0 {
+		return
+	}
+
+	ref := branches[0].Target().String()
+	if err := s.deps.Git.Checkout(ctx, worktree, ref, git.CheckoutOptions{}); err != nil {
+		issues.Add(IssueInvalidRequest, mod.Name(), worktree, "checkout %s failed: %v", ref, err)
+	}
+}

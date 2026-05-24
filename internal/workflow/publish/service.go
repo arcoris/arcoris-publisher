@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"arcoris.dev/arcoris-publisher/internal/manifest"
+	"arcoris.dev/arcoris-publisher/internal/plan"
 	"arcoris.dev/arcoris-publisher/internal/ports/git"
 )
 
@@ -41,27 +42,48 @@ func New(deps Dependencies, opts Options) Service {
 
 // Publish commits, tags, and pushes every changed verified module.
 func (s Service) Publish(ctx context.Context, req Request) (Result, error) {
+	if err := s.validateRequest(req); err != nil {
+		return Result{}, err
+	}
+
+	results, err := s.publishModules(ctx, req)
+	if err != nil {
+		return Result{}, err
+	}
+
+	return Result{modules: results}, nil
+}
+
+// validateRequest rejects invalid publication inputs before Git is mutated.
+func (s Service) validateRequest(req Request) error {
 	if req.Plan.Empty() {
-		return Result{}, &Error{Code: CodeInvalidRequest, Message: "plan is empty"}
+		return &Error{Code: CodeInvalidRequest, Message: "plan is empty"}
 	}
 	if req.Verify.Failed() {
-		return Result{}, &Error{
+		return &Error{
 			Code:    CodeVerificationFailed,
 			Message: "verification result contains failed checks",
 		}
 	}
 	if s.deps.Git == nil {
-		return Result{}, &Error{Code: CodeInvalidRequest, Message: "git dependency is required"}
+		return &Error{Code: CodeInvalidRequest, Message: "git dependency is required"}
 	}
+
+	return nil
+}
+
+// publishModules publishes planned modules in deterministic plan order.
+func (s Service) publishModules(ctx context.Context, req Request) ([]ModuleResult, error) {
 	results := make([]ModuleResult, 0, req.Plan.Len())
 	for _, mod := range req.Plan.Modules() {
 		mr, err := s.publishModule(ctx, req, mod.Name())
 		if err != nil {
-			return Result{}, err
+			return nil, err
 		}
 		results = append(results, mr)
 	}
-	return Result{modules: results}, nil
+
+	return results, nil
 }
 
 // publishModule publishes one changed module target worktree.
@@ -71,71 +93,133 @@ func (s Service) publishModule(
 	name manifest.ModuleName,
 ) (ModuleResult, error) {
 	mod, _ := req.Plan.ModuleByName(name)
-	ws, ok := req.Targets.WorkspaceByModule(name)
+	worktree, ok := targetWorktree(req, name)
 	if !ok {
 		return ModuleResult{}, &Error{
 			Code:    CodeInvalidRequest,
 			Message: fmt.Sprintf("target workspace for %s is missing", name),
 		}
 	}
-	constructResult, changed := req.Construct.ModuleByName(name)
-	if !changed || !constructResult.Changed() {
+	if shouldSkipModule(req, name) {
 		return ModuleResult{module: name, skipped: true}, nil
 	}
 	if s.opts.DryRun {
 		return ModuleResult{module: name, skipped: false}, nil
 	}
-	if err := s.deps.Git.AddAll(ctx, ws.WorktreeDir()); err != nil {
-		return ModuleResult{}, &Error{Code: CodePublishFailed, Message: "git add failed", Cause: err}
+
+	commit, err := s.commitWorktree(ctx, worktree, mod, req)
+	if err != nil {
+		return ModuleResult{}, err
 	}
+
+	tags, err := s.createAndPushTags(ctx, req, mod, worktree, commit)
+	if err != nil {
+		return ModuleResult{}, err
+	}
+
+	if err := s.pushBranches(ctx, req, mod, worktree); err != nil {
+		return ModuleResult{}, err
+	}
+
+	return ModuleResult{module: name, commit: commit, tags: tags, pushed: true}, nil
+}
+
+// targetWorktree returns the prepared worktree path for name.
+func targetWorktree(req Request, name manifest.ModuleName) (string, bool) {
+	ws, ok := req.Targets.WorkspaceByModule(name)
+	if !ok {
+		return "", false
+	}
+
+	return ws.WorktreeDir(), true
+}
+
+// shouldSkipModule reports whether construction found no changes to publish.
+func shouldSkipModule(req Request, name manifest.ModuleName) bool {
+	constructResult, found := req.Construct.ModuleByName(name)
+	return !found || !constructResult.Changed()
+}
+
+// commitWorktree stages and commits target worktree changes.
+func (s Service) commitWorktree(
+	ctx context.Context,
+	worktree string,
+	mod plan.ModulePlan,
+	req Request,
+) (git.CommitHash, error) {
+	if err := s.deps.Git.AddAll(ctx, worktree); err != nil {
+		return "", &Error{Code: CodePublishFailed, Message: "git add failed", Cause: err}
+	}
+
 	commit, err := s.deps.Git.Commit(
 		ctx,
-		ws.WorktreeDir(),
+		worktree,
 		commitMessage(mod, req.Source),
 		git.CommitOptions{AllowEmpty: s.opts.AllowEmptyCommits},
 	)
 	if err != nil {
-		return ModuleResult{}, &Error{Code: CodePublishFailed, Message: "git commit failed", Cause: err}
+		return "", &Error{Code: CodePublishFailed, Message: "git commit failed", Cause: err}
 	}
-	tags := []git.TagName{}
-	if req.Plan.PublishPolicy().Tags().Enabled() {
-		tag := git.TagName(mod.Version().String())
-		if err := s.deps.Git.CreateTag(ctx, ws.WorktreeDir(), tag, commit, git.TagOptions{
-			Annotated: true,
-			Message:   "release " + mod.Version().String(),
-		}); err != nil {
-			return ModuleResult{}, &Error{Code: CodePublishFailed, Message: "git tag failed", Cause: err}
-		}
-		if err := s.deps.Git.PushTag(
-			ctx,
-			ws.WorktreeDir(),
-			s.opts.RemoteName,
-			tag,
-			git.PushOptions{},
-		); err != nil {
-			return ModuleResult{}, &Error{
-				Code:    CodePublishFailed,
-				Message: "git push tag failed",
-				Cause:   err,
-			}
-		}
-		tags = append(tags, tag)
+
+	return commit, nil
+}
+
+// createAndPushTags creates the release tag when enabled and pushes it before
+// branch refs.
+func (s Service) createAndPushTags(
+	ctx context.Context,
+	req Request,
+	mod plan.ModulePlan,
+	worktree string,
+	commit git.CommitHash,
+) ([]git.TagName, error) {
+	if !req.Plan.PublishPolicy().Tags().Enabled() {
+		return nil, nil
 	}
+
+	tag := git.TagName(mod.Version().String())
+	if err := s.deps.Git.CreateTag(ctx, worktree, tag, commit, git.TagOptions{
+		Annotated: true,
+		Message:   "release " + mod.Version().String(),
+	}); err != nil {
+		return nil, &Error{Code: CodePublishFailed, Message: "git tag failed", Cause: err}
+	}
+
+	if err := s.deps.Git.PushTag(ctx, worktree, s.opts.RemoteName, tag, git.PushOptions{}); err != nil {
+		return nil, &Error{Code: CodePublishFailed, Message: "git push tag failed", Cause: err}
+	}
+
+	return []git.TagName{tag}, nil
+}
+
+// pushBranches pushes all planned target branches for one module.
+func (s Service) pushBranches(
+	ctx context.Context,
+	req Request,
+	mod plan.ModulePlan,
+	worktree string,
+) error {
 	for _, branch := range mod.Branches() {
-		refspec := git.RefSpec(
-			"refs/heads/" + branch.Target().String() + ":refs/heads/" + branch.Target().String(),
-		)
-		opts := git.PushOptions{}
-		if req.Plan.PublishPolicy().PushPolicy() == manifest.PushPolicyForceWithLease {
-			opts.ForceWithLease = true
-		}
-		if err := s.deps.Git.Push(ctx, ws.WorktreeDir(), s.opts.RemoteName, refspec, opts); err != nil {
-			return ModuleResult{}, &Error{
-				Code:    CodePublishFailed,
-				Message: "git push branch failed",
-				Cause:   err,
-			}
+		refspec := branchRefspec(branch.Target())
+		if err := s.deps.Git.Push(ctx, worktree, s.opts.RemoteName, refspec, pushOptions(req)); err != nil {
+			return &Error{Code: CodePublishFailed, Message: "git push branch failed", Cause: err}
 		}
 	}
-	return ModuleResult{module: name, commit: commit, tags: tags, pushed: true}, nil
+
+	return nil
+}
+
+// branchRefspec renders the local-to-remote branch update for one target branch.
+func branchRefspec(branch manifest.BranchName) git.RefSpec {
+	ref := "refs/heads/" + branch.String()
+	return git.RefSpec(ref + ":" + ref)
+}
+
+// pushOptions maps the resolved publication push policy to Git push flags.
+func pushOptions(req Request) git.PushOptions {
+	opts := git.PushOptions{}
+	if req.Plan.PublishPolicy().PushPolicy() == manifest.PushPolicyForceWithLease {
+		opts.ForceWithLease = true
+	}
+	return opts
 }

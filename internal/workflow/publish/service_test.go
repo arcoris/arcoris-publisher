@@ -17,6 +17,9 @@ package publish
 import (
 	"context"
 	"testing"
+
+	"arcoris.dev/arcoris-publisher/internal/manifest"
+	"arcoris.dev/arcoris-publisher/internal/ports/git"
 )
 
 func TestPublishRejectsInvalidRequest(t *testing.T) {
@@ -28,5 +31,14 @@ func TestPublishRejectsInvalidRequest(t *testing.T) {
 	}
 	if got.Code != CodeInvalidRequest {
 		t.Fatalf("Code = %q", got.Code)
+	}
+}
+
+func TestBranchRefspecUsesTargetBranch(t *testing.T) {
+	got := branchRefspec(manifest.BranchName("release/v1"))
+	want := git.RefSpec("refs/heads/release/v1:refs/heads/release/v1")
+
+	if got != want {
+		t.Fatalf("branchRefspec() = %q, want %q", got, want)
 	}
 }

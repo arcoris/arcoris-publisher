@@ -30,3 +30,73 @@ func TestVerifyRejectsInvalidRequest(t *testing.T) {
 		t.Fatalf("Code = %q", got.Code)
 	}
 }
+
+func TestTargetWorktreeCheck(t *testing.T) {
+	tests := []struct {
+		name   string
+		fs     fakeReader
+		status Status
+	}{
+		{
+			name:   "missing",
+			fs:     fakeReader{},
+			status: StatusFailed,
+		},
+		{
+			name: "not directory",
+			fs: fakeReader{
+				paths: map[string]fakePath{"/target": {exists: true}},
+			},
+			status: StatusFailed,
+		},
+		{
+			name: "directory",
+			fs: fakeReader{
+				paths: map[string]fakePath{"/target": {exists: true, dir: true}},
+			},
+			status: StatusPassed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := New(Dependencies{FS: tt.fs}, Options{})
+
+			check := service.targetWorktreeCheck(context.Background(), "/target")
+
+			if check.Status() != tt.status {
+				t.Fatalf("Status() = %s, want %s", check.Status(), tt.status)
+			}
+			if check.Path() != "/target" {
+				t.Fatalf("Path() = %q", check.Path())
+			}
+		})
+	}
+}
+
+type fakePath struct {
+	exists bool
+	dir    bool
+	data   []byte
+}
+
+type fakeReader struct {
+	paths map[string]fakePath
+}
+
+func (fs fakeReader) Exists(_ context.Context, name string) (bool, error) {
+	path := fs.paths[name]
+	return path.exists, nil
+}
+
+func (fs fakeReader) IsDir(_ context.Context, name string) (bool, error) {
+	path := fs.paths[name]
+	return path.dir, nil
+}
+
+func (fs fakeReader) ReadFile(_ context.Context, path string) ([]byte, error) {
+	data := fs.paths[path].data
+	out := make([]byte, len(data))
+	copy(out, data)
+	return out, nil
+}
