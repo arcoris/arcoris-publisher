@@ -1,0 +1,96 @@
+// Copyright 2026 The ARCORIS Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package cli
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+
+	"arcoris.dev/arcoris-publisher/internal/buildinfo"
+	"arcoris.dev/arcoris-publisher/internal/report"
+)
+
+// BuildInfoFunc returns normalized publisher build metadata.
+type BuildInfoFunc func() buildinfo.Info
+
+type versionFlags struct {
+	output  string
+	pretty  bool
+	compact bool
+}
+
+type versionReport struct {
+	Version string `json:"version"`
+	Commit  string `json:"commit"`
+	Date    string `json:"date"`
+	Dirty   string `json:"dirty"`
+}
+
+func (c CLI) runVersion(_ context.Context, args []string, stdout io.Writer, stderr io.Writer) int {
+	flags := versionFlags{output: c.opts.Report.Format.String(), pretty: c.opts.Report.Pretty}
+	fs := newFlagSet("version")
+	fs.StringVar(&flags.output, "output", flags.output, "output format: text or json")
+	fs.BoolVar(&flags.pretty, "pretty", flags.pretty, "render pretty JSON output when --output=json")
+	fs.BoolVar(&flags.compact, "compact", false, "render compact JSON output when --output=json")
+	if err := parseFlagSet(fs, args); err != nil {
+		writeCLIError(stderr, err)
+		return ExitUsage
+	}
+
+	format, err := report.ParseFormat(flags.output)
+	if err != nil {
+		writeCLIError(stderr, &Error{Code: CodeInvalidFlags, Message: "invalid output format", Cause: err})
+		return ExitUsage
+	}
+
+	info := c.deps.BuildInfo()
+	value := versionReport{
+		Version: info.Version(),
+		Commit:  info.Commit(),
+		Date:    info.Date(),
+		Dirty:   info.Dirty(),
+	}
+
+	switch format {
+	case report.FormatText:
+		_, err = fmt.Fprintf(
+			stdout,
+			"arcpub %s\n  commit: %s\n  date:   %s\n  dirty:  %s\n",
+			value.Version,
+			value.Commit,
+			value.Date,
+			value.Dirty,
+		)
+	case report.FormatJSON:
+		var data []byte
+		if flags.pretty && !flags.compact {
+			data, err = json.MarshalIndent(value, "", "  ")
+		} else {
+			data, err = json.Marshal(value)
+		}
+		if err == nil {
+			_, err = stdout.Write(append(data, '\n'))
+		}
+	default:
+		err = &Error{Code: CodeInvalidFlags, Message: "unsupported version output format"}
+	}
+	if err != nil {
+		writeCLIError(stderr, &Error{Code: CodeReportFailed, Message: "render version failed", Cause: err})
+		return ExitError
+	}
+	return ExitOK
+}
