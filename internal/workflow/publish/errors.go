@@ -26,6 +26,10 @@ const (
 	// CodeVerificationFailed indicates publication was blocked by failed checks.
 	CodeVerificationFailed ErrorCode = "verification_failed"
 
+	// CodeMissingSourceSnapshot indicates source provenance for a planned module
+	// is unavailable.
+	CodeMissingSourceSnapshot ErrorCode = "missing_source_snapshot"
+
 	// CodePublishFailed indicates a Git publication operation failed.
 	CodePublishFailed ErrorCode = "publish_failed"
 )

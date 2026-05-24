@@ -25,7 +25,7 @@ import (
 )
 
 // commitMessage renders deterministic publication provenance for one module.
-func commitMessage(mod plan.ModulePlan, req Request) string {
+func commitMessage(mod plan.ModulePlan, sourceModule source.ModuleSnapshot, req Request) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "sync: publish %s %s\n\n", mod.Name(), mod.Version())
 
@@ -34,20 +34,10 @@ func commitMessage(mod plan.ModulePlan, req Request) string {
 			Plan:         req.Plan,
 			Module:       mod,
 			Source:       req.Source,
-			SourceModule: sourceModuleForCommit(req, mod),
+			SourceModule: sourceModule,
 			Build:        buildinfo.Current(),
 		}).Render())
 	}
 
 	return b.String()
-}
-
-func sourceModuleForCommit(req Request, mod plan.ModulePlan) source.ModuleSnapshot {
-	for _, sourceModule := range req.Source.Modules() {
-		if sourceModule.Name() == mod.Name() {
-			return sourceModule
-		}
-	}
-
-	return source.ModuleSnapshot{}
 }

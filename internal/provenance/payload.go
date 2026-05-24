@@ -111,11 +111,7 @@ func BuildFilePayload(input Input) FilePayload {
 			PushPolicy:  string(input.Plan.PublishPolicy().PushPolicy()),
 			TagPolicy:   string(input.Plan.PublishPolicy().Tags().Mode()),
 		},
-		Projection: ProjectionPayload{
-			EntryCount:     len(entries),
-			ProjectionHash: ProjectionHash(entries),
-			Entries:        entries,
-		},
+		Projection: buildProjectionPayload(entries),
 	}
 }
 
@@ -127,4 +123,14 @@ func RenderFilePayload(input Input) ([]byte, error) {
 	}
 
 	return append(data, '\n'), nil
+}
+
+func buildProjectionPayload(entries []Entry) ProjectionPayload {
+	entries = normalizeEntries(entries)
+
+	return ProjectionPayload{
+		EntryCount:     len(entries),
+		ProjectionHash: ProjectionHash(entries),
+		Entries:        entries,
+	}
 }

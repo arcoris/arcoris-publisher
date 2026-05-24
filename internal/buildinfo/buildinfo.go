@@ -14,6 +14,8 @@
 
 package buildinfo
 
+import "strings"
+
 const (
 	defaultVersion = "dev"
 	defaultCommit  = "unknown"
@@ -24,25 +26,29 @@ const (
 // Version is the publisher version embedded by release builds.
 //
 // Build tooling may override this variable with -ldflags. Empty values are
-// normalized to "dev" so local and test builds remain stable.
+// trimmed and normalized to "dev" when empty so local and test builds remain
+// stable.
 var Version = defaultVersion
 
 // Commit is the source revision embedded by release builds.
 //
 // Build tooling may override this variable with -ldflags. Empty values are
-// normalized to "unknown" because build metadata is optional for local builds.
+// trimmed and normalized to "unknown" because build metadata is optional for
+// local builds.
 var Commit = defaultCommit
 
 // Date is the build timestamp embedded by release builds.
 //
 // Build tooling may override this variable with -ldflags. Empty values are
-// normalized to "unknown" to avoid leaking machine-local fallback values.
+// trimmed and normalized to "unknown" to avoid leaking machine-local fallback
+// values.
 var Date = defaultDate
 
 // Dirty records whether the publisher source tree was dirty at build time.
 //
 // Build tooling may override this variable with -ldflags. Empty values are
-// normalized to "unknown" because this package does not inspect Git itself.
+// trimmed and normalized to "unknown" because this package does not inspect Git
+// itself.
 var Dirty = defaultDirty
 
 // Info is a normalized immutable snapshot of publisher build metadata.
@@ -92,6 +98,7 @@ func (i Info) Map() map[string]string {
 }
 
 func normalize(value string, fallback string) string {
+	value = strings.TrimSpace(value)
 	if value == "" {
 		return fallback
 	}

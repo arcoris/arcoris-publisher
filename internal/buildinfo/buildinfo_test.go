@@ -61,6 +61,29 @@ func TestCurrentNormalizesEmptyBuildVariables(t *testing.T) {
 	}
 }
 
+func TestCurrentNormalizesWhitespaceBuildVariables(t *testing.T) {
+	restoreBuildVariables(t)
+	Version = "   "
+	Commit = "\n"
+	Date = "\t"
+	Dirty = "\r\n"
+
+	info := Current()
+
+	if info.Version() != "dev" {
+		t.Fatalf("Version() = %q", info.Version())
+	}
+	if info.Commit() != "unknown" {
+		t.Fatalf("Commit() = %q", info.Commit())
+	}
+	if info.Date() != "unknown" {
+		t.Fatalf("Date() = %q", info.Date())
+	}
+	if info.Dirty() != "unknown" {
+		t.Fatalf("Dirty() = %q", info.Dirty())
+	}
+}
+
 func TestCurrentReturnsCustomBuildInfo(t *testing.T) {
 	restoreBuildVariables(t)
 	Version = "v1.2.3"
@@ -84,6 +107,29 @@ func TestCurrentReturnsCustomBuildInfo(t *testing.T) {
 	}
 	if info.IsDev() {
 		t.Fatal("IsDev() = true")
+	}
+}
+
+func TestCurrentTrimsCustomBuildInfo(t *testing.T) {
+	restoreBuildVariables(t)
+	Version = " v1.2.3 "
+	Commit = "\tabc123\n"
+	Date = " 2026-05-24T00:00:00Z "
+	Dirty = " false "
+
+	info := Current()
+
+	if info.Version() != "v1.2.3" {
+		t.Fatalf("Version() = %q", info.Version())
+	}
+	if info.Commit() != "abc123" {
+		t.Fatalf("Commit() = %q", info.Commit())
+	}
+	if info.Date() != "2026-05-24T00:00:00Z" {
+		t.Fatalf("Date() = %q", info.Date())
+	}
+	if info.Dirty() != "false" {
+		t.Fatalf("Dirty() = %q", info.Dirty())
 	}
 }
 

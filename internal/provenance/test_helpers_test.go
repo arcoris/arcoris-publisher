@@ -28,9 +28,15 @@ import (
 func testInput(t *testing.T) Input {
 	t.Helper()
 
+	return testInputWithEntries(t, publishertest.DefaultEntries())
+}
+
+func testInputWithEntries(t *testing.T, entries []manifest.PublishEntrySpec) Input {
+	t.Helper()
+
 	p, err := publishertest.Plan(
 		publishertest.PlanOptions{},
-		publishertest.Module{Name: "foundation"},
+		publishertest.Module{Name: "foundation", Entries: entries},
 	)
 	if err != nil {
 		t.Fatalf("publishertest.Plan() error = %v", err)

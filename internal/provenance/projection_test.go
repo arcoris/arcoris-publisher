@@ -14,7 +14,12 @@
 
 package provenance
 
-import "testing"
+import (
+	"testing"
+
+	"arcoris.dev/arcoris-publisher/internal/manifest"
+	"arcoris.dev/arcoris-publisher/internal/testutil/publishertest"
+)
 
 func TestProjectionHashIsIndependentOfEntryOrder(t *testing.T) {
 	first := ProjectionHash([]Entry{
@@ -44,6 +49,27 @@ func TestProjectionHashDistinguishesAbsentOptionalEntries(t *testing.T) {
 	}
 }
 
+func TestNormalizeEntriesSortsForJSONPayload(t *testing.T) {
+	entries := normalizeEntries([]Entry{
+		{TargetPath: "go.mod", Hash: "sha256:two", Present: true},
+		{TargetPath: "contracts", Hash: "sha256:one", Present: true},
+		{TargetPath: "go.mod", Hash: "", Present: false},
+		{TargetPath: "go.mod", Hash: "sha256:one", Present: true},
+	})
+
+	want := []Entry{
+		{TargetPath: "contracts", Hash: "sha256:one", Present: true},
+		{TargetPath: "go.mod", Hash: "absent", Present: false},
+		{TargetPath: "go.mod", Hash: "sha256:one", Present: true},
+		{TargetPath: "go.mod", Hash: "sha256:two", Present: true},
+	}
+	for i := range want {
+		if entries[i] != want[i] {
+			t.Fatalf("entries[%d] = %+v, want %+v; all entries = %+v", i, entries[i], want[i], entries)
+		}
+	}
+}
+
 func TestEntriesFromSourceModuleUsesRelativeTargetsOnly(t *testing.T) {
 	input := testInput(t)
 
@@ -62,5 +88,18 @@ func TestEntriesFromSourceModuleUsesRelativeTargetsOnly(t *testing.T) {
 		if !entry.Present {
 			t.Fatalf("fixture entry unexpectedly absent: %+v", entry)
 		}
+	}
+}
+
+func TestEntriesFromSourceModuleSortsTargets(t *testing.T) {
+	input := testInputWithEntries(t, []manifest.PublishEntrySpec{
+		publishertest.FileEntry("go.mod"),
+		publishertest.DirectoryEntry("contracts"),
+	})
+
+	entries := EntriesFromSourceModule(input.SourceModule)
+
+	if entries[0].TargetPath != "contracts" || entries[1].TargetPath != "go.mod" {
+		t.Fatalf("entries not sorted by target path: %+v", entries)
 	}
 }

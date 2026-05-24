@@ -21,6 +21,7 @@ import (
 	"arcoris.dev/arcoris-publisher/internal/buildinfo"
 	"arcoris.dev/arcoris-publisher/internal/manifest"
 	"arcoris.dev/arcoris-publisher/internal/testutil/publishertest"
+	"arcoris.dev/arcoris-publisher/internal/workflow/source"
 )
 
 func TestCommitMessageContainsArcorisTrailers(t *testing.T) {
@@ -36,8 +37,13 @@ func TestCommitMessageContainsArcorisTrailers(t *testing.T) {
 		t.Fatalf("publishertest.Plan() error = %v", err)
 	}
 	mod, _ := p.ModuleByName("foundation")
+	req, _, _ := publishRequest(t, nil)
+	sourceModule, ok := sourceModuleForPublish(req.Source, mod.Name())
+	if !ok {
+		t.Fatal("source module missing")
+	}
 
-	message := commitMessage(mod, Request{Plan: p})
+	message := commitMessage(mod, sourceModule, Request{Plan: p, Source: req.Source})
 
 	for _, required := range []string{
 		"Arcoris-Source-Repository:",
@@ -46,6 +52,8 @@ func TestCommitMessageContainsArcorisTrailers(t *testing.T) {
 		"Arcoris-Target-Repository:",
 		"Arcoris-Publish-Mode:",
 		"Arcoris-Publisher-Version: v1.2.3",
+		"Arcoris-Source-Dir: src/arcoris.dev/foundation",
+		"Arcoris-Projection-Hash: sha256:",
 	} {
 		if !strings.Contains(message, required) {
 			t.Fatalf("commit message missing %q:\n%s", required, message)
@@ -71,7 +79,7 @@ func TestCommitMessageHonorsDisabledCommitTrailers(t *testing.T) {
 	}
 	mod, _ := p.ModuleByName("foundation")
 
-	message := commitMessage(mod, Request{Plan: p})
+	message := commitMessage(mod, source.ModuleSnapshot{}, Request{Plan: p})
 
 	if message != "sync: publish foundation v0.3.0\n\n" {
 		t.Fatalf("commitMessage() = %q", message)

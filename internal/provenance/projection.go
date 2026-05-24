@@ -47,7 +47,7 @@ func EntriesFromSourceModule(module source.ModuleSnapshot) []Entry {
 			Present:    entry.Present(),
 		})
 	}
-	return out
+	return normalizeEntries(out)
 }
 
 // ProjectionHash returns a deterministic sha256 digest for target paths and
@@ -57,11 +57,11 @@ func EntriesFromSourceModule(module source.ModuleSnapshot) []Entry {
 // represented as "<targetPath>=absent" so an omitted optional file changes the
 // projection relative to a present empty or unhashed file.
 func ProjectionHash(entries []Entry) string {
-	lines := make([]string, 0, len(entries))
-	for _, entry := range entries {
+	normalized := normalizeEntries(entries)
+	lines := make([]string, 0, len(normalized))
+	for _, entry := range normalized {
 		lines = append(lines, entry.TargetPath+"="+projectionHashValue(entry.Present, entry.Hash))
 	}
-	sort.Strings(lines)
 
 	hash := sha256.New()
 	for _, line := range lines {
@@ -77,4 +77,33 @@ func projectionHashValue(present bool, hash string) string {
 		return absentEntryHash
 	}
 	return hash
+}
+
+// normalizeEntries returns projection entries in deterministic JSON and hashing
+// order. Entries sort by target path, then by normalized hash, with absent
+// entries before present entries when both previous fields match.
+func normalizeEntries(entries []Entry) []Entry {
+	out := make([]Entry, len(entries))
+	copy(out, entries)
+	for i := range out {
+		out[i].Hash = projectionHashValue(out[i].Present, out[i].Hash)
+	}
+
+	sort.SliceStable(out, func(i, j int) bool {
+		left := out[i]
+		right := out[j]
+		if left.TargetPath != right.TargetPath {
+			return left.TargetPath < right.TargetPath
+		}
+
+		leftHash := projectionHashValue(left.Present, left.Hash)
+		rightHash := projectionHashValue(right.Present, right.Hash)
+		if leftHash != rightHash {
+			return leftHash < rightHash
+		}
+
+		return !left.Present && right.Present
+	})
+
+	return out
 }

@@ -17,6 +17,7 @@ package publish
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"arcoris.dev/arcoris-publisher/internal/manifest"
@@ -24,6 +25,7 @@ import (
 	"arcoris.dev/arcoris-publisher/internal/testutil/porttest"
 	"arcoris.dev/arcoris-publisher/internal/testutil/publishertest"
 	"arcoris.dev/arcoris-publisher/internal/workflow/modulefile"
+	"arcoris.dev/arcoris-publisher/internal/workflow/source"
 	"arcoris.dev/arcoris-publisher/internal/workflow/target"
 )
 
@@ -109,6 +111,26 @@ func TestPublishSkipsCleanWorktree(t *testing.T) {
 	assertCallAbsent(t, fakeGit.Calls, "add")
 }
 
+func TestPublishRejectsMissingSourceModuleBeforeGitMutation(t *testing.T) {
+	req, fakeGit, worktree := publishRequest(t, nil)
+	req.Source = source.Snapshot{}
+	fakeGit.Statuses[worktree] = dirtyStatus()
+
+	_, err := New(Dependencies{Git: fakeGit}, Options{}).Publish(context.Background(), req)
+
+	got, ok := err.(*Error)
+	if !ok {
+		t.Fatalf("error type = %T", err)
+	}
+	if got.Code != CodeMissingSourceSnapshot {
+		t.Fatalf("Code = %q", got.Code)
+	}
+	assertCallAbsent(t, fakeGit.Calls, "add")
+	assertCallAbsent(t, fakeGit.Calls, "commit")
+	assertCallAbsent(t, fakeGit.Calls, "push")
+	assertCallAbsent(t, fakeGit.Calls, "push-tag")
+}
+
 func TestPublishFallsBackToModulefileChangeWhenStatusUnavailable(t *testing.T) {
 	req, fakeGit, worktree := publishRequest(t, nil)
 	req.ModuleFile = changedModuleFileResult(t)
@@ -136,6 +158,26 @@ func TestPublishUsesCleanGitStatusOverStageResults(t *testing.T) {
 	}
 	if !result.Modules()[0].Skipped() {
 		t.Fatal("clean Git status did not skip module")
+	}
+}
+
+func TestPublishCommitTrailersIncludeSourceProjectionHash(t *testing.T) {
+	req, fakeGit, worktree := publishRequest(t, nil)
+	fakeGit.Statuses[worktree] = dirtyStatus()
+
+	_, err := New(Dependencies{Git: fakeGit}, Options{}).Publish(context.Background(), req)
+
+	if err != nil {
+		t.Fatalf("Publish() error = %v", err)
+	}
+	message := findCall(fakeGit.Calls, "commit").Ref
+	for _, required := range []string{
+		"Arcoris-Source-Hash: sha256:",
+		"Arcoris-Projection-Hash: sha256:",
+	} {
+		if !strings.Contains(message, required) {
+			t.Fatalf("commit message missing %q:\n%s", required, message)
+		}
 	}
 }
 
@@ -173,8 +215,27 @@ func publishRequest(
 	}
 
 	fakeFS := porttest.NewFileSystem()
+	fakeFS.AddFile(
+		"/repo/staging/src/arcoris.dev/foundation/go.mod",
+		[]byte("module arcoris.dev/foundation\n"),
+	)
+	fakeFS.AddFile(
+		"/repo/staging/src/arcoris.dev/foundation/contracts/doc.go",
+		[]byte("package contracts\n"),
+	)
 	fakeFS.AddDir("/target")
 	fakeGit := porttest.NewGit()
+	snapshot, err := source.New(
+		source.Dependencies{FS: fakeFS, Git: fakeGit},
+		source.Options{},
+	).Inspect(context.Background(), source.Request{
+		Plan:          p,
+		RepositoryDir: "/repo",
+		StagingDir:    "/repo/staging",
+	})
+	if err != nil {
+		t.Fatalf("source.Inspect() error = %v", err)
+	}
 	targets, err := target.New(
 		target.Dependencies{FS: fakeFS, Git: fakeGit},
 		target.Options{CreateMissing: true},
@@ -191,7 +252,7 @@ func publishRequest(
 		t.Fatal("workspace for foundation not found")
 	}
 
-	return Request{Plan: p, Targets: targets}, fakeGit, ws.WorktreeDir()
+	return Request{Plan: p, Source: snapshot, Targets: targets}, fakeGit, ws.WorktreeDir()
 }
 
 func changedModuleFileResult(t *testing.T) modulefile.Result {

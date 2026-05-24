@@ -82,6 +82,36 @@ func TestRenderFilePayloadIsDeterministicJSON(t *testing.T) {
 	}
 }
 
+func TestProjectionPayloadJSONIsIndependentOfEntryOrder(t *testing.T) {
+	first, err := json.MarshalIndent(FilePayload{
+		SchemaVersion: SchemaVersion,
+		Projection: buildProjectionPayload([]Entry{
+			{TargetPath: "go.mod", Hash: "sha256:two", Present: true},
+			{TargetPath: "contracts", Hash: "sha256:one", Present: true},
+			{TargetPath: "optional.go", Hash: "", Present: false},
+		}),
+	}, "", "  ")
+	if err != nil {
+		t.Fatalf("json.MarshalIndent(first) error = %v", err)
+	}
+
+	second, err := json.MarshalIndent(FilePayload{
+		SchemaVersion: SchemaVersion,
+		Projection: buildProjectionPayload([]Entry{
+			{TargetPath: "optional.go", Hash: "", Present: false},
+			{TargetPath: "contracts", Hash: "sha256:one", Present: true},
+			{TargetPath: "go.mod", Hash: "sha256:two", Present: true},
+		}),
+	}, "", "  ")
+	if err != nil {
+		t.Fatalf("json.MarshalIndent(second) error = %v", err)
+	}
+
+	if string(first) != string(second) {
+		t.Fatalf("payload JSON differs by input order:\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
+}
+
 func TestRenderFilePayloadDoesNotLeakLocalPaths(t *testing.T) {
 	input := testInput(t)
 

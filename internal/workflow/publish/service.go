@@ -21,6 +21,7 @@ import (
 	"arcoris.dev/arcoris-publisher/internal/manifest"
 	"arcoris.dev/arcoris-publisher/internal/plan"
 	"arcoris.dev/arcoris-publisher/internal/ports/git"
+	"arcoris.dev/arcoris-publisher/internal/workflow/source"
 )
 
 // Service publishes verified target repositories.
@@ -101,6 +102,14 @@ func (s Service) publishModule(
 		}
 	}
 
+	sourceModule, ok := sourceModuleForPublish(req.Source, name)
+	if !ok {
+		return ModuleResult{}, &Error{
+			Code:    CodeMissingSourceSnapshot,
+			Message: fmt.Sprintf("source snapshot for %s is missing", name),
+		}
+	}
+
 	skip := s.shouldSkipModule(ctx, req, name, worktree)
 	if skip {
 		return ModuleResult{module: name, skipped: true}, nil
@@ -109,7 +118,7 @@ func (s Service) publishModule(
 		return ModuleResult{module: name, skipped: false}, nil
 	}
 
-	commit, err := s.commitWorktree(ctx, worktree, mod, req)
+	commit, err := s.commitWorktree(ctx, worktree, mod, sourceModule, req)
 	if err != nil {
 		return ModuleResult{}, err
 	}
@@ -171,6 +180,7 @@ func (s Service) commitWorktree(
 	ctx context.Context,
 	worktree string,
 	mod plan.ModulePlan,
+	sourceModule source.ModuleSnapshot,
 	req Request,
 ) (git.CommitHash, error) {
 	if err := s.deps.Git.AddAll(ctx, worktree); err != nil {
@@ -180,7 +190,7 @@ func (s Service) commitWorktree(
 	commit, err := s.deps.Git.Commit(
 		ctx,
 		worktree,
-		commitMessage(mod, req),
+		commitMessage(mod, sourceModule, req),
 		git.CommitOptions{AllowEmpty: s.opts.AllowEmptyCommits},
 	)
 	if err != nil {
@@ -188,6 +198,19 @@ func (s Service) commitWorktree(
 	}
 
 	return commit, nil
+}
+
+func sourceModuleForPublish(
+	snapshot source.Snapshot,
+	name manifest.ModuleName,
+) (source.ModuleSnapshot, bool) {
+	for _, sourceModule := range snapshot.Modules() {
+		if sourceModule.Name() == name {
+			return sourceModule, true
+		}
+	}
+
+	return source.ModuleSnapshot{}, false
 }
 
 // createAndPushTags creates and pushes the release tag after branch refs are

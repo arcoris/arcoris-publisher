@@ -54,7 +54,7 @@ func BuildTrailers(input Input) Trailers {
 func (t Trailers) Render() string {
 	var b strings.Builder
 	for _, trailer := range t {
-		b.WriteString(sanitizeTrailerValue(trailer.Key))
+		b.WriteString(sanitizeTrailerKey(trailer.Key))
 		b.WriteString(": ")
 		b.WriteString(sanitizeTrailerValue(trailer.Value))
 		b.WriteByte('\n')
@@ -62,8 +62,19 @@ func (t Trailers) Render() string {
 	return b.String()
 }
 
+func sanitizeTrailerKey(key string) string {
+	return strings.TrimSpace(replaceLineBreaks(key))
+}
+
 func sanitizeTrailerValue(value string) string {
-	value = strings.ReplaceAll(value, "\r", " ")
-	value = strings.ReplaceAll(value, "\n", " ")
-	return strings.TrimSpace(value)
+	return strings.TrimSpace(replaceLineBreaks(value))
+}
+
+func replaceLineBreaks(value string) string {
+	replacer := strings.NewReplacer(
+		"\r\n", " ",
+		"\r", " ",
+		"\n", " ",
+	)
+	return replacer.Replace(value)
 }

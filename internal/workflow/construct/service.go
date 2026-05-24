@@ -278,6 +278,8 @@ func (s Service) copyDirectoryEntry(
 	return newOperation(OperationCopyDirectory, entry.SourcePath(), targetPath), true
 }
 
+var renderProvenanceFilePayload = provenance.RenderFilePayload
+
 // appendProvenanceFile writes generated provenance when enabled and appends the
 // corresponding operation.
 func (s Service) appendProvenanceFile(
@@ -300,7 +302,7 @@ func (s Service) appendProvenanceFile(
 		return false
 	}
 
-	data, err := provenance.RenderFilePayload(provenance.Input{
+	data, err := renderProvenanceFilePayload(provenance.Input{
 		Plan:         req.Plan,
 		Module:       module.plan,
 		Source:       req.Source,
@@ -309,7 +311,7 @@ func (s Service) appendProvenanceFile(
 	})
 	if err != nil {
 		issues.AddMessage(IssueEntryCopyFailed, module.plan.Name(), path, err.Error())
-		return true
+		return false
 	}
 
 	err = s.deps.FS.WriteFile(ctx, path, data, filesystem.WriteFileOptions{
@@ -318,7 +320,7 @@ func (s Service) appendProvenanceFile(
 	})
 	if err != nil {
 		issues.AddMessage(IssueEntryCopyFailed, module.plan.Name(), path, err.Error())
-		return true
+		return false
 	}
 
 	*operations = append(*operations, newOperation(OperationWriteGenerated, "", path))

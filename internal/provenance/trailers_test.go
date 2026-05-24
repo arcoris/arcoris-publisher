@@ -64,6 +64,7 @@ func TestTrailersRenderDeterministicallyWithoutLocalPaths(t *testing.T) {
 		"Arcoris-Module: foundation",
 		"Arcoris-Module-Path: arcoris.dev/foundation",
 		"Arcoris-Publisher-Version: v9.8.7",
+		"Arcoris-Source-Dir: src/arcoris.dev/foundation",
 		"Arcoris-Projection-Hash: sha256:",
 	} {
 		if !strings.Contains(first, required) {
@@ -79,15 +80,24 @@ func TestTrailersRenderDeterministicallyWithoutLocalPaths(t *testing.T) {
 
 func TestTrailersRenderSanitizesNewlines(t *testing.T) {
 	trailers := Trailers{
-		{Key: "Arcoris-Module", Value: "foundation\ncontrol\rnext"},
+		{Key: " Arcoris-Module\r\nInjected ", Value: " foundation\ncontrol\r\nnext "},
 	}
 
 	rendered := trailers.Render()
 
-	if strings.Contains(rendered, "foundation\ncontrol") {
-		t.Fatalf("trailer value contains raw newline:\n%s", rendered)
+	body := strings.TrimSuffix(rendered, "\n")
+	if strings.ContainsAny(body, "\r\n") {
+		t.Fatalf("trailer contains raw newline inside key/value:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, "Arcoris-Module: foundation control next") {
-		t.Fatalf("trailer value not sanitized:\n%s", rendered)
+	if !strings.Contains(rendered, "Arcoris-Module Injected: foundation control next") {
+		t.Fatalf("trailer key/value not sanitized:\n%s", rendered)
+	}
+}
+
+func TestTrailerSanitizationPreservesKnownKeys(t *testing.T) {
+	key := "Arcoris-Publisher-Version"
+
+	if sanitizeTrailerKey(key) != key {
+		t.Fatalf("sanitizeTrailerKey(%q) = %q", key, sanitizeTrailerKey(key))
 	}
 }
