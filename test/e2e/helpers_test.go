@@ -95,7 +95,16 @@ func arcpubBinary(t *testing.T) string {
 
 		result := runCommand(t, root, nil, "go", "build", "-o", builtArcpub.path, "./cmd/arcpub")
 		if result.Code != 0 {
-			builtArcpub.err = fmt.Errorf("go build failed with code %d\nstdout:\n%s\nstderr:\n%s", result.Code, result.Stdout, result.Stderr)
+			version := runCommand(t, root, nil, "go", "env", "GOVERSION")
+			builtArcpub.err = fmt.Errorf(
+				"go build -o %s ./cmd/arcpub failed in %s with code %d\ngo env GOVERSION: %s\nstdout:\n%s\nstderr:\n%s",
+				builtArcpub.path,
+				root,
+				result.Code,
+				strings.TrimSpace(version.Stdout+version.Stderr),
+				result.Stdout,
+				result.Stderr,
+			)
 		}
 	})
 	if builtArcpub.err != nil {
@@ -113,6 +122,13 @@ func runArcpub(t *testing.T, args ...string) commandResult {
 func runArcpubInDir(t *testing.T, dir string, args ...string) commandResult {
 	t.Helper()
 	return runCommand(t, dir, nil, arcpubBinary(t), args...)
+}
+
+func runArcpubJSON(t *testing.T, wantCode int, args ...string) (commandResult, map[string]any) {
+	t.Helper()
+	result := runArcpub(t, args...)
+	assertExitCode(t, result, wantCode)
+	return result, assertJSON(t, result.Stdout)
 }
 
 func runCommand(
@@ -183,6 +199,9 @@ func copyFixture(t *testing.T, name string) string {
 		if rel == "." {
 			return nil
 		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("fixture %s contains a symlink; e2e fixtures must be regular files and directories", path)
+		}
 
 		dst := filepath.Join(target, rel)
 		info, err := entry.Info()
@@ -193,7 +212,7 @@ func copyFixture(t *testing.T, name string) string {
 			return os.MkdirAll(dst, info.Mode())
 		}
 		if !info.Mode().IsRegular() {
-			return fmt.Errorf("unsupported fixture file type: %s", path)
+			return fmt.Errorf("fixture %s has unsupported file type %s", path, info.Mode().Type())
 		}
 
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
@@ -236,6 +255,9 @@ func initGitRepo(t *testing.T, dir string) {
 	}
 	mustRun(t, dir, "git", "config", "user.name", "ARCORIS Test")
 	mustRun(t, dir, "git", "config", "user.email", "arcoris-test@example.invalid")
+	mustRun(t, dir, "git", "config", "core.autocrlf", "false")
+	mustRun(t, dir, "git", "config", "commit.gpgsign", "false")
+	mustRun(t, dir, "git", "config", "init.defaultBranch", "main")
 	mustRun(t, dir, "git", "add", ".")
 	mustRun(t, dir, "git", "commit", "-m", "test: seed fixture")
 }
@@ -255,6 +277,12 @@ func requireExecutable(t *testing.T, name string) {
 	}
 }
 
+func requireGitAndGo(t *testing.T) {
+	t.Helper()
+	requireExecutable(t, "git")
+	requireExecutable(t, "go")
+}
+
 func prepareTargetWorktrees(t *testing.T, targetRoot string, repositories ...string) {
 	t.Helper()
 	for _, repository := range repositories {
@@ -266,6 +294,14 @@ func prepareTargetWorktrees(t *testing.T, targetRoot string, repositories ...str
 
 func targetWorktreePath(targetRoot string, repository string) string {
 	return filepath.Join(targetRoot, strings.ReplaceAll(repository, "/", "__"))
+}
+
+func assertGitRefExists(t *testing.T, gitDir string, ref string) {
+	t.Helper()
+	result := runCommand(t, repoRoot(t), nil, "git", "--git-dir", gitDir, "show-ref", "--verify", "--quiet", ref)
+	if result.Code != 0 {
+		t.Fatalf("git ref %s missing in %s\nstdout:\n%s\nstderr:\n%s", ref, gitDir, result.Stdout, result.Stderr)
+	}
 }
 
 func assertExitCode(t *testing.T, result commandResult, want int) {
@@ -292,16 +328,39 @@ func assertNotContains(t *testing.T, value string, forbidden string) {
 func assertNoLocalPathLeak(t *testing.T, output string, paths ...string) {
 	t.Helper()
 	for _, path := range paths {
-		if path == "" {
-			continue
-		}
-		clean := filepath.Clean(path)
-		assertNotContains(t, output, clean)
-		slash := filepath.ToSlash(clean)
-		if slash != clean {
-			assertNotContains(t, output, slash)
+		for _, variant := range localPathVariants(path) {
+			assertNotContains(t, output, variant)
 		}
 	}
+}
+
+func localPathVariants(path string) []string {
+	if path == "" {
+		return nil
+	}
+	clean := filepath.Clean(path)
+	variants := []string{path, clean, filepath.ToSlash(clean)}
+	if strings.Contains(clean, `\`) {
+		variants = append(variants, strings.ReplaceAll(clean, `\`, `\\`))
+	}
+	if volume := filepath.VolumeName(clean); volume != "" {
+		withoutVolume := strings.TrimPrefix(clean, volume)
+		variants = append(variants, filepath.ToSlash(withoutVolume))
+	}
+
+	out := make([]string, 0, len(variants))
+	seen := map[string]struct{}{}
+	for _, variant := range variants {
+		if variant == "." || variant == "" {
+			continue
+		}
+		if _, ok := seen[variant]; ok {
+			continue
+		}
+		seen[variant] = struct{}{}
+		out = append(out, variant)
+	}
+	return out
 }
 
 func assertJSON(t *testing.T, output string) map[string]any {
@@ -311,6 +370,42 @@ func assertJSON(t *testing.T, output string) map[string]any {
 		t.Fatalf("output is not valid JSON: %v\n%s", err, output)
 	}
 	return decoded
+}
+
+func objectField(t *testing.T, object map[string]any, key string) map[string]any {
+	t.Helper()
+	value, ok := object[key].(map[string]any)
+	if !ok {
+		t.Fatalf("field %q = %#v, want object", key, object[key])
+	}
+	return value
+}
+
+func arrayField(t *testing.T, object map[string]any, key string) []any {
+	t.Helper()
+	value, ok := object[key].([]any)
+	if !ok {
+		t.Fatalf("field %q = %#v, want array", key, object[key])
+	}
+	return value
+}
+
+func stringField(t *testing.T, object map[string]any, key string) string {
+	t.Helper()
+	value, ok := object[key].(string)
+	if !ok {
+		t.Fatalf("field %q = %#v, want string", key, object[key])
+	}
+	return value
+}
+
+func floatField(t *testing.T, object map[string]any, key string) float64 {
+	t.Helper()
+	value, ok := object[key].(float64)
+	if !ok {
+		t.Fatalf("field %q = %#v, want number", key, object[key])
+	}
+	return value
 }
 
 func assertFileExists(t *testing.T, path string) {

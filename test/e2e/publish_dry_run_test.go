@@ -14,15 +14,20 @@
 
 package e2e_test
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 func TestPublishDryRunMinimalFixture(t *testing.T) {
+	requireGitAndGo(t)
 	root := copyFixture(t, "minimal")
 	initGitRepo(t, root)
 	targetRoot := t.TempDir()
 	prepareTargetWorktrees(t, targetRoot, "arcoris/foundation", "arcoris/control")
 
-	result := runArcpub(t,
+	result, decoded := runArcpubJSON(t,
+		0,
 		"publish",
 		"--dry-run",
 		"--manifest", e2eManifest(root),
@@ -32,9 +37,15 @@ func TestPublishDryRunMinimalFixture(t *testing.T) {
 		"--target-root", targetRoot,
 		"--output", "json",
 	)
-	assertExitCode(t, result, 0)
-	decoded := assertJSON(t, result.Stdout)
 	if decoded["status"] != "verified" {
 		t.Fatalf("dry-run workflow status = %#v, want verified\n%s", decoded["status"], result.Stdout)
 	}
+	assertVerifiedWorkflowReport(t, decoded, 2)
+	publish := objectField(t, decoded, "publish")
+	if stringField(t, publish, "status") != "empty" {
+		t.Fatalf("publish stage = %#v, want empty in dry-run workflow", publish)
+	}
+	assertFileExists(t, filepath.Join(targetWorktreePath(targetRoot, "arcoris/foundation"), "go.mod"))
+	assertFileExists(t, filepath.Join(targetWorktreePath(targetRoot, "arcoris/control"), "go.mod"))
+	assertNoLocalPathLeak(t, result.Stdout, root, targetRoot)
 }

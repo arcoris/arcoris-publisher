@@ -20,6 +20,7 @@ import (
 )
 
 func TestVerifyCopiesOnlyExplicitEntries(t *testing.T) {
+	requireGitAndGo(t)
 	root := copyFixture(t, "projection")
 	initGitRepo(t, root)
 	targetRoot := t.TempDir()

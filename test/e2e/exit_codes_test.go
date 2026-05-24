@@ -43,7 +43,81 @@ func TestPlanMissingManifestExitCode(t *testing.T) {
 	assertExitCode(t, result, 1)
 }
 
+func TestVerifyMissingManifestExitCode(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing", "arcpub.yaml")
+	result := runArcpub(t,
+		"verify",
+		"--manifest", missing,
+		"--version", "v0.1.0",
+		"--source-repo", t.TempDir(),
+		"--staging-dir", t.TempDir(),
+		"--target-root", t.TempDir(),
+	)
+	assertExitCode(t, result, 1)
+}
+
+func TestPublishMissingManifestExitCode(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing", "arcpub.yaml")
+	result := runArcpub(t,
+		"publish",
+		"--manifest", missing,
+		"--version", "v0.1.0",
+		"--source-repo", t.TempDir(),
+		"--staging-dir", t.TempDir(),
+		"--target-root", t.TempDir(),
+	)
+	assertExitCode(t, result, 1)
+}
+
+func TestVerifyMissingVersionExitCode(t *testing.T) {
+	root := copyFixture(t, "minimal")
+	result := runArcpub(t,
+		"verify",
+		"--manifest", e2eManifest(root),
+		"--source-repo", root,
+		"--staging-dir", root,
+		"--target-root", t.TempDir(),
+	)
+	assertExitCode(t, result, 64)
+}
+
+func TestPublishMissingVersionExitCode(t *testing.T) {
+	root := copyFixture(t, "minimal")
+	result := runArcpub(t,
+		"publish",
+		"--manifest", e2eManifest(root),
+		"--source-repo", root,
+		"--staging-dir", root,
+		"--target-root", t.TempDir(),
+	)
+	assertExitCode(t, result, 64)
+}
+
+func TestPublishInvalidVersionExitCode(t *testing.T) {
+	root := copyFixture(t, "minimal")
+	result := runArcpub(t,
+		"publish",
+		"--manifest", e2eManifest(root),
+		"--version", "not-a-version",
+		"--source-repo", root,
+		"--staging-dir", root,
+		"--target-root", t.TempDir(),
+	)
+	assertExitCode(t, result, 64)
+}
+
+func TestCompletionInvalidShellExitCode(t *testing.T) {
+	result := runArcpub(t, "completion", "unknown")
+	assertExitCode(t, result, 64)
+}
+
+func TestOutputPrettyCompactConflictExitCode(t *testing.T) {
+	result := runArcpub(t, "version", "--output", "json", "--pretty", "--compact")
+	assertExitCode(t, result, 64)
+}
+
 func TestVerifyFailedExitCode(t *testing.T) {
+	requireGitAndGo(t)
 	root := copyFixture(t, "bad-verification")
 	initGitRepo(t, root)
 	targetRoot := t.TempDir()
@@ -62,7 +136,33 @@ func TestVerifyFailedExitCode(t *testing.T) {
 	assertContains(t, result.Stdout, "Verification: failed")
 }
 
+func TestVerifyFailedStillWritesJSONReport(t *testing.T) {
+	requireGitAndGo(t)
+	root := copyFixture(t, "bad-verification")
+	initGitRepo(t, root)
+	targetRoot := t.TempDir()
+	prepareTargetWorktrees(t, targetRoot, "arcoris/broken")
+
+	result, decoded := runArcpubJSON(t,
+		2,
+		"verify",
+		"--manifest", e2eManifest(root),
+		"--version", "v0.1.0",
+		"--source-repo", root,
+		"--staging-dir", root,
+		"--target-root", targetRoot,
+		"--output", "json",
+	)
+	if decoded["status"] != "verification_failed" {
+		t.Fatalf("workflow status = %#v, want verification_failed\n%s", decoded["status"], result.Stdout)
+	}
+	assertNotContains(t, result.Stderr, "panic")
+	assertNotContains(t, result.Stderr, "stack")
+	assertNoLocalPathLeak(t, result.Stdout, root, targetRoot)
+}
+
 func TestPublishDryRunFailedVerificationExitCode(t *testing.T) {
+	requireGitAndGo(t)
 	root := copyFixture(t, "bad-verification")
 	initGitRepo(t, root)
 	targetRoot := t.TempDir()

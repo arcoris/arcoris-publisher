@@ -20,22 +20,7 @@ cd "$ROOT"
 
 export GOTOOLCHAIN="${GOTOOLCHAIN:-local}"
 
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
+echo "smoke-e2e: go test ./test/e2e -count=1 -v"
+go test ./test/e2e -count=1 -v
 
-echo "smoke-plan: build arcpub"
-go build -o "$tmp/arcpub" ./cmd/arcpub
-
-manifest="internal/testdata/e2e/minimal/arcpub.yaml"
-echo "smoke-plan: arcpub plan text"
-"$tmp/arcpub" plan --manifest "$manifest" --version v0.1.0 >/dev/null
-
-echo "smoke-plan: arcpub plan json"
-"$tmp/arcpub" plan --manifest "$manifest" --version v0.1.0 --output json >"$tmp/plan.json"
-if command -v python3 >/dev/null 2>&1; then
-	python3 -m json.tool "$tmp/plan.json" >/dev/null
-else
-	echo "python3 not found; skipping JSON validation"
-fi
-
-echo "smoke-plan: ok"
+echo "smoke-e2e: ok"

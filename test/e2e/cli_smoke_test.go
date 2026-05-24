@@ -56,3 +56,21 @@ func TestArcpubCompletionBash(t *testing.T) {
 	assertExitCode(t, result, 0)
 	assertContains(t, result.Stdout, "__start_arcpub")
 }
+
+func TestArcpubCompletionZsh(t *testing.T) {
+	result := runArcpub(t, "completion", "zsh")
+	assertExitCode(t, result, 0)
+	assertContains(t, result.Stdout, "#compdef arcpub")
+}
+
+func TestArcpubCompletionFish(t *testing.T) {
+	result := runArcpub(t, "completion", "fish")
+	assertExitCode(t, result, 0)
+	assertContains(t, result.Stdout, "complete -c arcpub")
+}
+
+func TestArcpubCompletionPowerShell(t *testing.T) {
+	result := runArcpub(t, "completion", "powershell")
+	assertExitCode(t, result, 0)
+	assertContains(t, result.Stdout, "Register-ArgumentCompleter")
+}

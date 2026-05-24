@@ -23,11 +23,13 @@ export GOTOOLCHAIN="${GOTOOLCHAIN:-local}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
+echo "smoke-exit-codes: build arcpub"
 go build -o "$tmp/arcpub" ./cmd/arcpub
 
 expect_code() {
 	local want="$1"
 	shift
+	echo "smoke-exit-codes: expect $want: arcpub $*"
 	set +e
 	"$tmp/arcpub" "$@" >"$tmp/stdout.txt" 2>"$tmp/stderr.txt"
 	local got="$?"
@@ -46,6 +48,8 @@ manifest="internal/testdata/e2e/minimal/arcpub.yaml"
 expect_code 64 unknown
 expect_code 64 plan --manifest "$manifest"
 expect_code 64 plan --manifest "$manifest" --version not-a-version
+expect_code 64 completion unknown
+expect_code 64 version --output json --pretty --compact
 expect_code 1 plan --manifest "$tmp/missing/arcpub.yaml" --version v0.1.0
 
 echo "smoke-exit-codes: ok"

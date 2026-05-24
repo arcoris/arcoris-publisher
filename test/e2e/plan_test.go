@@ -33,28 +33,85 @@ func TestPlanTextMinimalFixture(t *testing.T) {
 
 func TestPlanJSONMinimalFixture(t *testing.T) {
 	root := copyFixture(t, "minimal")
-	result := runArcpub(t, "plan", "--manifest", e2eManifest(root), "--version", "v0.1.0", "--output", "json")
-	assertExitCode(t, result, 0)
+	result, decoded := runArcpubJSON(t, 0, "plan", "--manifest", e2eManifest(root), "--version", "v0.1.0", "--output", "json")
 
-	decoded := assertJSON(t, result.Stdout)
 	if decoded["kind"] != "plan" {
 		t.Fatalf("kind = %#v, want plan", decoded["kind"])
 	}
-	modules, ok := decoded["modules"].([]any)
-	if !ok || len(modules) != 2 {
-		t.Fatalf("modules = %#v, want two modules", decoded["modules"])
+	if got := floatField(t, decoded, "moduleCount"); got != 2 {
+		t.Fatalf("moduleCount = %v, want 2", got)
 	}
-	first, _ := modules[0].(map[string]any)
-	second, _ := modules[1].(map[string]any)
-	if first["name"] != "foundation" || second["name"] != "control" {
-		t.Fatalf("module order = %#v, %#v; want foundation, control", first["name"], second["name"])
+
+	modules := arrayField(t, decoded, "modules")
+	if len(modules) != 2 {
+		t.Fatalf("module count = %d, want 2", len(modules))
 	}
-	assertContains(t, result.Stdout, "requirements")
+	foundation, _ := modules[0].(map[string]any)
+	control, _ := modules[1].(map[string]any)
+	assertPlanModule(t, foundation, "foundation", "arcoris.dev/foundation", "arcoris/foundation")
+	assertPlanModule(t, control, "control", "arcoris.dev/control", "arcoris/control")
+	assertPlanEntryTargets(t, foundation, "go.mod", "README.md", "contracts")
+	assertPlanEntryTargets(t, control, "go.mod", "README.md", "contracts")
+	assertControlRequirement(t, control)
+	assertNoLocalPathLeak(t, result.Stdout, root)
 }
 
 func TestPlanDoesNotLeakLocalPathsByDefault(t *testing.T) {
 	root := copyFixture(t, "minimal")
-	result := runArcpub(t, "plan", "--manifest", e2eManifest(root), "--version", "v0.1.0", "--output", "json")
-	assertExitCode(t, result, 0)
+	result, _ := runArcpubJSON(t, 0, "plan", "--manifest", e2eManifest(root), "--version", "v0.1.0", "--output", "json")
 	assertNoLocalPathLeak(t, result.Stdout, root)
+}
+
+func assertPlanModule(
+	t *testing.T,
+	module map[string]any,
+	name string,
+	modulePath string,
+	repository string,
+) {
+	t.Helper()
+	if stringField(t, module, "name") != name ||
+		stringField(t, module, "modulePath") != modulePath ||
+		stringField(t, module, "repository") != repository {
+		t.Fatalf("unexpected module report: %#v", module)
+	}
+	sourceDir := stringField(t, module, "sourceDir")
+	if sourceDir == "" || sourceDir[0] == '/' {
+		t.Fatalf("sourceDir = %q, want relative path", sourceDir)
+	}
+}
+
+func assertPlanEntryTargets(t *testing.T, module map[string]any, targets ...string) {
+	t.Helper()
+	entries := arrayField(t, module, "publishEntries")
+	got := map[string]bool{}
+	for _, raw := range entries {
+		entry, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("publish entry = %#v, want object", raw)
+		}
+		got[stringField(t, entry, "to")] = true
+	}
+	for _, target := range targets {
+		if !got[target] {
+			t.Fatalf("module %s missing publish entry target %q in %#v", module["name"], target, entries)
+		}
+	}
+}
+
+func assertControlRequirement(t *testing.T, module map[string]any) {
+	t.Helper()
+	requirements := arrayField(t, module, "requirements")
+	if len(requirements) != 1 {
+		t.Fatalf("control requirements = %#v, want one requirement", requirements)
+	}
+	requirement, ok := requirements[0].(map[string]any)
+	if !ok {
+		t.Fatalf("requirement = %#v, want object", requirements[0])
+	}
+	if stringField(t, requirement, "module") != "foundation" ||
+		stringField(t, requirement, "modulePath") != "arcoris.dev/foundation" ||
+		stringField(t, requirement, "version") != "v0.1.0" {
+		t.Fatalf("unexpected control requirement: %#v", requirement)
+	}
 }

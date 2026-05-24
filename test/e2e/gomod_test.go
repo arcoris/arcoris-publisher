@@ -21,6 +21,7 @@ import (
 )
 
 func TestVerifyRewritesInternalRequirements(t *testing.T) {
+	requireGitAndGo(t)
 	root := copyFixture(t, "minimal")
 	initGitRepo(t, root)
 	targetRoot := t.TempDir()

@@ -23,12 +23,22 @@ export GOTOOLCHAIN="${GOTOOLCHAIN:-local}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
+echo "smoke-cli: go test ./..."
 go test ./...
+
+echo "smoke-cli: go vet ./..."
 go vet ./...
+
+echo "smoke-cli: build arcpub"
 go build -o "$tmp/arcpub" ./cmd/arcpub
 
+echo "smoke-cli: arcpub help"
 "$tmp/arcpub" help >/dev/null
+
+echo "smoke-cli: arcpub version"
 "$tmp/arcpub" version >/dev/null
+
+echo "smoke-cli: arcpub version --output json"
 "$tmp/arcpub" version --output json >"$tmp/version.json"
 if command -v python3 >/dev/null 2>&1; then
 	python3 -m json.tool "$tmp/version.json" >/dev/null
@@ -36,7 +46,11 @@ else
 	echo "python3 not found; skipping JSON validation"
 fi
 
+echo "smoke-cli: arcpub completion bash"
 "$tmp/arcpub" completion bash >"$tmp/completion.bash"
-test -s "$tmp/completion.bash"
+if [[ ! -s "$tmp/completion.bash" ]]; then
+	echo "bash completion output is empty" >&2
+	exit 1
+fi
 
 echo "smoke-cli: ok"
