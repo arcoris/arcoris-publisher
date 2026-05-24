@@ -65,3 +65,72 @@ func TestWriteJSONSupportsCompactOutput(t *testing.T) {
 		t.Fatalf("compact JSON contains indentation:\n%s", buf.String())
 	}
 }
+
+func TestRendererJSONKindsAndDeterminism(t *testing.T) {
+	t.Parallel()
+
+	result := reportWorkflowResult(t, workflowReportFixture{publish: true})
+	renderer := New(Options{Format: FormatJSON, Pretty: true})
+
+	tests := []struct {
+		name string
+		kind string
+		run  func(*bytes.Buffer) error
+	}{
+		{name: "plan", kind: "plan", run: func(buf *bytes.Buffer) error {
+			return renderer.Plan(buf, reportPlan(t).Plan)
+		}},
+		{name: "workflow", kind: "workflow", run: func(buf *bytes.Buffer) error {
+			return renderer.Workflow(buf, result)
+		}},
+		{name: "verify", kind: "verify", run: func(buf *bytes.Buffer) error {
+			return renderer.Verify(buf, result.Verify())
+		}},
+		{name: "publish", kind: "publish", run: func(buf *bytes.Buffer) error {
+			return renderer.Publish(buf, result.Publish())
+		}},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			first := renderReport(t, tt.run)
+			second := renderReport(t, tt.run)
+			if first != second {
+				t.Fatalf("JSON output differs:\nfirst:\n%s\nsecond:\n%s", first, second)
+			}
+			assertTrailingNewline(t, first)
+			assertNoLocalPaths(t, first)
+
+			var decoded struct {
+				Kind string `json:"kind"`
+			}
+			if err := json.Unmarshal([]byte(first), &decoded); err != nil {
+				t.Fatalf("json.Unmarshal() error = %v", err)
+			}
+			if decoded.Kind != tt.kind {
+				t.Fatalf("kind = %q, want %q", decoded.Kind, tt.kind)
+			}
+		})
+	}
+}
+
+func TestRendererJSONPrettyOption(t *testing.T) {
+	t.Parallel()
+
+	compact := renderReport(t, func(buf *bytes.Buffer) error {
+		return New(Options{Format: FormatJSON}).Plan(buf, reportPlan(t).Plan)
+	})
+	pretty := renderReport(t, func(buf *bytes.Buffer) error {
+		return New(Options{Format: FormatJSON, Pretty: true}).Plan(buf, reportPlan(t).Plan)
+	})
+
+	if strings.Contains(compact, "\n  ") {
+		t.Fatalf("compact JSON contains indentation:\n%s", compact)
+	}
+	if !strings.Contains(pretty, "\n  ") {
+		t.Fatalf("pretty JSON missing indentation:\n%s", pretty)
+	}
+}

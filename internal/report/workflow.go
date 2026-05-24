@@ -23,7 +23,7 @@ import (
 // WorkflowReport is the stable aggregate DTO for a workflow run.
 type WorkflowReport struct {
 	Kind       string           `json:"kind"`
-	Status     string           `json:"status"`
+	Status     Status           `json:"status"`
 	Source     SourceReport     `json:"source"`
 	Target     TargetReport     `json:"target"`
 	Construct  ConstructReport  `json:"construct"`
@@ -61,55 +61,87 @@ func workflowStatus(
 	moduleFileReport ModuleFileReport,
 	verifyReport VerifyReport,
 	publishReport PublishReport,
-) string {
+) Status {
 	if !sourceReport.Present &&
 		!targetReport.Present &&
 		!constructReport.Present &&
 		!moduleFileReport.Present &&
 		!verifyReport.Present &&
 		!publishReport.Present {
-		return "empty"
+		return StatusEmpty
 	}
-	if verifyReport.Status == "empty" {
-		return "partial"
+	if verifyReport.Status == StatusEmpty {
+		return StatusPartial
 	}
-	if verifyReport.Status == "failed" {
-		return "verification_failed"
+	if verifyReport.Status == StatusFailed {
+		return StatusVerificationFailed
 	}
 	switch publishReport.Status {
-	case "published":
-		return "published"
-	case "skipped":
-		return "skipped"
+	case StatusPublished:
+		return StatusPublished
+	case StatusSkipped:
+		return StatusSkipped
 	default:
-		return "verified"
+		return StatusVerified
 	}
 }
 
-func writeWorkflowText(w io.Writer, value any) error {
-	report := value.(WorkflowReport)
+func writeWorkflowText(w io.Writer, report WorkflowReport) error {
 	if err := writeLine(w, "Workflow"); err != nil {
 		return err
 	}
 	if err := writeLine(w, "  Status: %s", report.Status); err != nil {
 		return err
 	}
-	if err := writeLine(w, "  Source modules: %d", len(report.Source.Modules)); err != nil {
+	if err := writeLine(
+		w,
+		"  Source: %s, modules=%d",
+		report.Source.Status,
+		report.Source.ModuleCount,
+	); err != nil {
 		return err
 	}
-	if err := writeLine(w, "  Target workspaces: %d", report.Target.WorkspaceCount); err != nil {
+	if err := writeLine(
+		w,
+		"  Target: %s, workspaces=%d",
+		report.Target.Status,
+		report.Target.WorkspaceCount,
+	); err != nil {
 		return err
 	}
-	if err := writeLine(w, "  Construct changed: %t", report.Construct.Changed); err != nil {
+	if err := writeLine(
+		w,
+		"  Construct: %s, changed=%t, operations=%d",
+		report.Construct.Status,
+		report.Construct.Changed,
+		report.Construct.OperationCount,
+	); err != nil {
 		return err
 	}
-	if err := writeLine(w, "  Module files changed: %t", report.ModuleFile.Changed); err != nil {
+	if err := writeLine(
+		w,
+		"  Module files: %s, changed=%t, modules=%d",
+		report.ModuleFile.Status,
+		report.ModuleFile.Changed,
+		report.ModuleFile.ModuleCount,
+	); err != nil {
 		return err
 	}
-	if err := writeLine(w, "  Verification: %s", report.Verify.Status); err != nil {
+	if err := writeLine(
+		w,
+		"  Verification: %s, failedChecks=%d",
+		report.Verify.Status,
+		report.Verify.FailedCount,
+	); err != nil {
 		return err
 	}
-	if err := writeLine(w, "  Publication: %s", report.Publish.Status); err != nil {
+	if err := writeLine(
+		w,
+		"  Publication: %s, published=%d, skipped=%d",
+		report.Publish.Status,
+		report.Publish.PublishedCount,
+		report.Publish.SkippedCount,
+	); err != nil {
 		return err
 	}
 	return nil

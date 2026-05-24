@@ -19,7 +19,7 @@ import "arcoris.dev/arcoris-publisher/internal/workflow/target"
 // TargetReport summarizes prepared target workspaces.
 type TargetReport struct {
 	Present        bool                    `json:"present"`
-	Status         string                  `json:"status"`
+	Status         Status                  `json:"status"`
 	WorkspaceCount int                     `json:"workspaceCount"`
 	Workspaces     []TargetWorkspaceReport `json:"workspaces"`
 }

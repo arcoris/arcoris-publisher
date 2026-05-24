@@ -38,6 +38,9 @@ func TestIncludePathAllowsRelativeAndExplicitLocalPaths(t *testing.T) {
 	if got := includePath("src/arcoris.dev/foundation", Options{}); got != "src/arcoris.dev/foundation" {
 		t.Fatalf("relative includePath() = %q", got)
 	}
+	if got := includePath("arcoris/foundation", Options{}); got != "arcoris/foundation" {
+		t.Fatalf("repository ref includePath() = %q", got)
+	}
 	if got := includePath("/repo", Options{IncludeLocalPaths: true}); got != "/repo" {
 		t.Fatalf("explicit local includePath() = %q", got)
 	}

@@ -15,6 +15,7 @@
 package report
 
 import (
+	"bytes"
 	"testing"
 
 	"arcoris.dev/arcoris-publisher/internal/workflow"
@@ -25,16 +26,33 @@ func TestBuildWorkflowReportZeroValueIsSafe(t *testing.T) {
 
 	report := BuildWorkflowReport(workflow.Result{}, Options{})
 
-	if report.Kind != "workflow" || report.Status != "empty" {
+	if report.Kind != "workflow" || report.Status != StatusEmpty {
 		t.Fatalf("workflow report = %+v", report)
 	}
+}
+
+func TestRendererWorkflowTextZeroValue(t *testing.T) {
+	t.Parallel()
+
+	text := renderReport(t, func(buf *bytes.Buffer) error {
+		return New(Options{Format: FormatText}).Workflow(buf, workflow.Result{})
+	})
+
+	assertContains(
+		t,
+		text,
+		"Workflow",
+		"Status: empty",
+		"Source: empty, modules=0",
+		"Verification: empty, failedChecks=0",
+	)
 }
 
 func TestBuildWorkflowReportStatuses(t *testing.T) {
 	t.Parallel()
 
 	verified := BuildWorkflowReport(reportWorkflowResult(t, workflowReportFixture{}), Options{})
-	if verified.Status != "verified" {
+	if verified.Status != StatusVerified {
 		t.Fatalf("verified status = %+v", verified)
 	}
 
@@ -42,7 +60,7 @@ func TestBuildWorkflowReportStatuses(t *testing.T) {
 		reportWorkflowResult(t, workflowReportFixture{verifyFails: true}),
 		Options{},
 	)
-	if failed.Status != "verification_failed" {
+	if failed.Status != StatusVerificationFailed {
 		t.Fatalf("failed status = %+v", failed)
 	}
 
@@ -56,7 +74,7 @@ func TestBuildWorkflowReportStatuses(t *testing.T) {
 		),
 		Options{},
 	)
-	if published.Status != "published" {
+	if published.Status != StatusPublished {
 		t.Fatalf("published status = %+v", published)
 	}
 
@@ -64,7 +82,7 @@ func TestBuildWorkflowReportStatuses(t *testing.T) {
 		reportWorkflowResult(t, workflowReportFixture{publish: true}),
 		Options{},
 	)
-	if skipped.Status != "skipped" {
+	if skipped.Status != StatusSkipped {
 		t.Fatalf("skipped status = %+v", skipped)
 	}
 }
@@ -77,10 +95,10 @@ func TestWorkflowStatusReportsPartialBeforeVerification(t *testing.T) {
 		TargetReport{Present: true},
 		ConstructReport{Present: true},
 		ModuleFileReport{Present: true},
-		VerifyReport{Status: "empty"},
-		PublishReport{Status: "empty"},
+		VerifyReport{Status: StatusEmpty},
+		PublishReport{Status: StatusEmpty},
 	)
-	if got != "partial" {
+	if got != StatusPartial {
 		t.Fatalf("workflowStatus() = %q", got)
 	}
 }

@@ -21,7 +21,7 @@ func TestBuildSourceReportHidesLocalPathsByDefault(t *testing.T) {
 
 	report := BuildSourceReport(reportWorkflowResult(t, workflowReportFixture{}).Source(), Options{})
 
-	if !report.Present || report.Status != "present" {
+	if !report.Present || report.Status != StatusPresent {
 		t.Fatalf("source report presence = %+v", report)
 	}
 	if report.Repository.Head == "" || report.Repository.Branch != "main" {
@@ -30,7 +30,10 @@ func TestBuildSourceReportHidesLocalPathsByDefault(t *testing.T) {
 	if report.Repository.RepositoryDir != "" || report.Repository.StagingDir != "" {
 		t.Fatalf("source report leaked repository paths: %+v", report.Repository)
 	}
-	if len(report.Modules) != 2 || report.Modules[0].Hash == "" || report.Modules[0].EntryCount != 2 {
+	if report.ModuleCount != 2 ||
+		len(report.Modules) != 2 ||
+		report.Modules[0].Hash == "" ||
+		report.Modules[0].EntryCount != 2 {
 		t.Fatalf("source modules = %+v", report.Modules)
 	}
 	if report.Modules[0].SourceDir != "" || report.Modules[0].ModuleRootDir != "" {

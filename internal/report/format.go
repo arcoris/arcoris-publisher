@@ -38,7 +38,7 @@ func ParseFormat(value string) (Format, error) {
 	case string(FormatJSON):
 		return FormatJSON, nil
 	default:
-		return "", &Error{Code: CodeUnsupportedFormat, Message: "unsupported report format: " + value}
+		return "", unsupportedFormatError(Format(value))
 	}
 }
 

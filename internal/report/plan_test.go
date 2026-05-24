@@ -51,6 +51,14 @@ func TestBuildPlanReport(t *testing.T) {
 	if len(report.Modules[0].PublishEntries) != 2 {
 		t.Fatalf("foundation entries = %+v", report.Modules[0].PublishEntries)
 	}
+	verification := report.Modules[0].Verification
+	if !verification.GoListEnabled ||
+		!verification.GoTestEnabled ||
+		!verification.GoTidyEnabled ||
+		verification.WorkspaceMode != "off" ||
+		verification.LocalReplacePolicy != "forbid" {
+		t.Fatalf("verification policy = %+v", verification)
+	}
 }
 
 func TestRendererPlanJSON(t *testing.T) {
@@ -83,7 +91,14 @@ func TestRendererPlanText(t *testing.T) {
 		t.Fatalf("Plan(text) error = %v", err)
 	}
 	text := buf.String()
-	for _, want := range []string{"Plan", "foundation", "control", "arcoris.dev/foundation", "v0.3.0"} {
+	for _, want := range []string{
+		"Plan",
+		"foundation",
+		"control",
+		"arcoris.dev/foundation",
+		"v0.3.0",
+		"verification: list=true, test=true, tidy=true",
+	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("text report missing %q:\n%s", want, text)
 		}

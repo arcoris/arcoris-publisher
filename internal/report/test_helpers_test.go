@@ -148,6 +148,11 @@ func assertNoLocalPaths(t *testing.T, output string) {
 			t.Fatalf("report leaked local path %q:\n%s", path, output)
 		}
 	}
+	for _, path := range []string{`C:\repo`, `C:/repo`, `\\server\share`} {
+		if strings.Contains(output, path) {
+			t.Fatalf("report leaked local path %q:\n%s", path, output)
+		}
+	}
 }
 
 func assertContains(t *testing.T, output string, values ...string) {
@@ -156,6 +161,32 @@ func assertContains(t *testing.T, output string, values ...string) {
 	for _, value := range values {
 		if !strings.Contains(output, value) {
 			t.Fatalf("output missing %q:\n%s", value, output)
+		}
+	}
+}
+
+func assertTrailingNewline(t *testing.T, output string) {
+	t.Helper()
+
+	if !strings.HasSuffix(output, "\n") {
+		t.Fatalf("output missing trailing newline: %q", output)
+	}
+}
+
+func assertNoANSI(t *testing.T, output string) {
+	t.Helper()
+
+	if strings.Contains(output, "\x1b[") {
+		t.Fatalf("output contains ANSI escape sequence:\n%s", output)
+	}
+}
+
+func assertASCII(t *testing.T, output string) {
+	t.Helper()
+
+	for _, r := range output {
+		if r > 127 {
+			t.Fatalf("output contains non-ASCII rune %q:\n%s", r, output)
 		}
 	}
 }

@@ -19,7 +19,7 @@ import "arcoris.dev/arcoris-publisher/internal/workflow/modulefile"
 // ModuleFileReport summarizes target go.mod rewrites.
 type ModuleFileReport struct {
 	Present     bool                     `json:"present"`
-	Status      string                   `json:"status"`
+	Status      Status                   `json:"status"`
 	Changed     bool                     `json:"changed"`
 	ModuleCount int                      `json:"moduleCount"`
 	Modules     []ModuleFileModuleReport `json:"modules"`

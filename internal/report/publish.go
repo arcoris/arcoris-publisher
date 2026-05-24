@@ -24,7 +24,7 @@ import (
 type PublishReport struct {
 	Kind           string                `json:"kind"`
 	Present        bool                  `json:"present"`
-	Status         string                `json:"status"`
+	Status         Status                `json:"status"`
 	ModuleCount    int                   `json:"moduleCount"`
 	PublishedCount int                   `json:"publishedCount"`
 	SkippedCount   int                   `json:"skippedCount"`
@@ -34,7 +34,7 @@ type PublishReport struct {
 // PublishModuleReport describes publication outcome for one module.
 type PublishModuleReport struct {
 	Name    string   `json:"name"`
-	Status  string   `json:"status"`
+	Status  Status   `json:"status"`
 	Commit  string   `json:"commit,omitempty"`
 	Tags    []string `json:"tags,omitempty"`
 	Pushed  bool     `json:"pushed"`
@@ -47,7 +47,7 @@ func BuildPublishReport(result publish.Result, _ Options) PublishReport {
 	out := PublishReport{
 		Kind:        "publish",
 		Present:     len(modules) > 0,
-		Status:      "empty",
+		Status:      StatusEmpty,
 		ModuleCount: len(modules),
 		Modules:     make([]PublishModuleReport, 0, len(modules)),
 	}
@@ -61,25 +61,25 @@ func BuildPublishReport(result publish.Result, _ Options) PublishReport {
 		}
 		switch {
 		case mod.Published():
-			moduleReport.Status = "published"
+			moduleReport.Status = StatusPublished
 			out.PublishedCount++
 		case mod.Skipped():
-			moduleReport.Status = "skipped"
+			moduleReport.Status = StatusSkipped
 			out.SkippedCount++
 		default:
-			moduleReport.Status = "pending"
+			moduleReport.Status = StatusPending
 		}
 		out.Modules = append(out.Modules, moduleReport)
 	}
 	switch {
 	case out.PublishedCount > 0:
-		out.Status = "published"
+		out.Status = StatusPublished
 	case out.ModuleCount == 0:
-		out.Status = "empty"
+		out.Status = StatusEmpty
 	case out.SkippedCount == out.ModuleCount:
-		out.Status = "skipped"
+		out.Status = StatusSkipped
 	default:
-		out.Status = "pending"
+		out.Status = StatusPending
 	}
 	return out
 }
@@ -92,8 +92,7 @@ func gitTags[T ~string](tags []T) []string {
 	return out
 }
 
-func writePublishText(w io.Writer, value any) error {
-	report := value.(PublishReport)
+func writePublishText(w io.Writer, report PublishReport) error {
 	if err := writeLine(w, "Publication"); err != nil {
 		return err
 	}

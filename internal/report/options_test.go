@@ -34,6 +34,15 @@ func TestNormalizeOptionsDefaultsZeroValue(t *testing.T) {
 	}
 }
 
+func TestNewUsesDefaultOptionsForZeroValue(t *testing.T) {
+	t.Parallel()
+
+	renderer := New(Options{})
+	if renderer.opts != DefaultOptions() {
+		t.Fatalf("New(Options{}) opts = %+v", renderer.opts)
+	}
+}
+
 func TestNormalizeOptionsKeepsExplicitCompactJSON(t *testing.T) {
 	t.Parallel()
 

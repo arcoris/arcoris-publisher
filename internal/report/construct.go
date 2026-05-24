@@ -19,7 +19,7 @@ import "arcoris.dev/arcoris-publisher/internal/workflow/construct"
 // ConstructReport summarizes explicit-projection construction results.
 type ConstructReport struct {
 	Present        bool                    `json:"present"`
-	Status         string                  `json:"status"`
+	Status         Status                  `json:"status"`
 	Changed        bool                    `json:"changed"`
 	ModuleCount    int                     `json:"moduleCount"`
 	OperationCount int                     `json:"operationCount"`

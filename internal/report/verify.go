@@ -24,7 +24,7 @@ import (
 type VerifyReport struct {
 	Kind        string               `json:"kind"`
 	Present     bool                 `json:"present"`
-	Status      string               `json:"status"`
+	Status      Status               `json:"status"`
 	ModuleCount int                  `json:"moduleCount"`
 	FailedCount int                  `json:"failedCount"`
 	Modules     []VerifyModuleReport `json:"modules"`
@@ -33,7 +33,7 @@ type VerifyReport struct {
 // VerifyModuleReport describes verification checks for one module.
 type VerifyModuleReport struct {
 	Name        string              `json:"name"`
-	Status      string              `json:"status"`
+	Status      Status              `json:"status"`
 	FailedCount int                 `json:"failedCount"`
 	Checks      []VerifyCheckReport `json:"checks"`
 }
@@ -83,15 +83,14 @@ func BuildVerifyReport(result verify.Result, opts Options) VerifyReport {
 	return out
 }
 
-func verifyStatus(result verify.Result) string {
+func verifyStatus(result verify.Result) Status {
 	if len(result.Modules()) == 0 {
-		return "empty"
+		return StatusEmpty
 	}
 	return statusPassedFailed(result.Failed())
 }
 
-func writeVerifyText(w io.Writer, value any) error {
-	report := value.(VerifyReport)
+func writeVerifyText(w io.Writer, report VerifyReport) error {
 	if err := writeLine(w, "Verification"); err != nil {
 		return err
 	}

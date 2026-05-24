@@ -21,11 +21,12 @@ import (
 // SourceReport summarizes inspected source repository state without local paths
 // by default.
 type SourceReport struct {
-	Present    bool                   `json:"present"`
-	Status     string                 `json:"status"`
-	Repository SourceRepositoryReport `json:"repository"`
-	Warnings   []IssueReport          `json:"warnings,omitempty"`
-	Modules    []SourceModuleReport   `json:"modules"`
+	Present     bool                   `json:"present"`
+	Status      Status                 `json:"status"`
+	ModuleCount int                    `json:"moduleCount"`
+	Repository  SourceRepositoryReport `json:"repository"`
+	Warnings    []IssueReport          `json:"warnings,omitempty"`
+	Modules     []SourceModuleReport   `json:"modules"`
 }
 
 // SourceRepositoryReport describes source Git state.
@@ -72,8 +73,9 @@ func BuildSourceReport(snapshot source.Snapshot, opts Options) SourceReport {
 	}
 
 	out := SourceReport{
-		Present: present,
-		Status:  statusEmptyPresent(present),
+		Present:     present,
+		Status:      statusEmptyPresent(present),
+		ModuleCount: len(modules),
 		Repository: SourceRepositoryReport{
 			Head:          string(repository.Head()),
 			Branch:        string(repository.Branch()),

@@ -29,7 +29,7 @@ func TestBuildVerifyReportZeroValue(t *testing.T) {
 	if report.Kind != "verify" {
 		t.Fatalf("Kind = %q", report.Kind)
 	}
-	if report.Status != "empty" {
+	if report.Status != StatusEmpty {
 		t.Fatalf("Status = %q", report.Status)
 	}
 	if report.ModuleCount != 0 || report.FailedCount != 0 {
@@ -44,7 +44,7 @@ func TestBuildVerifyReportPassedAndFailedStatuses(t *testing.T) {
 		reportWorkflowResult(t, workflowReportFixture{}).Verify(),
 		Options{},
 	)
-	if passed.Status != "passed" || passed.FailedCount != 0 {
+	if passed.Status != StatusPassed || passed.FailedCount != 0 {
 		t.Fatalf("passed report = %+v", passed)
 	}
 
@@ -52,7 +52,7 @@ func TestBuildVerifyReportPassedAndFailedStatuses(t *testing.T) {
 		reportWorkflowResult(t, workflowReportFixture{verifyFails: true}).Verify(),
 		Options{},
 	)
-	if failed.Status != "failed" || failed.FailedCount == 0 {
+	if failed.Status != StatusFailed || failed.FailedCount == 0 {
 		t.Fatalf("failed report = %+v", failed)
 	}
 }
@@ -65,6 +65,34 @@ func TestRendererVerifyFailureIsReportContent(t *testing.T) {
 		return New(Options{Format: FormatText}).Verify(buf, result)
 	})
 	assertContains(t, text, "Verification", "Status: failed", "tidy failed")
+}
+
+func TestBuildVerifyReportPathPolicy(t *testing.T) {
+	t.Parallel()
+
+	result := reportWorkflowResult(t, workflowReportFixture{}).Verify()
+
+	hidden := BuildVerifyReport(result, Options{})
+	for _, mod := range hidden.Modules {
+		for _, check := range mod.Checks {
+			if check.Path != "" {
+				t.Fatalf("verify report leaked path by default: %+v", check)
+			}
+		}
+	}
+
+	visible := BuildVerifyReport(result, Options{IncludeLocalPaths: true})
+	found := false
+	for _, mod := range visible.Modules {
+		for _, check := range mod.Checks {
+			if strings.Contains(check.Path, "/target") {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("verify report did not include local path: %+v", visible.Modules)
+	}
 }
 
 func TestRendererVerifyTextZeroValue(t *testing.T) {

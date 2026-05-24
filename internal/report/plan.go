@@ -51,6 +51,7 @@ type PlanModuleReport struct {
 	Branches       []BranchReport                `json:"branches"`
 	PublishEntries []PublishEntryReport          `json:"publishEntries"`
 	Requirements   []DependencyRequirementReport `json:"requirements"`
+	Verification   VerificationPolicyReport      `json:"verification"`
 }
 
 // BuildPlanReport converts a publication plan to a stable report DTO.
@@ -109,6 +110,7 @@ func planModuleReport(mod plan.ModulePlan) PlanModuleReport {
 		Branches:       make([]BranchReport, 0, len(branches)),
 		PublishEntries: make([]PublishEntryReport, 0, len(entries)),
 		Requirements:   make([]DependencyRequirementReport, 0, len(requirements)),
+		Verification:   verificationPolicyReport(mod),
 	}
 	for _, branch := range branches {
 		out.Branches = append(out.Branches, BranchReport{
@@ -135,8 +137,20 @@ func planModuleReport(mod plan.ModulePlan) PlanModuleReport {
 	return out
 }
 
-func writePlanText(w io.Writer, value any) error {
-	report := value.(PlanReport)
+func verificationPolicyReport(mod plan.ModulePlan) VerificationPolicyReport {
+	policy := mod.Verification()
+	goPolicy := policy.Go()
+	return VerificationPolicyReport{
+		GoListEnabled:      goPolicy.List(),
+		GoTestEnabled:      goPolicy.Test(),
+		GoTidyEnabled:      goPolicy.Tidy(),
+		GoPatterns:         goPolicy.Patterns(),
+		WorkspaceMode:      string(goPolicy.WorkspaceMode()),
+		LocalReplacePolicy: string(policy.LocalReplacePolicy()),
+	}
+}
+
+func writePlanText(w io.Writer, report PlanReport) error {
 	if err := writeLine(w, "Plan"); err != nil {
 		return err
 	}
@@ -194,11 +208,22 @@ func writePlanText(w io.Writer, value any) error {
 		if err := writeLine(w, "    requires:    %s", requirementList(mod.Requirements)); err != nil {
 			return err
 		}
+		if err := writeLine(w, "    verification: %s", verificationPolicyText(mod.Verification)); err != nil {
+			return err
+		}
 		if err := writeLine(w, ""); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func verificationPolicyText(policy VerificationPolicyReport) string {
+	return fmtBool("list", policy.GoListEnabled) + ", " +
+		fmtBool("test", policy.GoTestEnabled) + ", " +
+		fmtBool("tidy", policy.GoTidyEnabled) + ", " +
+		"workspace=" + policy.WorkspaceMode + ", " +
+		"localReplace=" + policy.LocalReplacePolicy
 }
 
 func branchList(branches []BranchReport) string {

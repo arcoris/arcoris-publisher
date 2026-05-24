@@ -16,7 +16,6 @@ package report
 
 import (
 	"bytes"
-	"strings"
 	"testing"
 )
 
@@ -31,9 +30,7 @@ func TestTextRenderingIsNewlineTerminatedAndDeterministic(t *testing.T) {
 		return New(Options{Format: FormatText}).Plan(buf, p)
 	})
 
-	if !strings.HasSuffix(first, "\n") {
-		t.Fatalf("text missing trailing newline: %q", first)
-	}
+	assertTrailingNewline(t, first)
 	if first != second {
 		t.Fatalf("text output differs:\nfirst:\n%s\nsecond:\n%s", first, second)
 	}
@@ -49,8 +46,30 @@ func TestTextRenderingHasNoTerminalDecorationsOrLocalPaths(t *testing.T) {
 		)
 	})
 
-	if strings.Contains(text, "\x1b[") {
-		t.Fatalf("text contains ANSI escape sequence:\n%s", text)
-	}
+	assertTrailingNewline(t, text)
+	assertNoANSI(t, text)
+	assertASCII(t, text)
 	assertNoLocalPaths(t, text)
+}
+
+func TestWorkflowTextContainsStageCounts(t *testing.T) {
+	t.Parallel()
+
+	text := renderReport(t, func(buf *bytes.Buffer) error {
+		return New(Options{Format: FormatText}).Workflow(
+			buf,
+			reportWorkflowResult(t, workflowReportFixture{verifyFails: true}),
+		)
+	})
+
+	assertContains(
+		t,
+		text,
+		"Source: present, modules=2",
+		"Target: present, workspaces=2",
+		"Construct: present, changed=true, operations=",
+		"Module files: present, changed=true, modules=2",
+		"Verification: failed, failedChecks=2",
+		"Publication: empty, published=0, skipped=0",
+	)
 }

@@ -29,7 +29,7 @@ func TestBuildPublishReportZeroValue(t *testing.T) {
 	if report.Kind != "publish" {
 		t.Fatalf("Kind = %q", report.Kind)
 	}
-	if report.Status != "empty" {
+	if report.Status != StatusEmpty {
 		t.Fatalf("Status = %q", report.Status)
 	}
 	if report.ModuleCount != 0 || report.PublishedCount != 0 || report.SkippedCount != 0 {
@@ -50,7 +50,7 @@ func TestBuildPublishReportPublishedAndSkippedStatuses(t *testing.T) {
 		).Publish(),
 		Options{},
 	)
-	if published.Status != "published" || published.PublishedCount != 2 || published.SkippedCount != 0 {
+	if published.Status != StatusPublished || published.PublishedCount != 2 || published.SkippedCount != 0 {
 		t.Fatalf("published report = %+v", published)
 	}
 	if len(published.Modules[0].Tags) == 0 {
@@ -61,7 +61,7 @@ func TestBuildPublishReportPublishedAndSkippedStatuses(t *testing.T) {
 		reportWorkflowResult(t, workflowReportFixture{publish: true}).Publish(),
 		Options{},
 	)
-	if skipped.Status != "skipped" || skipped.PublishedCount != 0 || skipped.SkippedCount != 2 {
+	if skipped.Status != StatusSkipped || skipped.PublishedCount != 0 || skipped.SkippedCount != 2 {
 		t.Fatalf("skipped report = %+v", skipped)
 	}
 }

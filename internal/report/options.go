@@ -19,7 +19,9 @@ type Options struct {
 	// Format selects text or JSON rendering.
 	Format Format
 
-	// Pretty controls JSON indentation. Text reports ignore this option.
+	// Pretty controls JSON indentation. Text reports ignore this option. The
+	// zero value is intentionally compact for explicit JSON renderers; use
+	// DefaultOptions or set Pretty when human-readable JSON is desired.
 	Pretty bool
 
 	// IncludeLocalPaths allows reports to include local absolute paths. The
@@ -28,7 +30,7 @@ type Options struct {
 	IncludeLocalPaths bool
 }
 
-// DefaultOptions returns safe report defaults.
+// DefaultOptions returns safe human-readable report defaults.
 func DefaultOptions() Options {
 	return Options{Format: FormatText, Pretty: true}
 }

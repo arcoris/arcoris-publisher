@@ -47,3 +47,14 @@ type DependencyRequirementReport struct {
 	ModulePath string `json:"modulePath"`
 	Version    string `json:"version"`
 }
+
+// VerificationPolicyReport summarizes module verification policy values that
+// are visible in a plan.
+type VerificationPolicyReport struct {
+	GoListEnabled      bool     `json:"goListEnabled"`
+	GoTestEnabled      bool     `json:"goTestEnabled"`
+	GoTidyEnabled      bool     `json:"goTidyEnabled"`
+	GoPatterns         []string `json:"goPatterns,omitempty"`
+	WorkspaceMode      string   `json:"workspaceMode,omitempty"`
+	LocalReplacePolicy string   `json:"localReplacePolicy,omitempty"`
+}

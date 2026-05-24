@@ -35,16 +35,23 @@ func commaOrDash(values []string) string {
 	return strings.Join(values, ", ")
 }
 
-func statusPassedFailed(failed bool) string {
-	if failed {
-		return "failed"
+func fmtBool(key string, value bool) string {
+	if value {
+		return key + "=true"
 	}
-	return "passed"
+	return key + "=false"
 }
 
-func statusEmptyPresent(present bool) string {
-	if present {
-		return "present"
+func statusPassedFailed(failed bool) Status {
+	if failed {
+		return StatusFailed
 	}
-	return "empty"
+	return StatusPassed
+}
+
+func statusEmptyPresent(present bool) Status {
+	if present {
+		return StatusPresent
+	}
+	return StatusEmpty
 }

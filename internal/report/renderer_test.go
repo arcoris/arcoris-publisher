@@ -16,6 +16,7 @@ package report
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -42,14 +43,51 @@ func TestRendererUnsupportedFormatReturnsTypedError(t *testing.T) {
 func TestRendererWriterErrorReturnsTypedError(t *testing.T) {
 	t.Parallel()
 
-	err := New(Options{Format: FormatText}).Plan(failingWriter{}, reportPlan(t).Plan)
-	if err == nil {
-		t.Fatal("Plan() error = nil")
+	result := reportWorkflowResult(t, workflowReportFixture{
+		publish:      true,
+		dirtyModules: []string{"foundation", "control"},
+	})
+	failedVerify := reportWorkflowResult(t, workflowReportFixture{verifyFails: true}).Verify()
+
+	tests := []struct {
+		name string
+		run  func() error
+	}{
+		{name: "plan", run: func() error {
+			return New(Options{Format: FormatText}).Plan(failingWriter{}, reportPlan(t).Plan)
+		}},
+		{name: "workflow", run: func() error {
+			return New(Options{Format: FormatText}).Workflow(failingWriter{}, result)
+		}},
+		{name: "verify failed", run: func() error {
+			return New(Options{Format: FormatText}).Verify(failingWriter{}, failedVerify)
+		}},
+		{name: "publish skipped", run: func() error {
+			return New(Options{Format: FormatText}).Publish(
+				failingWriter{},
+				reportWorkflowResult(t, workflowReportFixture{publish: true}).Publish(),
+			)
+		}},
 	}
 
-	var reportErr *Error
-	if !errors.As(err, &reportErr) || reportErr.Code != CodeWriteFailed {
-		t.Fatalf("Plan() error = %v", err)
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := tt.run()
+			if err == nil {
+				t.Fatal("render error = nil")
+			}
+
+			var reportErr *Error
+			if !errors.As(err, &reportErr) || reportErr.Code != CodeWriteFailed {
+				t.Fatalf("render error = %v", err)
+			}
+			if !strings.Contains(err.Error(), "writer failed") {
+				t.Fatalf("writer error not wrapped: %v", err)
+			}
+		})
 	}
 }
 

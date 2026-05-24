@@ -32,34 +32,46 @@ func New(opts Options) Renderer { return Renderer{opts: normalizeOptions(opts)} 
 // Plan renders a publication plan report.
 func (r Renderer) Plan(w io.Writer, p plan.Plan) error {
 	report := BuildPlanReport(p, r.opts)
-	return r.render(w, report, writePlanText)
+	return renderFormatted(w, report, r.opts, writePlanText)
 }
 
 // Workflow renders an aggregate workflow report.
 func (r Renderer) Workflow(w io.Writer, result workflow.Result) error {
 	report := BuildWorkflowReport(result, r.opts)
-	return r.render(w, report, writeWorkflowText)
+	return renderFormatted(w, report, r.opts, writeWorkflowText)
 }
 
 // Verify renders a verification result report.
 func (r Renderer) Verify(w io.Writer, result verify.Result) error {
 	report := BuildVerifyReport(result, r.opts)
-	return r.render(w, report, writeVerifyText)
+	return renderFormatted(w, report, r.opts, writeVerifyText)
 }
 
 // Publish renders a publication result report.
 func (r Renderer) Publish(w io.Writer, result publish.Result) error {
 	report := BuildPublishReport(result, r.opts)
-	return r.render(w, report, writePublishText)
+	return renderFormatted(w, report, r.opts, writePublishText)
 }
 
-func (r Renderer) render(w io.Writer, value any, text func(io.Writer, any) error) error {
-	switch r.opts.Format {
+func renderFormatted[T any](
+	w io.Writer,
+	value T,
+	opts Options,
+	writeText func(io.Writer, T) error,
+) error {
+	switch opts.Format {
 	case FormatText:
-		return text(w, value)
+		return writeText(w, value)
 	case FormatJSON:
-		return writeJSON(w, value, r.opts.Pretty)
+		return writeJSON(w, value, opts.Pretty)
 	default:
-		return &Error{Code: CodeUnsupportedFormat, Message: "unsupported report format: " + r.opts.Format.String()}
+		return unsupportedFormatError(opts.Format)
+	}
+}
+
+func unsupportedFormatError(format Format) error {
+	return &Error{
+		Code:    CodeUnsupportedFormat,
+		Message: "unsupported report format: " + format.String(),
 	}
 }
