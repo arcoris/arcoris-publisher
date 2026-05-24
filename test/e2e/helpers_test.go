@@ -262,6 +262,40 @@ func initGitRepo(t *testing.T, dir string) {
 	mustRun(t, dir, "git", "commit", "-m", "test: seed fixture")
 }
 
+func initBareGitRepo(t *testing.T, dir string) {
+	t.Helper()
+	requireExecutable(t, "git")
+
+	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+		t.Fatalf("create bare repo parent: %v", err)
+	}
+	mustRun(t, repoRoot(t), "git", "init", "--bare", dir)
+}
+
+func initTargetGitWorktree(t *testing.T, dir string, remote string) {
+	t.Helper()
+	requireExecutable(t, "git")
+
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("create target worktree %s: %v", dir, err)
+	}
+	result := runCommand(t, dir, nil, "git", "init", "-b", "main")
+	if result.Code != 0 {
+		mustRun(t, dir, "git", "init")
+		mustRun(t, dir, "git", "checkout", "-B", "main")
+	}
+	mustRun(t, dir, "git", "config", "user.name", "ARCORIS Test")
+	mustRun(t, dir, "git", "config", "user.email", "arcoris-test@example.invalid")
+	mustRun(t, dir, "git", "config", "core.autocrlf", "false")
+	mustRun(t, dir, "git", "config", "commit.gpgsign", "false")
+	if err := os.WriteFile(filepath.Join(dir, ".seed"), []byte("seed\n"), 0o644); err != nil {
+		t.Fatalf("write target seed file: %v", err)
+	}
+	mustRun(t, dir, "git", "add", ".seed")
+	mustRun(t, dir, "git", "commit", "-m", "test: seed target")
+	mustRun(t, dir, "git", "remote", "add", "origin", remote)
+}
+
 func mustRun(t *testing.T, dir string, name string, args ...string) {
 	t.Helper()
 	result := runCommand(t, dir, nil, name, args...)
@@ -301,6 +335,31 @@ func assertGitRefExists(t *testing.T, gitDir string, ref string) {
 	result := runCommand(t, repoRoot(t), nil, "git", "--git-dir", gitDir, "show-ref", "--verify", "--quiet", ref)
 	if result.Code != 0 {
 		t.Fatalf("git ref %s missing in %s\nstdout:\n%s\nstderr:\n%s", ref, gitDir, result.Stdout, result.Stderr)
+	}
+}
+
+func gitLogMessage(t *testing.T, gitDir string, ref string) string {
+	t.Helper()
+	result := runCommand(t, repoRoot(t), nil, "git", "--git-dir", gitDir, "log", "-1", "--format=%B", ref)
+	if result.Code != 0 {
+		t.Fatalf("git log %s in %s failed\nstdout:\n%s\nstderr:\n%s", ref, gitDir, result.Stdout, result.Stderr)
+	}
+	return result.Stdout
+}
+
+func gitTreeContains(t *testing.T, gitDir string, ref string, path string) {
+	t.Helper()
+	result := runCommand(t, repoRoot(t), nil, "git", "--git-dir", gitDir, "cat-file", "-e", ref+":"+path)
+	if result.Code != 0 {
+		t.Fatalf("git tree %s:%s missing in %s\nstdout:\n%s\nstderr:\n%s", ref, path, gitDir, result.Stdout, result.Stderr)
+	}
+}
+
+func gitTreeMissing(t *testing.T, gitDir string, ref string, path string) {
+	t.Helper()
+	result := runCommand(t, repoRoot(t), nil, "git", "--git-dir", gitDir, "cat-file", "-e", ref+":"+path)
+	if result.Code == 0 {
+		t.Fatalf("git tree %s:%s unexpectedly exists in %s", ref, path, gitDir)
 	}
 }
 

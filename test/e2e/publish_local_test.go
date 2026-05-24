@@ -14,8 +14,63 @@
 
 package e2e_test
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 func TestPublishLocalBareRepositories(t *testing.T) {
-	t.Skip("full local publish e2e is blocked by current production wiring: repository refs are owner/name only, cmd/arcpub has no local remote resolver, and verify.RequireClean rejects constructed Git worktree changes before the publish stage can commit and push")
+	requireGitAndGo(t)
+
+	root := copyFixture(t, "local-publish")
+	initGitRepo(t, root)
+	targetRoot := t.TempDir()
+	remoteRoot := t.TempDir()
+
+	repositories := []struct {
+		name     string
+		bareName string
+	}{
+		{name: "arcoris/foundation", bareName: "foundation.git"},
+		{name: "arcoris/control", bareName: "control.git"},
+	}
+	for _, repo := range repositories {
+		bare := filepath.Join(remoteRoot, repo.bareName)
+		initBareGitRepo(t, bare)
+		initTargetGitWorktree(t, targetWorktreePath(targetRoot, repo.name), bare)
+	}
+
+	result, decoded := runArcpubJSON(t,
+		0,
+		"publish",
+		"--manifest", e2eManifest(root),
+		"--version", "v0.1.0",
+		"--source-repo", root,
+		"--staging-dir", root,
+		"--target-root", targetRoot,
+		"--output", "json",
+	)
+	if decoded["status"] != "published" {
+		t.Fatalf("workflow status = %#v, want published\n%s", decoded["status"], result.Stdout)
+	}
+	assertNoLocalPathLeak(t, result.Stdout, root, targetRoot, remoteRoot)
+
+	for _, repo := range repositories {
+		bare := filepath.Join(remoteRoot, repo.bareName)
+		assertGitRefExists(t, bare, "refs/heads/main")
+		assertGitRefExists(t, bare, "refs/tags/v0.1.0")
+
+		message := gitLogMessage(t, bare, "refs/heads/main")
+		assertContains(t, message, "Arcoris-Source-Commit:")
+		assertContains(t, message, "Arcoris-Projection-Hash:")
+		assertContains(t, message, "Arcoris-Publisher-Version:")
+
+		gitTreeContains(t, bare, "refs/heads/main", "go.mod")
+		gitTreeContains(t, bare, "refs/heads/main", "README.md")
+		gitTreeContains(t, bare, "refs/heads/main", "contracts/doc.go")
+		gitTreeContains(t, bare, "refs/heads/main", ".arcoris/provenance.json")
+		gitTreeMissing(t, bare, "refs/heads/main", "secret.txt")
+		gitTreeMissing(t, bare, "refs/heads/main", "private/secret.go")
+		gitTreeMissing(t, bare, "refs/heads/main", "private")
+	}
 }

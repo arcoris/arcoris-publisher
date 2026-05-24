@@ -23,7 +23,12 @@ type Options struct {
 	GenerateProvenanceFile bool
 }
 
-// DefaultOptions returns conservative construction defaults.
+// DefaultOptions returns construction defaults. File provenance is still gated
+// by the resolved publish policy, so enabling the writer here only affects
+// manifests that explicitly configure a provenance file.
 func DefaultOptions() Options {
-	return Options{PreserveGitDir: true}
+	return Options{
+		PreserveGitDir:         true,
+		GenerateProvenanceFile: true,
+	}
 }

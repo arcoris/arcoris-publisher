@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"arcoris.dev/arcoris-publisher/internal/ports/filesystem"
+	"arcoris.dev/arcoris-publisher/internal/ports/git"
 	"arcoris.dev/arcoris-publisher/internal/testutil/porttest"
 	"arcoris.dev/arcoris-publisher/internal/testutil/publishertest"
 	"arcoris.dev/arcoris-publisher/internal/workflow/target"
@@ -163,6 +164,58 @@ func TestGoModTidyFailureIsVerificationFailure(t *testing.T) {
 	if !result.Failed() {
 		t.Fatal("Failed() = false")
 	}
+}
+
+func TestGitCleanAllowsExistingConstructChanges(t *testing.T) {
+	req, fs, moduleRoot := verifyRequest(t)
+	fakeGit := porttest.NewGit()
+	fakeGit.Statuses[moduleRoot] = git.Status{
+		Clean:   false,
+		Entries: []git.StatusEntry{{Path: "README.md", Code: "??"}},
+	}
+
+	result, err := New(
+		Dependencies{FS: fs, Git: fakeGit, Go: porttest.GoToolchain{}},
+		Options{},
+	).Verify(context.Background(), req)
+
+	if err != nil {
+		t.Fatalf("Verify() error = %v", err)
+	}
+	if result.Failed() {
+		t.Fatalf("Failed() = true; existing publish changes should not fail git-clean")
+	}
+}
+
+func TestGitCleanFailsWhenVerificationAddsChanges(t *testing.T) {
+	req, fs, moduleRoot := verifyRequest(t)
+	fakeGit := porttest.NewGit()
+	fakeGit.Statuses[moduleRoot] = git.Status{
+		Clean:   false,
+		Entries: []git.StatusEntry{{Path: "README.md", Code: "??"}},
+	}
+	goTool := porttest.GoToolchain{
+		ModTidyHook: func(context.Context, string) error {
+			fakeGit.Statuses[moduleRoot] = git.Status{
+				Clean: false,
+				Entries: []git.StatusEntry{
+					{Path: "README.md", Code: "??"},
+					{Path: "generated.txt", Code: "??"},
+				},
+			}
+			return nil
+		},
+	}
+
+	result, err := New(
+		Dependencies{FS: fs, Git: fakeGit, Go: goTool},
+		Options{},
+	).Verify(context.Background(), req)
+
+	if err != nil {
+		t.Fatalf("Verify() error = %v", err)
+	}
+	assertCheckStatus(t, result, "git-clean", StatusFailed)
 }
 
 func verifyRequest(t *testing.T) (Request, *porttest.FileSystem, string) {

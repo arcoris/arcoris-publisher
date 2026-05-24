@@ -1,0 +1,20 @@
+apiVersion: arcpub.arcoris.dev/v1alpha1
+kind: ModuleManifest
+metadata:
+  name: provenance
+module:
+  type: go
+  path: arcoris.dev/provenance
+verification:
+  go:
+    list: false
+    test: false
+    tidy: false
+publish:
+  entries:
+    - type: file
+      from: go.mod
+      to: go.mod
+    - type: directory
+      from: public
+      to: public

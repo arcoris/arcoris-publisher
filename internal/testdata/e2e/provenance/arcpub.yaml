@@ -1,0 +1,23 @@
+apiVersion: arcpub.arcoris.dev/v1alpha1
+kind: StagingManifest
+metadata:
+  name: arcoris-provenance-e2e
+source:
+  repository: arcoris/e2e
+  defaultBranch: main
+  stagingRoot: .
+  moduleRoot: staging
+publish:
+  mode: explicit-projection
+  versionPolicy: release-train
+  pushPolicy: fast-forward-only
+  provenance:
+    file: .arcoris/provenance.json
+defaults:
+  branches:
+    - source: main
+      target: main
+modules:
+  - name: provenance
+    sourceDir: staging/provenance
+    repository: arcoris/provenance

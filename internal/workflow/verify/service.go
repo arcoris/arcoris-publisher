@@ -18,6 +18,8 @@ import (
 	"bytes"
 	"context"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"arcoris.dev/arcoris-publisher/internal/manifest"
 	"arcoris.dev/arcoris-publisher/internal/plan"
@@ -115,8 +117,9 @@ func (s Service) verifyModule(
 	checks = append(checks, goModModuleCheck(mod, info, goModPath))
 	checks = append(checks, localReplaceChecks(mod, info, goModPath)...)
 	checks = append(checks, requirementChecks(mod, info, goModPath)...)
+	cleanBefore := s.gitCleanSnapshot(ctx, ws.WorktreeDir())
 	checks = append(checks, s.goToolchainChecks(ctx, mod, ws.WorktreeDir(), moduleRoot)...)
-	checks = append(checks, s.gitCleanChecks(ctx, ws.WorktreeDir())...)
+	checks = append(checks, s.gitCleanChecks(ctx, ws.WorktreeDir(), cleanBefore)...)
 
 	return ModuleResult{module: name, checks: checks}
 }
@@ -460,15 +463,36 @@ func (s goModuleFileSnapshot) changed(other goModuleFileSnapshot) bool {
 	return false
 }
 
-// gitCleanChecks verifies that target verification did not leave the worktree
-// dirty when clean verification is required.
-func (s Service) gitCleanChecks(ctx context.Context, worktree string) []CheckResult {
+// gitCleanSnapshot records the worktree status immediately before verification
+// steps that may execute tools. Construct and modulefile stages intentionally
+// leave publishable changes behind, so clean verification compares before/after
+// status instead of requiring a clean final worktree.
+func (s Service) gitCleanSnapshot(ctx context.Context, worktree string) gitStatusSnapshot {
 	if !s.opts.RequireClean || s.deps.Git == nil {
-		return nil
+		return gitStatusSnapshot{}
 	}
 
 	status, err := s.deps.Git.Status(ctx, worktree)
-	if err == nil && (!status.Clean || status.HasEntries()) {
+	if err != nil {
+		return gitStatusSnapshot{}
+	}
+
+	return gitStatusSnapshot{ok: true, signature: gitStatusSignature(status)}
+}
+
+// gitCleanChecks verifies that verification tools did not introduce additional
+// worktree changes when clean verification is required.
+func (s Service) gitCleanChecks(
+	ctx context.Context,
+	worktree string,
+	before gitStatusSnapshot,
+) []CheckResult {
+	if !before.ok {
+		return nil
+	}
+
+	after := s.gitCleanSnapshot(ctx, worktree)
+	if after.ok && after.signature != before.signature {
 		return []CheckResult{NewCheckResult(
 			"git-clean",
 			StatusFailed,
@@ -478,4 +502,36 @@ func (s Service) gitCleanChecks(ctx context.Context, worktree string) []CheckRes
 	}
 
 	return nil
+}
+
+type gitStatusSnapshot struct {
+	ok        bool
+	signature string
+}
+
+func gitStatusSignature(status git.Status) string {
+	entries := append([]git.StatusEntry(nil), status.Entries...)
+	for i := range entries {
+		entries[i].Path = filepath.ToSlash(filepath.Clean(entries[i].Path))
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].Path == entries[j].Path {
+			return entries[i].Code < entries[j].Code
+		}
+		return entries[i].Path < entries[j].Path
+	})
+
+	var b strings.Builder
+	if status.Clean {
+		b.WriteString("clean\n")
+	} else {
+		b.WriteString("dirty\n")
+	}
+	for _, entry := range entries {
+		b.WriteString(entry.Code)
+		b.WriteByte('\t')
+		b.WriteString(entry.Path)
+		b.WriteByte('\n')
+	}
+	return b.String()
 }

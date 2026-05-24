@@ -21,7 +21,7 @@ func TestDefaultOptions(t *testing.T) {
 	if !opts.PreserveGitDir {
 		t.Fatal("PreserveGitDir = false")
 	}
-	if opts.GenerateProvenanceFile {
-		t.Fatal("GenerateProvenanceFile = true")
+	if !opts.GenerateProvenanceFile {
+		t.Fatal("GenerateProvenanceFile = false")
 	}
 }
