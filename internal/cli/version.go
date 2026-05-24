@@ -15,23 +15,17 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 
 	"arcoris.dev/arcoris-publisher/internal/buildinfo"
 	"arcoris.dev/arcoris-publisher/internal/report"
+	"github.com/spf13/cobra"
 )
 
 // BuildInfoFunc returns normalized publisher build metadata.
 type BuildInfoFunc func() buildinfo.Info
-
-type versionFlags struct {
-	output  string
-	pretty  bool
-	compact bool
-}
 
 type versionReport struct {
 	Version string `json:"version"`
@@ -40,21 +34,21 @@ type versionReport struct {
 	Dirty   string `json:"dirty"`
 }
 
-func (c CLI) runVersion(_ context.Context, args []string, stdout io.Writer, stderr io.Writer) int {
-	flags := versionFlags{output: c.opts.Report.Format.String(), pretty: c.opts.Report.Pretty}
-	fs := newFlagSet("version")
-	fs.StringVar(&flags.output, "output", flags.output, "output format: text or json")
-	fs.BoolVar(&flags.pretty, "pretty", flags.pretty, "render pretty JSON output when --output=json")
-	fs.BoolVar(&flags.compact, "compact", false, "render compact JSON output when --output=json")
-	if err := parseFlagSet(fs, args); err != nil {
-		writeCLIError(stderr, err)
-		return ExitUsage
+func (c CLI) newVersionCommand(output *outputFlags) *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print publisher build metadata",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return c.executeVersion(outputForCommand(cmd, *output), cmd.OutOrStdout())
+		},
 	}
+}
 
-	format, err := report.ParseFormat(flags.output)
+func (c CLI) executeVersion(output outputFlags, stdout io.Writer) error {
+	reportOptions, err := parseReportOptions(output)
 	if err != nil {
-		writeCLIError(stderr, &Error{Code: CodeInvalidFlags, Message: "invalid output format", Cause: err})
-		return ExitUsage
+		return err
 	}
 
 	info := c.deps.BuildInfo()
@@ -65,7 +59,7 @@ func (c CLI) runVersion(_ context.Context, args []string, stdout io.Writer, stde
 		Dirty:   info.Dirty(),
 	}
 
-	switch format {
+	switch reportOptions.Format {
 	case report.FormatText:
 		_, err = fmt.Fprintf(
 			stdout,
@@ -77,7 +71,7 @@ func (c CLI) runVersion(_ context.Context, args []string, stdout io.Writer, stde
 		)
 	case report.FormatJSON:
 		var data []byte
-		if flags.pretty && !flags.compact {
+		if reportOptions.Pretty {
 			data, err = json.MarshalIndent(value, "", "  ")
 		} else {
 			data, err = json.Marshal(value)
@@ -89,8 +83,7 @@ func (c CLI) runVersion(_ context.Context, args []string, stdout io.Writer, stde
 		err = &Error{Code: CodeInvalidFlags, Message: "unsupported version output format"}
 	}
 	if err != nil {
-		writeCLIError(stderr, &Error{Code: CodeReportFailed, Message: "render version failed", Cause: err})
-		return ExitError
+		return &Error{Code: CodeReportFailed, Message: "render version failed", Cause: err}
 	}
-	return ExitOK
+	return nil
 }

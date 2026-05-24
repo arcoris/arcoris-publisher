@@ -33,7 +33,8 @@ func TestCLIRunsHelp(t *testing.T) {
 	if code != cli.ExitOK {
 		t.Fatalf("CLI help exit code = %d", code)
 	}
-	if !strings.Contains(stdout.String(), "arcpub plan") {
+	if !strings.Contains(stdout.String(), "plan") ||
+		!strings.Contains(stdout.String(), "completion") {
 		t.Fatalf("help output = %q", stdout.String())
 	}
 	if stderr.Len() != 0 {

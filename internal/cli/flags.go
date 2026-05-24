@@ -15,60 +15,104 @@
 package cli
 
 import (
-	"flag"
+	"errors"
 	"fmt"
-	"io"
 	"strings"
 
 	"arcoris.dev/arcoris-publisher/internal/report"
 	"arcoris.dev/arcoris-publisher/internal/versioning"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
-type commonFlags struct {
-	manifest          string
-	version           string
+type outputFlags struct {
 	output            string
 	includeLocalPaths bool
 	pretty            bool
 	compact           bool
+	// prettySet and compactSet distinguish explicit user intent from defaults.
+	//
+	// Pretty defaults to true for human-readable JSON, so treating the raw
+	// boolean value as "set" would make --compact conflict with the default.
+	prettySet  bool
+	compactSet bool
+}
+
+type planFlags struct {
+	manifest string
+	version  string
 }
 
 type workflowFlags struct {
-	commonFlags
+	manifest            string
+	version             string
 	sourceRepositoryDir string
 	stagingDir          string
 	targetRootDir       string
 	dryRun              bool
 }
 
-func newFlagSet(name string) *flag.FlagSet {
-	fs := flag.NewFlagSet("arcpub "+name, flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	return fs
-}
-
-func addCommonFlags(fs *flag.FlagSet, flags *commonFlags, opts Options, requireVersion bool) {
-	fs.StringVar(&flags.manifest, "manifest", opts.ManifestPath, "path to arcpub.yaml")
-	if requireVersion {
-		fs.StringVar(&flags.version, "version", "", "publication version, for example v0.3.0")
+func defaultOutputFlags(opts Options) outputFlags {
+	return outputFlags{
+		output:            opts.Report.Format.String(),
+		includeLocalPaths: opts.Report.IncludeLocalPaths,
+		pretty:            opts.Report.Pretty,
 	}
-	fs.StringVar(&flags.output, "output", opts.Report.Format.String(), "output format: text or json")
-	fs.BoolVar(&flags.includeLocalPaths, "include-local-paths", opts.Report.IncludeLocalPaths, "include local absolute filesystem paths in reports")
-	fs.BoolVar(&flags.pretty, "pretty", opts.Report.Pretty, "render pretty JSON output when --output=json")
-	fs.BoolVar(&flags.compact, "compact", false, "render compact JSON output when --output=json")
 }
 
-func addWorkflowFlags(fs *flag.FlagSet, flags *workflowFlags, opts Options, includeDryRun bool) {
-	addCommonFlags(fs, &flags.commonFlags, opts, true)
-	fs.StringVar(&flags.sourceRepositoryDir, "source-repo", opts.SourceRepositoryDir, "source Git checkout root")
-	fs.StringVar(&flags.stagingDir, "staging-dir", opts.StagingDir, "staging directory containing module sources")
-	fs.StringVar(&flags.targetRootDir, "target-root", opts.TargetRootDir, "directory containing target worktrees")
+func addOutputFlags(flags *pflag.FlagSet, values *outputFlags) {
+	flags.StringVar(&values.output, "output", values.output, "output format: text or json")
+	flags.BoolVar(&values.includeLocalPaths, "include-local-paths", values.includeLocalPaths, "include local absolute filesystem paths in reports")
+	flags.BoolVar(&values.pretty, "pretty", values.pretty, "render pretty JSON output when --output=json")
+	flags.BoolVar(&values.compact, "compact", values.compact, "render compact JSON output when --output=json")
+}
+
+func outputForCommand(cmd *cobra.Command, values outputFlags) outputFlags {
+	if flag := cmd.Flag("pretty"); flag != nil {
+		values.prettySet = flag.Changed
+	}
+	if flag := cmd.Flag("compact"); flag != nil {
+		values.compactSet = flag.Changed
+	}
+	return values
+}
+
+func addPlanFlags(flags *pflag.FlagSet, values *planFlags, opts Options) {
+	values.manifest = opts.ManifestPath
+	flags.StringVar(&values.manifest, "manifest", values.manifest, "path to arcpub.yaml")
+	flags.StringVar(&values.version, "version", "", "publication version, for example v0.3.0")
+}
+
+func addWorkflowFlags(flags *pflag.FlagSet, values *workflowFlags, opts Options, includeDryRun bool) {
+	values.manifest = opts.ManifestPath
+	values.sourceRepositoryDir = opts.SourceRepositoryDir
+	values.stagingDir = opts.StagingDir
+	values.targetRootDir = opts.TargetRootDir
+	values.dryRun = opts.App.Workflow.DryRun
+
+	flags.StringVar(&values.manifest, "manifest", values.manifest, "path to arcpub.yaml")
+	flags.StringVar(&values.version, "version", "", "publication version, for example v0.3.0")
+	flags.StringVar(&values.sourceRepositoryDir, "source-repo", values.sourceRepositoryDir, "source Git checkout root")
+	flags.StringVar(&values.stagingDir, "staging-dir", values.stagingDir, "staging directory containing module sources")
+	flags.StringVar(&values.targetRootDir, "target-root", values.targetRootDir, "directory containing target worktrees")
 	if includeDryRun {
-		fs.BoolVar(&flags.dryRun, "dry-run", opts.App.Workflow.DryRun, "run through verification without publishing mutations")
+		flags.BoolVar(&values.dryRun, "dry-run", values.dryRun, "run through verification without publishing mutations")
 	}
 }
 
-func parseReportOptions(flags commonFlags) (report.Options, error) {
+// parseReportOptions converts CLI output flags into report renderer options.
+//
+// Text reports deliberately ignore JSON indentation flags. Compact JSON may
+// override the default pretty JSON, but an explicit --pretty --compact pair is a
+// usage error because it hides user intent.
+func parseReportOptions(flags outputFlags) (report.Options, error) {
+	if flags.prettySet && flags.compactSet {
+		return report.Options{}, &Error{
+			Code:    CodeInvalidFlags,
+			Message: "--pretty and --compact cannot be used together",
+		}
+	}
+
 	format, err := report.ParseFormat(flags.output)
 	if err != nil {
 		return report.Options{}, &Error{Code: CodeInvalidFlags, Message: "invalid output format", Cause: err}
@@ -89,6 +133,8 @@ func parseReportOptions(flags commonFlags) (report.Options, error) {
 	}, nil
 }
 
+// parseVersion keeps version validation in the CLI layer while leaving version
+// syntax and normalization to the versioning package.
 func parseVersion(value string) (versioning.Version, error) {
 	if strings.TrimSpace(value) == "" {
 		return "", &Error{Code: CodeInvalidVersion, Message: "--version is required"}
@@ -100,9 +146,48 @@ func parseVersion(value string) (versioning.Version, error) {
 	return version, nil
 }
 
-func parseFlagSet(fs *flag.FlagSet, args []string) error {
-	if err := fs.Parse(args); err != nil {
-		return &Error{Code: CodeInvalidFlags, Message: fmt.Sprintf("invalid flags for %s", fs.Name()), Cause: err}
+// flagError adapts pflag parse failures to the CLI error model so Cobra does
+// not print duplicate usage/errors on its own.
+func flagError(cmd *cobra.Command, err error) error {
+	if err == nil {
+		return nil
 	}
-	return nil
+	return &Error{
+		Code:    CodeInvalidFlags,
+		Message: fmt.Sprintf("invalid flags for %s", cmd.CommandPath()),
+		Cause:   err,
+	}
+}
+
+// noArgs rejects accidental positional arguments for commands whose full input
+// surface is flags.
+func noArgs(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	return &Error{
+		Code:    CodeInvalidFlags,
+		Message: fmt.Sprintf("%s does not accept arguments", cmd.CommandPath()),
+	}
+}
+
+func usageError(message string) error {
+	return &Error{Code: CodeInvalidFlags, Message: message}
+}
+
+// normalizeCobraError turns raw Cobra command-routing errors into typed CLI
+// errors while preserving sentinel outcomes produced by command handlers.
+func normalizeCobraError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, errVerificationFailed) {
+		return err
+	}
+
+	var cliErr *Error
+	if errors.As(err, &cliErr) {
+		return err
+	}
+	return &Error{Code: CodeInvalidCommand, Message: strings.TrimSpace(err.Error())}
 }

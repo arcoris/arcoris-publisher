@@ -19,36 +19,39 @@ import (
 	"io"
 
 	"arcoris.dev/arcoris-publisher/internal/app"
+	"github.com/spf13/cobra"
 )
 
-func (c CLI) runVerify(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) int {
+func (c CLI) newVerifyCommand(output *outputFlags) *cobra.Command {
 	var flags workflowFlags
-	fs := newFlagSet("verify")
-	addWorkflowFlags(fs, &flags, c.opts, false)
-	if err := parseFlagSet(fs, args); err != nil {
-		writeCLIError(stderr, err)
-		return ExitUsage
+	cmd := &cobra.Command{
+		Use:   "verify",
+		Short: "Construct and verify target module worktrees without publishing",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return c.executeVerify(cmd.Context(), flags, outputForCommand(cmd, *output), cmd.OutOrStdout())
+		},
 	}
+	addWorkflowFlags(cmd.Flags(), &flags, c.opts, false)
+	return cmd
+}
 
+func (c CLI) executeVerify(ctx context.Context, flags workflowFlags, output outputFlags, stdout io.Writer) error {
 	version, err := parseVersion(flags.version)
 	if err != nil {
-		writeCLIError(stderr, err)
-		return ExitUsage
+		return err
 	}
 
-	reportOptions, err := parseReportOptions(flags.commonFlags)
+	reportOptions, err := parseReportOptions(output)
 	if err != nil {
-		writeCLIError(stderr, err)
-		return ExitUsage
+		return err
 	}
 
 	appOptions := c.opts.App
-	appOptions.Workflow.DryRun = flags.dryRun
 
 	application, err := c.deps.application(appOptions)
 	if err != nil {
-		writeCLIError(stderr, err)
-		return ExitError
+		return err
 	}
 
 	result, err := application.Verify(ctx, app.Request{
@@ -59,17 +62,15 @@ func (c CLI) runVerify(ctx context.Context, args []string, stdout io.Writer, std
 		TargetRootDir:       flags.targetRootDir,
 	})
 	if err != nil {
-		writeCLIError(stderr, &Error{Code: CodeUseCaseFailed, Message: "verify failed", Cause: err})
-		return ExitError
+		return &Error{Code: CodeUseCaseFailed, Message: "verify failed", Cause: err}
 	}
 
 	workflowResult := result.Workflow()
 	if err := newRenderer(reportOptions).Workflow(stdout, workflowResult); err != nil {
-		writeCLIError(stderr, &Error{Code: CodeReportFailed, Message: "render workflow report failed", Cause: err})
-		return ExitError
+		return &Error{Code: CodeReportFailed, Message: "render workflow report failed", Cause: err}
 	}
 	if workflowResult.Verify().Failed() {
-		return ExitVerificationFailed
+		return errVerificationFailed
 	}
-	return ExitOK
+	return nil
 }

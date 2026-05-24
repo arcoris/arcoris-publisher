@@ -19,12 +19,13 @@ import (
 	"testing"
 
 	"arcoris.dev/arcoris-publisher/internal/report"
+	"github.com/spf13/pflag"
 )
 
 func TestParseReportOptions(t *testing.T) {
 	t.Parallel()
 
-	opts, err := parseReportOptions(commonFlags{output: " JSON ", pretty: true, includeLocalPaths: true})
+	opts, err := parseReportOptions(outputFlags{output: " JSON ", pretty: true, includeLocalPaths: true})
 	if err != nil {
 		t.Fatalf("parseReportOptions() error = %v", err)
 	}
@@ -36,7 +37,7 @@ func TestParseReportOptions(t *testing.T) {
 func TestParseReportOptionsRejectsInvalidOutput(t *testing.T) {
 	t.Parallel()
 
-	_, err := parseReportOptions(commonFlags{output: "yaml"})
+	_, err := parseReportOptions(outputFlags{output: "yaml"})
 	if err == nil {
 		t.Fatal("parseReportOptions() error = nil")
 	}
@@ -50,12 +51,27 @@ func TestParseReportOptionsRejectsInvalidOutput(t *testing.T) {
 func TestParseReportOptionsCompactOverridesPretty(t *testing.T) {
 	t.Parallel()
 
-	opts, err := parseReportOptions(commonFlags{output: "json", pretty: true, compact: true})
+	opts, err := parseReportOptions(outputFlags{output: "json", pretty: true, compact: true, compactSet: true})
 	if err != nil {
 		t.Fatalf("parseReportOptions() error = %v", err)
 	}
 	if opts.Pretty {
 		t.Fatalf("parseReportOptions() Pretty = true")
+	}
+}
+
+func TestParseReportOptionsRejectsExplicitPrettyCompactConflict(t *testing.T) {
+	t.Parallel()
+
+	_, err := parseReportOptions(outputFlags{
+		output:     "json",
+		pretty:     true,
+		compact:    true,
+		prettySet:  true,
+		compactSet: true,
+	})
+	if err == nil {
+		t.Fatal("parseReportOptions() error = nil")
 	}
 }
 
@@ -88,14 +104,14 @@ func TestAddWorkflowFlagsDryRunIsPublishOnly(t *testing.T) {
 	t.Parallel()
 
 	var verifyFlags workflowFlags
-	verifySet := newFlagSet("verify")
+	verifySet := pflag.NewFlagSet("verify", pflag.ContinueOnError)
 	addWorkflowFlags(verifySet, &verifyFlags, DefaultOptions(), false)
 	if err := verifySet.Parse([]string{"--dry-run"}); err == nil {
 		t.Fatal("verify flags accepted --dry-run")
 	}
 
 	var publishFlags workflowFlags
-	publishSet := newFlagSet("publish")
+	publishSet := pflag.NewFlagSet("publish", pflag.ContinueOnError)
 	addWorkflowFlags(publishSet, &publishFlags, DefaultOptions(), true)
 	if err := publishSet.Parse([]string{"--dry-run"}); err != nil {
 		t.Fatalf("publish flags rejected --dry-run: %v", err)

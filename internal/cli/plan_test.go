@@ -143,4 +143,51 @@ func TestRunPlanJSON(t *testing.T) {
 	if !strings.Contains(stdout.String(), `"kind": "plan"`) {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "\n  ") {
+		t.Fatalf("JSON output is not pretty by default: %q", stdout.String())
+	}
+}
+
+func TestRunPlanCompactJSON(t *testing.T) {
+	t.Parallel()
+
+	app := newFakeApplication(t)
+	cli := New(Dependencies{App: app}, Options{})
+	var stdout, stderr bytes.Buffer
+
+	code := cli.Run(
+		context.Background(),
+		[]string{"plan", "--version", "v0.3.0", "--output", "json", "--compact"},
+		&stdout,
+		&stderr,
+	)
+
+	if code != ExitOK {
+		t.Fatalf("Run(plan compact json) code = %d stderr = %s", code, stderr.String())
+	}
+	if strings.Contains(stdout.String(), "\n  ") {
+		t.Fatalf("compact JSON output is indented: %q", stdout.String())
+	}
+}
+
+func TestRunPlanRejectsPrettyCompactConflict(t *testing.T) {
+	t.Parallel()
+
+	app := newFakeApplication(t)
+	cli := New(Dependencies{App: app}, Options{})
+	var stdout, stderr bytes.Buffer
+
+	code := cli.Run(
+		context.Background(),
+		[]string{"plan", "--version", "v0.3.0", "--output", "json", "--pretty", "--compact"},
+		&stdout,
+		&stderr,
+	)
+
+	if code != ExitUsage {
+		t.Fatalf("Run(plan pretty compact) code = %d", code)
+	}
+	if app.buildPlanCalled {
+		t.Fatal("BuildPlan called for conflicting output flags")
+	}
 }

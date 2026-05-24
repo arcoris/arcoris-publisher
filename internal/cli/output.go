@@ -31,27 +31,3 @@ func writeCLIError(w io.Writer, err error) {
 	}
 	_, _ = fmt.Fprintf(w, "arcpub: %v\n", err)
 }
-
-func writeUsage(w io.Writer) {
-	_, _ = fmt.Fprint(w, `ARCORIS Publisher
-
-Usage:
-  arcpub plan    --manifest arcpub.yaml --version v0.3.0 [--output text|json]
-  arcpub verify  --manifest arcpub.yaml --version v0.3.0 [workflow flags]
-  arcpub publish --manifest arcpub.yaml --version v0.3.0 [workflow flags]
-  arcpub version [--output text|json]
-  arcpub help
-
-Workflow flags:
-  --source-repo PATH       Source Git checkout root. Default: .
-  --staging-dir PATH       Staging directory containing module sources. Default: .
-  --target-root PATH       Target worktree root. Default: .arcpub/targets
-  --dry-run                Verify but do not publish refs.
-
-Output flags:
-  --output text|json       Report format. Default: text.
-  --include-local-paths    Include local absolute filesystem paths in reports.
-  --pretty                 Pretty JSON when --output=json.
-  --compact                Compact JSON when --output=json.
-`)
-}

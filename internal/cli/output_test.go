@@ -22,25 +22,6 @@ import (
 	"arcoris.dev/arcoris-publisher/internal/report"
 )
 
-func TestWriteUsageListsCommands(t *testing.T) {
-	t.Parallel()
-
-	var buf bytes.Buffer
-	writeUsage(&buf)
-
-	for _, want := range []string{
-		"arcpub plan",
-		"arcpub verify",
-		"arcpub publish",
-		"arcpub version",
-		"arcpub help",
-	} {
-		if !strings.Contains(buf.String(), want) {
-			t.Fatalf("usage missing %q:\n%s", want, buf.String())
-		}
-	}
-}
-
 func TestNewRendererUsesCLIReportOptions(t *testing.T) {
 	t.Parallel()
 

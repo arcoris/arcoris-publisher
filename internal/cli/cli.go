@@ -16,6 +16,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"io"
 
 	"arcoris.dev/arcoris-publisher/internal/buildinfo"
@@ -38,41 +39,40 @@ func New(deps Dependencies, opts Options) CLI {
 
 // Run executes one command and returns a process-style exit code.
 func (c CLI) Run(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) int {
-	cmd, rest, err := parseCommand(args)
-	if err != nil {
-		writeCLIError(stderr, err)
-		writeUsage(stderr)
-		return ExitUsage
+	if stdout == nil {
+		stdout = io.Discard
+	}
+	if stderr == nil {
+		stderr = io.Discard
 	}
 
-	switch cmd {
-	case commandHelp:
-		writeUsage(stdout)
-		return ExitOK
-	default:
-		if isHelpRequest(rest) {
-			writeUsage(stdout)
-			return ExitOK
-		}
-	}
+	root := c.newRootCommand(stdout, stderr)
+	root.SetArgs(args)
 
-	switch cmd {
-	case commandPlan:
-		return c.runPlan(ctx, rest, stdout, stderr)
-	case commandVerify:
-		return c.runVerify(ctx, rest, stdout, stderr)
-	case commandPublish:
-		return c.runPublish(ctx, rest, stdout, stderr)
-	case commandVersion:
-		return c.runVersion(ctx, rest, stdout, stderr)
-	default:
-		writeCLIError(stderr, &Error{Code: CodeInvalidCommand, Message: "unknown command"})
-		writeUsage(stderr)
-		return ExitUsage
+	if err := root.ExecuteContext(ctx); err != nil {
+		return exitCodeFor(normalizeCobraError(err), stderr)
 	}
+	return ExitOK
 }
 
 // Run executes one command with default CLI options.
 func Run(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) int {
 	return New(Dependencies{}, Options{}).Run(ctx, args, stdout, stderr)
+}
+
+func exitCodeFor(err error, stderr io.Writer) int {
+	if errors.Is(err, errVerificationFailed) {
+		return ExitVerificationFailed
+	}
+
+	writeCLIError(stderr, err)
+
+	var cliErr *Error
+	if !errors.As(err, &cliErr) {
+		return ExitUsage
+	}
+	if cliErr.isUsage() {
+		return ExitUsage
+	}
+	return ExitError
 }

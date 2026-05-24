@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package cli implements command routing, flag parsing, report rendering, and
-// process exit-code decisions for the ARCORIS Publisher command-line interface.
+// Package cli implements the Cobra-backed command layer for ARCORIS Publisher.
 //
-// The package is deliberately thin. It delegates high-level use cases to
-// internal/app and delegates output formatting to internal/report. It does not
-// load manifests directly, build dependency graphs, execute workflow stages,
-// inspect Git repositories, copy files, rewrite go.mod files, or publish refs.
-// Concrete infrastructure adapters are wired outside the workflow packages and
+// The package is deliberately thin: it parses command names and flags, maps
+// command outcomes to process exit codes, delegates high-level use cases to
+// internal/app, and delegates plan/workflow formatting to internal/report. It
+// does not load manifests directly, build dependency graphs, execute workflow
+// stages, inspect Git repositories, copy files, rewrite go.mod files, or publish
+// refs. Concrete infrastructure adapters are wired by internal/runtime and
 // passed in through application dependencies.
 package cli

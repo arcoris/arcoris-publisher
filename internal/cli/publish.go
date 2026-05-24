@@ -19,27 +19,32 @@ import (
 	"io"
 
 	"arcoris.dev/arcoris-publisher/internal/app"
+	"github.com/spf13/cobra"
 )
 
-func (c CLI) runPublish(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) int {
+func (c CLI) newPublishCommand(output *outputFlags) *cobra.Command {
 	var flags workflowFlags
-	fs := newFlagSet("publish")
-	addWorkflowFlags(fs, &flags, c.opts, true)
-	if err := parseFlagSet(fs, args); err != nil {
-		writeCLIError(stderr, err)
-		return ExitUsage
+	cmd := &cobra.Command{
+		Use:   "publish",
+		Short: "Construct, verify, commit, tag, and push target module repositories",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return c.executePublish(cmd.Context(), flags, outputForCommand(cmd, *output), cmd.OutOrStdout())
+		},
 	}
+	addWorkflowFlags(cmd.Flags(), &flags, c.opts, true)
+	return cmd
+}
 
+func (c CLI) executePublish(ctx context.Context, flags workflowFlags, output outputFlags, stdout io.Writer) error {
 	version, err := parseVersion(flags.version)
 	if err != nil {
-		writeCLIError(stderr, err)
-		return ExitUsage
+		return err
 	}
 
-	reportOptions, err := parseReportOptions(flags.commonFlags)
+	reportOptions, err := parseReportOptions(output)
 	if err != nil {
-		writeCLIError(stderr, err)
-		return ExitUsage
+		return err
 	}
 
 	appOptions := c.opts.App
@@ -47,8 +52,7 @@ func (c CLI) runPublish(ctx context.Context, args []string, stdout io.Writer, st
 
 	application, err := c.deps.application(appOptions)
 	if err != nil {
-		writeCLIError(stderr, err)
-		return ExitError
+		return err
 	}
 
 	result, err := application.Publish(ctx, app.Request{
@@ -59,17 +63,15 @@ func (c CLI) runPublish(ctx context.Context, args []string, stdout io.Writer, st
 		TargetRootDir:       flags.targetRootDir,
 	})
 	if err != nil {
-		writeCLIError(stderr, &Error{Code: CodeUseCaseFailed, Message: "publish failed", Cause: err})
-		return ExitError
+		return &Error{Code: CodeUseCaseFailed, Message: "publish failed", Cause: err}
 	}
 
 	workflowResult := result.Workflow()
 	if err := newRenderer(reportOptions).Workflow(stdout, workflowResult); err != nil {
-		writeCLIError(stderr, &Error{Code: CodeReportFailed, Message: "render workflow report failed", Cause: err})
-		return ExitError
+		return &Error{Code: CodeReportFailed, Message: "render workflow report failed", Cause: err}
 	}
 	if workflowResult.Verify().Failed() {
-		return ExitVerificationFailed
+		return errVerificationFailed
 	}
-	return ExitOK
+	return nil
 }

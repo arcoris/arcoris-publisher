@@ -17,44 +17,47 @@ package cli
 import (
 	"context"
 	"io"
+
+	"github.com/spf13/cobra"
 )
 
-func (c CLI) runPlan(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) int {
-	var flags commonFlags
-	fs := newFlagSet("plan")
-	addCommonFlags(fs, &flags, c.opts, true)
-	if err := parseFlagSet(fs, args); err != nil {
-		writeCLIError(stderr, err)
-		return ExitUsage
+func (c CLI) newPlanCommand(output *outputFlags) *cobra.Command {
+	var flags planFlags
+	cmd := &cobra.Command{
+		Use:   "plan",
+		Short: "Render the executable publication plan",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return c.executePlan(cmd.Context(), flags, outputForCommand(cmd, *output), cmd.OutOrStdout())
+		},
 	}
+	addPlanFlags(cmd.Flags(), &flags, c.opts)
+	return cmd
+}
 
+func (c CLI) executePlan(ctx context.Context, flags planFlags, output outputFlags, stdout io.Writer) error {
 	version, err := parseVersion(flags.version)
 	if err != nil {
-		writeCLIError(stderr, err)
-		return ExitUsage
+		return err
 	}
 
-	reportOptions, err := parseReportOptions(flags)
+	reportOptions, err := parseReportOptions(output)
 	if err != nil {
-		writeCLIError(stderr, err)
-		return ExitUsage
+		return err
 	}
 
 	application, err := c.deps.application(c.opts.App)
 	if err != nil {
-		writeCLIError(stderr, err)
-		return ExitError
+		return err
 	}
 
 	plan, err := application.BuildPlan(ctx, flags.manifest, version)
 	if err != nil {
-		writeCLIError(stderr, &Error{Code: CodeUseCaseFailed, Message: "plan failed", Cause: err})
-		return ExitError
+		return &Error{Code: CodeUseCaseFailed, Message: "plan failed", Cause: err}
 	}
 
 	if err := newRenderer(reportOptions).Plan(stdout, plan); err != nil {
-		writeCLIError(stderr, &Error{Code: CodeReportFailed, Message: "render plan report failed", Cause: err})
-		return ExitError
+		return &Error{Code: CodeReportFailed, Message: "render plan report failed", Cause: err}
 	}
-	return ExitOK
+	return nil
 }

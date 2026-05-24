@@ -38,7 +38,15 @@ const (
 
 	// CodeReportFailed indicates report rendering failed.
 	CodeReportFailed ErrorCode = "report_failed"
+
+	// CodeVerificationFailed indicates verification completed with failed checks.
+	CodeVerificationFailed ErrorCode = "verification_failed"
 )
+
+var errVerificationFailed = &Error{
+	Code:    CodeVerificationFailed,
+	Message: "verification failed",
+}
 
 // Error describes a CLI-layer failure.
 type Error struct {
@@ -64,4 +72,13 @@ func (e *Error) Unwrap() error {
 		return nil
 	}
 	return e.Cause
+}
+
+func (e *Error) isUsage() bool {
+	switch e.Code {
+	case CodeInvalidCommand, CodeInvalidFlags, CodeInvalidVersion:
+		return true
+	default:
+		return false
+	}
 }
