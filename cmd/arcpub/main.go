@@ -14,4 +14,15 @@
 
 package main
 
-func main() {}
+import (
+	"context"
+	"os"
+
+	"arcoris.dev/arcoris-publisher/internal/runtime"
+)
+
+func main() {
+	rt := runtime.New(runtime.DefaultOptions())
+	code := rt.CLI().Run(context.Background(), os.Args[1:], os.Stdout, os.Stderr)
+	os.Exit(code)
+}
