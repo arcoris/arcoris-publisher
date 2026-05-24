@@ -1,0 +1,23 @@
+apiVersion: arcpub.arcoris.dev/v1alpha1
+kind: ModuleManifest
+metadata:
+  name: foundation
+module:
+  type: go
+  path: arcoris.dev/foundation
+verification:
+  go:
+    list: false
+    test: false
+    tidy: false
+publish:
+  entries:
+    - type: file
+      from: go.mod
+      to: go.mod
+    - type: file
+      from: README.md
+      to: README.md
+    - type: directory
+      from: contracts
+      to: contracts

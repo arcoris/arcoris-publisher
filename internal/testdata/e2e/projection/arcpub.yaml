@@ -1,0 +1,21 @@
+apiVersion: arcpub.arcoris.dev/v1alpha1
+kind: StagingManifest
+metadata:
+  name: arcoris-e2e-projection
+source:
+  repository: arcoris/e2e-projection
+  defaultBranch: main
+  stagingRoot: .
+  moduleRoot: staging
+publish:
+  mode: explicit-projection
+  versionPolicy: release-train
+  pushPolicy: fast-forward-only
+defaults:
+  branches:
+    - source: main
+      target: main
+modules:
+  - name: projection
+    sourceDir: staging/projection
+    repository: arcoris/projection

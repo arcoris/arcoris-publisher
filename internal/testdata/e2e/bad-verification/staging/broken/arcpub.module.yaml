@@ -1,0 +1,20 @@
+apiVersion: arcpub.arcoris.dev/v1alpha1
+kind: ModuleManifest
+metadata:
+  name: broken
+module:
+  type: go
+  path: arcoris.dev/broken
+verification:
+  go:
+    list: false
+    test: true
+    tidy: false
+publish:
+  entries:
+    - type: file
+      from: go.mod
+      to: go.mod
+    - type: file
+      from: broken_test.go
+      to: broken_test.go
