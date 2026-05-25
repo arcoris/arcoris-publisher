@@ -77,6 +77,9 @@ func (s FileJournalStore) Load(ctx context.Context, id TransactionID) (Transacti
 	if err := json.Unmarshal(data, &journal); err != nil {
 		return TransactionJournal{}, fmt.Errorf("transaction journal %s is corrupt: %w", filepath.Base(path), err)
 	}
+	if err := validateJournalIdentity(filepath.Base(path), id, journal.ID); err != nil {
+		return TransactionJournal{}, err
+	}
 	return journal, nil
 }
 
@@ -106,6 +109,9 @@ func (s FileJournalStore) List(ctx context.Context) ([]TransactionSummary, error
 		var journal TransactionJournal
 		if err := json.Unmarshal(data, &journal); err != nil {
 			return nil, fmt.Errorf("transaction journal %s is corrupt: %w", entry.Name(), err)
+		}
+		if err := validateJournalIdentity(entry.Name(), "", journal.ID); err != nil {
+			return nil, err
 		}
 		out = append(out, journal.Summary())
 	}
@@ -171,6 +177,19 @@ func (s FileJournalStore) journalPath(id TransactionID) (string, error) {
 
 func (s FileJournalStore) transactionsDir() string {
 	return filepath.Join(s.stateDir, "transactions")
+}
+
+func validateJournalIdentity(filename string, requested TransactionID, actual TransactionID) error {
+	if err := validateTransactionID(actual); err != nil {
+		return fmt.Errorf("transaction journal %s has unsafe transaction id %q", filename, actual)
+	}
+	if expected := strings.TrimSuffix(filename, ".json"); expected != actual.String() {
+		return fmt.Errorf("transaction journal %s contains transaction id %q", filename, actual)
+	}
+	if requested != "" && actual != requested {
+		return fmt.Errorf("transaction journal %s contains transaction id %q, want %q", filename, actual, requested)
+	}
+	return nil
 }
 
 func deriveStateDir(explicit string, targets []modulePreflight) string {

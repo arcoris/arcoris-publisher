@@ -62,6 +62,9 @@ const (
 
 	// CodeRecoveryFailed indicates transaction recovery failed.
 	CodeRecoveryFailed ErrorCode = "recovery_failed"
+
+	// CodePruneFailed indicates transaction journal pruning failed.
+	CodePruneFailed ErrorCode = "prune_failed"
 )
 
 // Error describes why publication could not complete.

@@ -52,6 +52,31 @@ type TransactionReport struct {
 	ManualRecoveryActions []ManualRecoveryActionReport `json:"manualRecoveryActions,omitempty"`
 }
 
+// TransactionPruneReport is the stable report DTO for transaction pruning.
+type TransactionPruneReport struct {
+	Kind         string                  `json:"kind"`
+	Status       string                  `json:"status"`
+	MatchedCount int                     `json:"matchedCount"`
+	DeletedCount int                     `json:"deletedCount"`
+	SkippedCount int                     `json:"skippedCount"`
+	Matched      []TransactionPruneEntry `json:"matched,omitempty"`
+	Deleted      []TransactionPruneEntry `json:"deleted,omitempty"`
+	Skipped      []TransactionPruneEntry `json:"skipped,omitempty"`
+	Warnings     []string                `json:"warnings,omitempty"`
+}
+
+// TransactionPruneEntry describes one transaction considered by prune.
+type TransactionPruneEntry struct {
+	ID             string `json:"id"`
+	Status         string `json:"status"`
+	RollbackStatus string `json:"rollbackStatus,omitempty"`
+	Version        string `json:"version,omitempty"`
+	StartedAt      string `json:"startedAt,omitempty"`
+	UpdatedAt      string `json:"updatedAt,omitempty"`
+	Path           string `json:"path,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+}
+
 // TransactionModuleReport describes one module's transaction refs and state.
 type TransactionModuleReport struct {
 	Module              string `json:"module"`
@@ -143,6 +168,38 @@ func BuildTransactionReport(journal publish.TransactionJournal, opts Options) Tr
 	return out
 }
 
+// BuildTransactionPruneReport converts prune results to a path-safe DTO.
+func BuildTransactionPruneReport(result publish.PruneResult, opts Options) TransactionPruneReport {
+	return TransactionPruneReport{
+		Kind:         "transactions-prune",
+		Status:       string(result.Status),
+		MatchedCount: len(result.Matched),
+		DeletedCount: len(result.Deleted),
+		SkippedCount: len(result.Skipped),
+		Matched:      buildTransactionPruneEntries(result.Matched, opts),
+		Deleted:      buildTransactionPruneEntries(result.Deleted, opts),
+		Skipped:      buildTransactionPruneEntries(result.Skipped, opts),
+		Warnings:     append([]string(nil), result.Warnings...),
+	}
+}
+
+func buildTransactionPruneEntries(entries []publish.PruneEntry, opts Options) []TransactionPruneEntry {
+	out := make([]TransactionPruneEntry, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, TransactionPruneEntry{
+			ID:             entry.ID.String(),
+			Status:         string(entry.Status),
+			RollbackStatus: string(entry.Rollback),
+			Version:        entry.Version,
+			StartedAt:      entry.StartedAt.Format(timeFormat),
+			UpdatedAt:      entry.UpdatedAt.Format(timeFormat),
+			Path:           includePath(entry.Path, opts),
+			Reason:         entry.Reason,
+		})
+	}
+	return out
+}
+
 func writeTransactionListText(w io.Writer, report TransactionListReport) error {
 	if err := writeLine(w, "Transactions"); err != nil {
 		return err
@@ -157,6 +214,45 @@ func writeTransactionListText(w io.Writer, report TransactionListReport) error {
 		}
 		if err := writeLine(w, "  %s: %s", tx.ID, status); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func writeTransactionPruneText(w io.Writer, report TransactionPruneReport) error {
+	if err := writeLine(w, "Transactions prune"); err != nil {
+		return err
+	}
+	if err := writeLine(w, "  Status: %s", report.Status); err != nil {
+		return err
+	}
+	if err := writeLine(w, "  Matched: %d", report.MatchedCount); err != nil {
+		return err
+	}
+	if err := writeLine(w, "  Deleted: %d", report.DeletedCount); err != nil {
+		return err
+	}
+	if err := writeLine(w, "  Skipped: %d", report.SkippedCount); err != nil {
+		return err
+	}
+	if len(report.Matched) > 0 {
+		if err := writeLine(w, "  Matched:"); err != nil {
+			return err
+		}
+		for _, entry := range report.Matched {
+			if err := writeLine(w, "    %s: %s %s", entry.ID, entry.Status, entry.Reason); err != nil {
+				return err
+			}
+		}
+	}
+	if len(report.Skipped) > 0 {
+		if err := writeLine(w, "  Skipped:"); err != nil {
+			return err
+		}
+		for _, entry := range report.Skipped {
+			if err := writeLine(w, "    %s: %s %s", entry.ID, entry.Status, entry.Reason); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

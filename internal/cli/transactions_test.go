@@ -17,8 +17,10 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"arcoris.dev/arcoris-publisher/internal/app"
 )
@@ -77,6 +79,91 @@ func TestRunTransactionsShowRequiresID(t *testing.T) {
 	}
 	if app.showCalled {
 		t.Fatal("ShowTransaction called for missing id")
+	}
+}
+
+func TestRunTransactionsPrunePassesFilters(t *testing.T) {
+	t.Parallel()
+
+	app := newFakeApplication(t)
+	cli := New(Dependencies{App: app}, Options{})
+	var stdout, stderr bytes.Buffer
+
+	code := cli.Run(context.Background(), []string{
+		"transactions", "prune",
+		"--state-dir", "/state",
+		"--status", "committed,rolled_back",
+		"--older-than", "30d",
+		"--dry-run",
+		"--output", "json",
+	}, &stdout, &stderr)
+
+	if code != ExitOK {
+		t.Fatalf("Run(transactions prune) code = %d stderr = %s", code, stderr.String())
+	}
+	if !app.pruneCalled {
+		t.Fatal("PruneTransactions not called")
+	}
+	if app.transactionPruneReq.StateDir != "/state" ||
+		len(app.transactionPruneReq.Statuses) != 2 ||
+		app.transactionPruneReq.OlderThan != 30*24*time.Hour ||
+		!app.transactionPruneReq.DryRun {
+		t.Fatalf("prune request = %+v", app.transactionPruneReq)
+	}
+}
+
+func TestRunTransactionsPruneUsageErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "invalid status", args: []string{"transactions", "prune", "--status", "pending", "--dry-run"}},
+		{name: "invalid duration", args: []string{"transactions", "prune", "--older-than", "later"}},
+		{name: "actual no filter", args: []string{"transactions", "prune"}},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			app := newFakeApplication(t)
+			cli := New(Dependencies{App: app}, Options{})
+			var stdout, stderr bytes.Buffer
+
+			code := cli.Run(context.Background(), tt.args, &stdout, &stderr)
+
+			if code != ExitUsage {
+				t.Fatalf("Run(%v) code = %d stderr = %s", tt.args, code, stderr.String())
+			}
+			if app.pruneCalled {
+				t.Fatalf("PruneTransactions called for %s", tt.name)
+			}
+		})
+	}
+}
+
+func TestRunTransactionsPruneFailureIsUseCaseError(t *testing.T) {
+	t.Parallel()
+
+	app := newFakeApplication(t)
+	app.transactionError = errors.New("prune failed")
+	cli := New(Dependencies{App: app}, Options{})
+	var stdout, stderr bytes.Buffer
+
+	code := cli.Run(context.Background(), []string{
+		"transactions", "prune",
+		"--status", "committed",
+	}, &stdout, &stderr)
+
+	if code != ExitError {
+		t.Fatalf("Run(transactions prune) code = %d stderr = %s", code, stderr.String())
+	}
+	if !app.pruneCalled {
+		t.Fatal("PruneTransactions not called")
+	}
+	if stdout.Len() == 0 {
+		t.Fatal("expected prune report on stdout")
 	}
 }
 

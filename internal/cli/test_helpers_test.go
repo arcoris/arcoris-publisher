@@ -50,6 +50,7 @@ type fakeApplication struct {
 	listCalled            bool
 	showCalled            bool
 	rollbackCalled        bool
+	pruneCalled           bool
 	buildPlanManifest     string
 	buildPlanVersion      versioning.Version
 	prepareTargetsRequest app.Request
@@ -57,6 +58,8 @@ type fakeApplication struct {
 	verifyRequest         app.Request
 	publishRequest        app.Request
 	transactionRequest    app.TransactionRequest
+	transactionPruneReq   app.TransactionPruneRequest
+	transactionPruneRes   app.TransactionPruneResult
 	buildPlanError        error
 	prepareTargetsError   error
 	preflightError        error
@@ -124,6 +127,12 @@ func (f *fakeApplication) RollbackTransaction(_ context.Context, req app.Transac
 	f.rollbackCalled = true
 	f.transactionRequest = req
 	return app.TransactionResult{}, f.transactionError
+}
+
+func (f *fakeApplication) PruneTransactions(_ context.Context, req app.TransactionPruneRequest) (app.TransactionPruneResult, error) {
+	f.pruneCalled = true
+	f.transactionPruneReq = req
+	return f.transactionPruneRes, f.transactionError
 }
 
 type realApplicationOptions struct {

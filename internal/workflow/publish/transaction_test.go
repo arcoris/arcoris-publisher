@@ -147,6 +147,26 @@ func TestFileJournalStoreCorruptJournalBlocksListAndPending(t *testing.T) {
 	}
 }
 
+func TestFileJournalStoreMismatchedJournalIDFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	store := NewFileJournalStore(t.TempDir())
+	dir := store.transactionsDir()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	data := []byte(`{"schemaVersion":1,"id":"tx-other","status":"committed","startedAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`)
+	if err := os.WriteFile(filepath.Join(dir, "tx-mismatch.json"), data, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	if _, err := store.List(ctx); err == nil {
+		t.Fatal("List() error = nil")
+	}
+	if _, err := store.Load(ctx, "tx-mismatch"); err == nil {
+		t.Fatal("Load() error = nil")
+	}
+}
+
 func TestTransactionLockConflict(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()

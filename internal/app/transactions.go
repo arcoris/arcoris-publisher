@@ -16,6 +16,7 @@ package app
 
 import (
 	"context"
+	"time"
 
 	"arcoris.dev/arcoris-publisher/internal/workflow/publish"
 )
@@ -23,10 +24,18 @@ import (
 // TransactionID identifies one durable publish transaction.
 type TransactionID = publish.TransactionID
 
+// TransactionStatus identifies one durable publish transaction status.
+type TransactionStatus = publish.TransactionStatus
+
 // RollbackMode controls publish transaction rollback behavior.
 type RollbackMode = publish.RollbackMode
 
 const (
+	// TransactionStatusCommitted means final refs were published successfully.
+	TransactionStatusCommitted = publish.TransactionStatusCommitted
+	// TransactionStatusRolledBack means rollback completed successfully.
+	TransactionStatusRolledBack = publish.TransactionStatusRolledBack
+
 	// RollbackAutomatic attempts rollback immediately after publish failure.
 	RollbackAutomatic = publish.RollbackAutomatic
 	// RollbackManual leaves rollback to the recovery command.
@@ -44,6 +53,14 @@ type TransactionRequest struct {
 	TransactionID publish.TransactionID
 }
 
+// TransactionPruneRequest selects terminal publish transactions to prune.
+type TransactionPruneRequest struct {
+	StateDir  string
+	Statuses  []publish.TransactionStatus
+	OlderThan time.Duration
+	DryRun    bool
+}
+
 // TransactionListResult contains durable publish transaction summaries.
 type TransactionListResult struct{ summaries []publish.TransactionSummary }
 
@@ -59,6 +76,12 @@ type TransactionResult struct{ journal publish.TransactionJournal }
 
 // Journal returns the transaction journal.
 func (r TransactionResult) Journal() publish.TransactionJournal { return r.journal }
+
+// TransactionPruneResult contains transaction prune details.
+type TransactionPruneResult struct{ result publish.PruneResult }
+
+// Result returns the workflow prune result.
+func (r TransactionPruneResult) Result() publish.PruneResult { return r.result }
 
 // ListTransactions lists durable publish transactions.
 func (a App) ListTransactions(ctx context.Context, req TransactionRequest) (TransactionListResult, error) {
@@ -88,4 +111,18 @@ func (a App) RollbackTransaction(ctx context.Context, req TransactionRequest) (T
 		return TransactionResult{journal: journal}, err
 	}
 	return TransactionResult{journal: journal}, nil
+}
+
+// PruneTransactions safely removes selected terminal transaction journals.
+func (a App) PruneTransactions(ctx context.Context, req TransactionPruneRequest) (TransactionPruneResult, error) {
+	result, err := publish.New(a.workflowDeps.Publish, a.workflowOptions.Publish).
+		PruneTransactions(ctx, req.StateDir, publish.PruneOptions{
+			Statuses:  req.Statuses,
+			OlderThan: req.OlderThan,
+			DryRun:    req.DryRun,
+		})
+	if err != nil {
+		return TransactionPruneResult{result: result}, err
+	}
+	return TransactionPruneResult{result: result}, nil
 }

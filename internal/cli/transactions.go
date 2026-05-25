@@ -18,7 +18,9 @@ import (
 	"context"
 	"io"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"arcoris.dev/arcoris-publisher/internal/app"
 	"github.com/spf13/cobra"
@@ -29,6 +31,12 @@ type transactionFlags struct {
 	stateDir      string
 }
 
+type transactionPruneFlags struct {
+	statuses  []string
+	olderThan string
+	dryRun    bool
+}
+
 func (c CLI) newTransactionsCommand(output *outputFlags) *cobra.Command {
 	var flags transactionFlags
 	cmd := &cobra.Command{
@@ -37,6 +45,7 @@ func (c CLI) newTransactionsCommand(output *outputFlags) *cobra.Command {
 	}
 	cmd.AddCommand(c.newTransactionsListCommand(&flags, output))
 	cmd.AddCommand(c.newTransactionsShowCommand(&flags, output))
+	cmd.AddCommand(c.newTransactionsPruneCommand(&flags, output))
 	addTransactionFlags(cmd.PersistentFlags(), &flags, c.opts)
 	return cmd
 }
@@ -66,6 +75,24 @@ func (c CLI) newTransactionsShowCommand(flags *transactionFlags, output *outputF
 			return c.executeTransactionsShow(cmd.Context(), *flags, outputForCommand(cmd, *output), args[0], cmd.OutOrStdout())
 		},
 	}
+}
+
+func (c CLI) newTransactionsPruneCommand(flags *transactionFlags, output *outputFlags) *cobra.Command {
+	var pruneFlags transactionPruneFlags
+	cmd := &cobra.Command{
+		Use:   "prune",
+		Short: "Prune old terminal publish transaction journals",
+		Long: "Prune removes only terminal publish transaction journals selected by explicit filters. " +
+			"Pending, failed, rolling_back, and rollback_failed journals are preserved; publish locks are never removed.",
+		Args: noArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return c.executeTransactionsPrune(cmd.Context(), *flags, pruneFlags, outputForCommand(cmd, *output), cmd.OutOrStdout())
+		},
+	}
+	cmd.Flags().StringArrayVar(&pruneFlags.statuses, "status", nil, "terminal status to prune: committed or rolled_back; may be repeated or comma-separated")
+	cmd.Flags().StringVar(&pruneFlags.olderThan, "older-than", "", "only prune journals older than this age, for example 720h or 30d")
+	cmd.Flags().BoolVar(&pruneFlags.dryRun, "dry-run", false, "preview matching terminal journals without deleting them")
+	return cmd
 }
 
 func (c CLI) newRollbackCommand(output *outputFlags) *cobra.Command {
@@ -154,9 +181,89 @@ func (c CLI) executeRollback(ctx context.Context, flags transactionFlags, output
 	return nil
 }
 
+func (c CLI) executeTransactionsPrune(
+	ctx context.Context,
+	flags transactionFlags,
+	pruneFlags transactionPruneFlags,
+	output outputFlags,
+	stdout io.Writer,
+) error {
+	reportOptions, err := parseReportOptions(output)
+	if err != nil {
+		return err
+	}
+	statuses, err := parsePruneStatuses(pruneFlags.statuses)
+	if err != nil {
+		return err
+	}
+	olderThan, err := parsePruneDuration(pruneFlags.olderThan)
+	if err != nil {
+		return err
+	}
+	if !pruneFlags.dryRun && len(statuses) == 0 && olderThan <= 0 {
+		return usageError("refusing to prune without an explicit --status or --older-than filter")
+	}
+
+	application, err := c.deps.application(c.opts.App)
+	if err != nil {
+		return err
+	}
+	result, err := application.PruneTransactions(ctx, app.TransactionPruneRequest{
+		StateDir:  transactionStateDir(flags),
+		Statuses:  statuses,
+		OlderThan: olderThan,
+		DryRun:    pruneFlags.dryRun,
+	})
+	if renderErr := newRenderer(reportOptions).TransactionPrune(stdout, result.Result()); renderErr != nil {
+		return &Error{Code: CodeReportFailed, Message: "render transaction prune report failed", Cause: renderErr}
+	}
+	if err != nil {
+		return &Error{Code: CodeUseCaseFailed, Message: "prune transactions failed", Cause: err}
+	}
+	return nil
+}
+
 func transactionStateDir(flags transactionFlags) string {
 	if strings.TrimSpace(flags.stateDir) != "" {
 		return flags.stateDir
 	}
 	return filepath.Join(flags.targetRootDir, ".arcpub", "state")
+}
+
+func parsePruneStatuses(values []string) ([]app.TransactionStatus, error) {
+	var out []app.TransactionStatus
+	for _, value := range values {
+		for _, part := range strings.Split(value, ",") {
+			status := strings.TrimSpace(strings.ToLower(part))
+			if status == "" {
+				continue
+			}
+			switch app.TransactionStatus(status) {
+			case app.TransactionStatusCommitted, app.TransactionStatusRolledBack:
+				out = append(out, app.TransactionStatus(status))
+			default:
+				return nil, usageError("invalid --status; expected committed or rolled_back")
+			}
+		}
+	}
+	return out, nil
+}
+
+func parsePruneDuration(value string) (time.Duration, error) {
+	value = strings.TrimSpace(strings.ToLower(value))
+	if value == "" {
+		return 0, nil
+	}
+	if strings.HasSuffix(value, "d") {
+		days, err := strconv.ParseFloat(strings.TrimSuffix(value, "d"), 64)
+		if err != nil || days < 0 {
+			return 0, usageError("invalid --older-than; expected Go duration such as 720h or day duration such as 30d")
+		}
+		return time.Duration(days * float64(24*time.Hour)), nil
+	}
+	duration, err := time.ParseDuration(value)
+	if err != nil || duration < 0 {
+		return 0, usageError("invalid --older-than; expected Go duration such as 720h or day duration such as 30d")
+	}
+	return duration, nil
 }

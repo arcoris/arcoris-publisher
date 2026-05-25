@@ -62,6 +62,51 @@ func TestBuildTransactionListReportIncludesRollbackStatus(t *testing.T) {
 	}
 }
 
+func TestTransactionPruneReportHidesLocalPathsByDefault(t *testing.T) {
+	t.Parallel()
+
+	report := BuildTransactionPruneReport(transactionPruneFixture(), Options{})
+
+	if report.Matched[0].Path != "" {
+		t.Fatalf("Path leaked = %q", report.Matched[0].Path)
+	}
+}
+
+func TestRendererTransactionPruneJSONAndText(t *testing.T) {
+	t.Parallel()
+
+	var jsonBuf bytes.Buffer
+	if err := New(Options{Format: FormatJSON, Pretty: true}).TransactionPrune(&jsonBuf, transactionPruneFixture()); err != nil {
+		t.Fatalf("TransactionPrune(JSON) error = %v", err)
+	}
+	if !strings.Contains(jsonBuf.String(), `"kind": "transactions-prune"`) ||
+		!strings.Contains(jsonBuf.String(), `"status": "dry_run"`) {
+		t.Fatalf("transaction prune JSON = %s", jsonBuf.String())
+	}
+	if strings.Contains(jsonBuf.String(), "/state") {
+		t.Fatalf("transaction prune JSON leaked local path: %s", jsonBuf.String())
+	}
+
+	var textBuf bytes.Buffer
+	if err := New(Options{Format: FormatText}).TransactionPrune(&textBuf, transactionPruneFixture()); err != nil {
+		t.Fatalf("TransactionPrune(text) error = %v", err)
+	}
+	if !strings.Contains(textBuf.String(), "Transactions prune") ||
+		!strings.Contains(textBuf.String(), "Matched: 1") {
+		t.Fatalf("transaction prune text = %s", textBuf.String())
+	}
+}
+
+func TestTransactionPruneReportIncludesLocalPathsWhenRequested(t *testing.T) {
+	t.Parallel()
+
+	report := BuildTransactionPruneReport(transactionPruneFixture(), Options{IncludeLocalPaths: true})
+
+	if report.Matched[0].Path != "/state/transactions/tx-test.json" {
+		t.Fatalf("Path = %q", report.Matched[0].Path)
+	}
+}
+
 func transactionFixture() publish.TransactionJournal {
 	now := time.Unix(1, 2).UTC()
 	return publish.TransactionJournal{
@@ -84,6 +129,30 @@ func transactionFixture() publish.TransactionJournal {
 			Repository: manifest.RepositoryRef("arcoris/foundation"),
 			Ref:        "refs/heads/main",
 			Message:    "manual restore required",
+		}},
+	}
+}
+
+func transactionPruneFixture() publish.PruneResult {
+	now := time.Unix(1, 2).UTC()
+	return publish.PruneResult{
+		Status: publish.PruneStatusDryRun,
+		Matched: []publish.PruneEntry{{
+			ID:        "tx-test",
+			Status:    publish.TransactionStatusCommitted,
+			Version:   "v0.1.0",
+			StartedAt: now,
+			UpdatedAt: now,
+			Path:      "/state/transactions/tx-test.json",
+			Reason:    "status committed",
+		}},
+		Skipped: []publish.PruneEntry{{
+			ID:        "tx-pending",
+			Status:    publish.TransactionStatusPending,
+			StartedAt: now,
+			UpdatedAt: now,
+			Path:      "/state/transactions/tx-pending.json",
+			Reason:    "status is not prunable",
 		}},
 	}
 }

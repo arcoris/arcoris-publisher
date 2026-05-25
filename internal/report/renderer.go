@@ -79,6 +79,12 @@ func (r Renderer) Transaction(w io.Writer, journal publish.TransactionJournal) e
 	return renderFormatted(w, report, r.opts, writeTransactionText)
 }
 
+// TransactionPrune renders a publish transaction prune report.
+func (r Renderer) TransactionPrune(w io.Writer, result publish.PruneResult) error {
+	report := BuildTransactionPruneReport(result, r.opts)
+	return renderFormatted(w, report, r.opts, writeTransactionPruneText)
+}
+
 func renderFormatted[T any](
 	w io.Writer,
 	value T,
