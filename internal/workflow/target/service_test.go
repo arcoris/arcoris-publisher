@@ -16,8 +16,10 @@ package target
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"arcoris.dev/arcoris-publisher/internal/plan"
 	"arcoris.dev/arcoris-publisher/internal/ports/git"
 	"arcoris.dev/arcoris-publisher/internal/testutil/porttest"
 	"arcoris.dev/arcoris-publisher/internal/testutil/publishertest"
@@ -65,4 +67,99 @@ func TestPrepareRejectsDirtyWorktreeWhenRequireClean(t *testing.T) {
 	if !validation.Has(IssueWorktreeDirty) {
 		t.Fatalf("validation issues = %v", validation.Issues)
 	}
+}
+
+func TestPrepareRejectsStatusError(t *testing.T) {
+	p, fs, fakeGit, worktree := targetFixture(t)
+	fakeGit.StatusErrors[worktree] = errors.New("not a git repository")
+
+	_, err := New(
+		Dependencies{FS: fs, Git: fakeGit},
+		Options{},
+	).Prepare(context.Background(), Request{Plan: p, RootDir: "/target"})
+
+	validation, ok := err.(*ValidationError)
+	if !ok {
+		t.Fatalf("error type = %T", err)
+	}
+	if !validation.Has(IssueWorktreeStatusFailed) {
+		t.Fatalf("validation issues = %v", validation.Issues)
+	}
+}
+
+func TestPrepareFetchFailurePolicy(t *testing.T) {
+	tests := []struct {
+		name string
+		opts Options
+		want IssueCode
+	}{
+		{
+			name: "required",
+			opts: Options{Fetch: true, FetchRequired: true},
+			want: IssueFetchFailed,
+		},
+		{
+			name: "best effort",
+			opts: Options{Fetch: true},
+		},
+		{
+			name: "disabled",
+			opts: Options{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p, fs, fakeGit, _ := targetFixture(t)
+			fakeGit.FetchError = errors.New("offline")
+
+			_, err := New(Dependencies{FS: fs, Git: fakeGit}, tt.opts).
+				Prepare(context.Background(), Request{Plan: p, RootDir: "/target"})
+
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("Prepare() error = %v", err)
+				}
+				return
+			}
+
+			validation, ok := err.(*ValidationError)
+			if !ok {
+				t.Fatalf("error type = %T", err)
+			}
+			if !validation.Has(tt.want) {
+				t.Fatalf("validation issues = %v", validation.Issues)
+			}
+		})
+	}
+}
+
+func TestPrepareCleanGitWorktreeSucceeds(t *testing.T) {
+	p, fs, fakeGit, _ := targetFixture(t)
+
+	result, err := New(Dependencies{FS: fs, Git: fakeGit}, Options{}).
+		Prepare(context.Background(), Request{Plan: p, RootDir: "/target"})
+
+	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	if result.Len() != 1 {
+		t.Fatalf("Len() = %d, want 1", result.Len())
+	}
+}
+
+func targetFixture(t *testing.T) (plan.Plan, *porttest.FileSystem, *porttest.Git, string) {
+	t.Helper()
+	p, err := publishertest.Plan(
+		publishertest.PlanOptions{},
+		publishertest.Module{Name: "foundation"},
+	)
+	if err != nil {
+		t.Fatalf("publishertest.Plan() error = %v", err)
+	}
+
+	fs := porttest.NewFileSystem()
+	worktree := "/target/arcoris__foundation"
+	fs.AddDir(worktree)
+	return p, fs, porttest.NewGit(), worktree
 }

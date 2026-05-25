@@ -47,7 +47,12 @@ func (s Service) Publish(ctx context.Context, req Request) (Result, error) {
 		return Result{}, err
 	}
 
-	results, err := s.publishModules(ctx, req)
+	preflight, err := s.preflightModules(ctx, req)
+	if err != nil {
+		return Result{}, err
+	}
+
+	results, err := s.publishModules(ctx, req, preflight)
 	if err != nil {
 		return Result{}, err
 	}
@@ -73,11 +78,30 @@ func (s Service) validateRequest(req Request) error {
 	return nil
 }
 
-// publishModules publishes planned modules in deterministic plan order.
-func (s Service) publishModules(ctx context.Context, req Request) ([]ModuleResult, error) {
-	results := make([]ModuleResult, 0, req.Plan.Len())
+// preflightModules validates all modules before any Git mutation is attempted.
+func (s Service) preflightModules(ctx context.Context, req Request) ([]modulePreflight, error) {
+	preflight := make([]modulePreflight, 0, req.Plan.Len())
 	for _, mod := range req.Plan.Modules() {
-		mr, err := s.publishModule(ctx, req, mod.Name())
+		item, err := s.preflightModule(ctx, req, mod)
+		if err != nil {
+			return nil, err
+		}
+		preflight = append(preflight, item)
+	}
+
+	return preflight, nil
+}
+
+// publishModules publishes planned modules in deterministic plan order after
+// all preflight checks have passed.
+func (s Service) publishModules(
+	ctx context.Context,
+	req Request,
+	preflight []modulePreflight,
+) ([]ModuleResult, error) {
+	results := make([]ModuleResult, 0, len(preflight))
+	for _, item := range preflight {
+		mr, err := s.publishModule(ctx, req, item)
 		if err != nil {
 			return nil, err
 		}
@@ -87,52 +111,87 @@ func (s Service) publishModules(ctx context.Context, req Request) ([]ModuleResul
 	return results, nil
 }
 
-// publishModule publishes one changed module target worktree.
-func (s Service) publishModule(
+type modulePreflight struct {
+	mod          plan.ModulePlan
+	worktree     string
+	sourceModule source.ModuleSnapshot
+	skip         bool
+}
+
+// preflightModule validates one module without mutating Git.
+func (s Service) preflightModule(
 	ctx context.Context,
 	req Request,
-	name manifest.ModuleName,
-) (ModuleResult, error) {
-	mod, _ := req.Plan.ModuleByName(name)
+	mod plan.ModulePlan,
+) (modulePreflight, error) {
+	name := mod.Name()
 	worktree, ok := targetWorktree(req, name)
 	if !ok {
-		return ModuleResult{}, &Error{
+		return modulePreflight{}, &Error{
 			Code:    CodeInvalidRequest,
 			Message: fmt.Sprintf("target workspace for %s is missing", name),
+		}
+	}
+	if len(mod.Branches()) != 1 {
+		return modulePreflight{}, &Error{
+			Code:    CodePreflightFailed,
+			Message: fmt.Sprintf("module %s has %d branch mappings; multi-branch publish is not supported yet", name, len(mod.Branches())),
 		}
 	}
 
 	sourceModule, ok := sourceModuleForPublish(req.Source, name)
 	if !ok {
-		return ModuleResult{}, &Error{
+		return modulePreflight{}, &Error{
 			Code:    CodeMissingSourceSnapshot,
 			Message: fmt.Sprintf("source snapshot for %s is missing", name),
 		}
 	}
 
-	skip := s.shouldSkipModule(ctx, req, name, worktree)
-	if skip {
-		return ModuleResult{module: name, skipped: true}, nil
+	skip, err := s.shouldSkipModule(ctx, req, name, worktree)
+	if err != nil {
+		return modulePreflight{}, err
+	}
+
+	if err := s.preflightTag(ctx, req, mod, worktree); err != nil {
+		return modulePreflight{}, err
+	}
+
+	return modulePreflight{
+		mod:          mod,
+		worktree:     worktree,
+		sourceModule: sourceModule,
+		skip:         skip,
+	}, nil
+}
+
+// publishModule publishes one changed module target worktree.
+func (s Service) publishModule(
+	ctx context.Context,
+	req Request,
+	item modulePreflight,
+) (ModuleResult, error) {
+	if item.skip {
+		return ModuleResult{module: item.mod.Name(), skipped: true}, nil
 	}
 	if s.opts.DryRun {
-		return ModuleResult{module: name, skipped: false}, nil
+		return ModuleResult{module: item.mod.Name(), skipped: false}, nil
 	}
 
-	commit, err := s.commitWorktree(ctx, worktree, mod, sourceModule, req)
+	commit, err := s.commitWorktree(ctx, item.worktree, item.mod, item.sourceModule, req)
 	if err != nil {
 		return ModuleResult{}, err
 	}
 
-	if err := s.pushBranches(ctx, req, mod, worktree); err != nil {
+	if err := s.pushBranches(ctx, req, item.mod, item.worktree); err != nil {
 		return ModuleResult{}, err
 	}
 
-	tags, err := s.createAndPushTags(ctx, req, mod, worktree, commit)
+	tags, err := s.createAndPushTags(ctx, req, item.mod, item.worktree, commit)
 	if err != nil {
 		return ModuleResult{}, err
 	}
 
-	return ModuleResult{module: name, commit: commit, tags: tags, pushed: true}, nil
+	return ModuleResult{module: item.mod.Name(), commit: commit, tags: tags, pushed: true}, nil
 }
 
 // targetWorktree returns the prepared worktree path for name.
@@ -153,13 +212,20 @@ func (s Service) shouldSkipModule(
 	req Request,
 	name manifest.ModuleName,
 	worktree string,
-) bool {
+) (bool, error) {
 	status, err := s.deps.Git.Status(ctx, worktree)
 	if err == nil {
-		return !status.IsDirty()
+		return !status.IsDirty(), nil
+	}
+	if !s.opts.AllowStatusFallback {
+		return false, &Error{
+			Code:    CodePreflightFailed,
+			Message: fmt.Sprintf("module %s target status failed", name),
+			Cause:   err,
+		}
 	}
 
-	return !stageResultsChanged(req, name)
+	return !stageResultsChanged(req, name), nil
 }
 
 // stageResultsChanged is the documented fallback for tests and degraded Git
@@ -211,6 +277,53 @@ func sourceModuleForPublish(
 	}
 
 	return source.ModuleSnapshot{}, false
+}
+
+// preflightTag rejects local or remote release tag collisions before branch
+// refs can be mutated.
+func (s Service) preflightTag(
+	ctx context.Context,
+	req Request,
+	mod plan.ModulePlan,
+	worktree string,
+) error {
+	if !req.Plan.PublishPolicy().Tags().Enabled() {
+		return nil
+	}
+
+	tag := git.TagName(mod.Version().String())
+	localExists, err := s.deps.Git.TagExists(ctx, worktree, tag)
+	if err != nil {
+		return &Error{
+			Code:    CodePreflightFailed,
+			Message: fmt.Sprintf("module %s local tag lookup failed for %s", mod.Name(), tag),
+			Cause:   err,
+		}
+	}
+	if localExists {
+		return &Error{
+			Code:    CodePreflightFailed,
+			Message: fmt.Sprintf("module %s local tag %s already exists", mod.Name(), tag),
+		}
+	}
+
+	remoteRef := "refs/tags/" + tag.String()
+	remoteExists, err := s.deps.Git.RemoteRefExists(ctx, worktree, s.opts.RemoteName, remoteRef)
+	if err != nil {
+		return &Error{
+			Code:    CodePreflightFailed,
+			Message: fmt.Sprintf("module %s remote tag lookup failed for %s", mod.Name(), tag),
+			Cause:   err,
+		}
+	}
+	if remoteExists {
+		return &Error{
+			Code:    CodePreflightFailed,
+			Message: fmt.Sprintf("module %s remote tag %s already exists", mod.Name(), tag),
+		}
+	}
+
+	return nil
 }
 
 // createAndPushTags creates and pushes the release tag after branch refs are

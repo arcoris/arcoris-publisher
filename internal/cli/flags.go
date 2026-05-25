@@ -96,7 +96,7 @@ func addWorkflowFlags(flags *pflag.FlagSet, values *workflowFlags, opts Options,
 	flags.StringVar(&values.stagingDir, "staging-dir", values.stagingDir, "staging directory containing module sources")
 	flags.StringVar(&values.targetRootDir, "target-root", values.targetRootDir, "directory containing target worktrees")
 	if includeDryRun {
-		flags.BoolVar(&values.dryRun, "dry-run", values.dryRun, "run through verification without publishing mutations")
+		flags.BoolVar(&values.dryRun, "dry-run", values.dryRun, "construct and verify target worktrees, then skip commit, tag, and push")
 	}
 }
 

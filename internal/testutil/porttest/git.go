@@ -44,11 +44,26 @@ type Git struct {
 	// StatusErrors forces Status to fail for a worktree path.
 	StatusErrors map[string]error
 
+	// FetchError forces Fetch to fail.
+	FetchError error
+
 	// PushError forces Push to fail.
 	PushError error
 
 	// PushTagError forces PushTag to fail.
 	PushTagError error
+
+	// Tags reports local tag existence by tag name.
+	Tags map[git.TagName]bool
+
+	// RemoteRefs reports remote ref existence by "remote\x00ref".
+	RemoteRefs map[string]bool
+
+	// TagExistsError forces TagExists to fail.
+	TagExistsError error
+
+	// RemoteRefExistsError forces RemoteRefExists to fail.
+	RemoteRefExistsError error
 
 	// CommitHash is returned by Commit when non-empty.
 	CommitHash git.CommitHash
@@ -62,6 +77,8 @@ func NewGit() *Git {
 	return &Git{
 		Statuses:     map[string]git.Status{},
 		StatusErrors: map[string]error{},
+		Tags:         map[git.TagName]bool{},
+		RemoteRefs:   map[string]bool{},
 		CommitHash:   "abcdef1234567890",
 	}
 }
@@ -94,9 +111,15 @@ func (g *Git) RefExists(context.Context, string, string) (bool, error) {
 	return false, nil
 }
 
-// RemoteRefExists reports that remote refs are absent.
-func (g *Git) RemoteRefExists(context.Context, string, string, string) (bool, error) {
-	return false, nil
+// RemoteRefExists reports configured remote refs.
+func (g *Git) RemoteRefExists(_ context.Context, repoDir string, remote string, ref string) (bool, error) {
+	if g.RemoteRefExistsError != nil {
+		return false, g.RemoteRefExistsError
+	}
+	if g.RemoteRefs[remoteRefKeyForRepo(repoDir, remote, ref)] {
+		return true, nil
+	}
+	return g.RemoteRefs[remoteRefKey(remote, ref)], nil
 }
 
 // CommitMessage returns an empty synthetic message.
@@ -160,7 +183,7 @@ func (g *Git) Clone(_ context.Context, remoteURL string, dir string, _ git.Clone
 // Fetch records a fetch operation.
 func (g *Git) Fetch(_ context.Context, repoDir string, remote string, _ git.FetchOptions) error {
 	g.record("fetch", repoDir, remote, false)
-	return nil
+	return g.FetchError
 }
 
 // Push records a branch push operation.
@@ -175,9 +198,12 @@ func (g *Git) Push(
 	return g.PushError
 }
 
-// TagExists reports that tags are absent.
-func (g *Git) TagExists(context.Context, string, git.TagName) (bool, error) {
-	return false, nil
+// TagExists reports configured local tags.
+func (g *Git) TagExists(_ context.Context, _ string, tag git.TagName) (bool, error) {
+	if g.TagExistsError != nil {
+		return false, g.TagExistsError
+	}
+	return g.Tags[tag], nil
 }
 
 // CreateTag records a tag creation operation.
@@ -218,4 +244,22 @@ func cloneStatus(status git.Status) git.Status {
 		Clean:   status.Clean,
 		Entries: append([]git.StatusEntry(nil), status.Entries...),
 	}
+}
+
+// RemoteRefKey returns the deterministic key used by RemoteRefs.
+func RemoteRefKey(remote string, ref string) string {
+	return remoteRefKey(remote, ref)
+}
+
+// RemoteRefKeyForRepo returns a repo-scoped key used by RemoteRefs.
+func RemoteRefKeyForRepo(repoDir string, remote string, ref string) string {
+	return remoteRefKeyForRepo(repoDir, remote, ref)
+}
+
+func remoteRefKey(remote string, ref string) string {
+	return remote + "\x00" + ref
+}
+
+func remoteRefKeyForRepo(repoDir string, remote string, ref string) string {
+	return repoDir + "\x00" + remote + "\x00" + ref
 }

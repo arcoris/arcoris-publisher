@@ -36,6 +36,11 @@ type Options struct {
 	// Fetch updates existing target worktrees before they are reused.
 	Fetch bool
 
+	// FetchRequired turns fetch failures into target preparation errors when
+	// Fetch is enabled. Leave it false for intentionally offline best-effort
+	// preparation.
+	FetchRequired bool
+
 	// RequireClean rejects dirty target worktrees before construction.
 	RequireClean bool
 }
@@ -45,8 +50,9 @@ func DefaultOptions() Options {
 	return Options{
 		RemoteName:     "origin",
 		CheckoutBranch: true,
-		CreateMissing:  true,
+		CreateMissing:  false,
 		Fetch:          true,
+		FetchRequired:  true,
 		RequireClean:   true,
 	}
 }

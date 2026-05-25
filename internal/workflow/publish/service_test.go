@@ -21,9 +21,14 @@ import (
 	"testing"
 
 	"arcoris.dev/arcoris-publisher/internal/manifest"
+	modulemanifest "arcoris.dev/arcoris-publisher/internal/manifest/module"
+	"arcoris.dev/arcoris-publisher/internal/manifest/resolved"
+	"arcoris.dev/arcoris-publisher/internal/manifest/staging"
+	"arcoris.dev/arcoris-publisher/internal/plan"
 	"arcoris.dev/arcoris-publisher/internal/ports/git"
 	"arcoris.dev/arcoris-publisher/internal/testutil/porttest"
 	"arcoris.dev/arcoris-publisher/internal/testutil/publishertest"
+	"arcoris.dev/arcoris-publisher/internal/versioning"
 	"arcoris.dev/arcoris-publisher/internal/workflow/modulefile"
 	"arcoris.dev/arcoris-publisher/internal/workflow/source"
 	"arcoris.dev/arcoris-publisher/internal/workflow/target"
@@ -136,7 +141,10 @@ func TestPublishFallsBackToModulefileChangeWhenStatusUnavailable(t *testing.T) {
 	req.ModuleFile = changedModuleFileResult(t)
 	fakeGit.StatusErrors[worktree] = errors.New("status unavailable")
 
-	result, err := New(Dependencies{Git: fakeGit}, Options{}).Publish(context.Background(), req)
+	result, err := New(
+		Dependencies{Git: fakeGit},
+		Options{AllowStatusFallback: true},
+	).Publish(context.Background(), req)
 
 	if err != nil {
 		t.Fatalf("Publish() error = %v", err)
@@ -144,6 +152,22 @@ func TestPublishFallsBackToModulefileChangeWhenStatusUnavailable(t *testing.T) {
 	if !result.Published() {
 		t.Fatal("Published() = false")
 	}
+}
+
+func TestPublishStatusErrorFailsByDefault(t *testing.T) {
+	req, fakeGit, worktree := publishRequest(t, nil)
+	fakeGit.StatusErrors[worktree] = errors.New("status unavailable")
+
+	_, err := New(Dependencies{Git: fakeGit}, Options{}).Publish(context.Background(), req)
+
+	got, ok := err.(*Error)
+	if !ok {
+		t.Fatalf("error type = %T", err)
+	}
+	if got.Code != CodePreflightFailed {
+		t.Fatalf("Code = %q", got.Code)
+	}
+	assertCallAbsent(t, fakeGit.Calls, "add")
 }
 
 func TestPublishUsesCleanGitStatusOverStageResults(t *testing.T) {
@@ -159,6 +183,87 @@ func TestPublishUsesCleanGitStatusOverStageResults(t *testing.T) {
 	if !result.Modules()[0].Skipped() {
 		t.Fatal("clean Git status did not skip module")
 	}
+}
+
+func TestPublishRejectsExistingLocalTagBeforeMutation(t *testing.T) {
+	req, fakeGit, worktree := publishRequest(t, nil)
+	fakeGit.Statuses[worktree] = dirtyStatus()
+	fakeGit.Tags["v0.3.0"] = true
+
+	_, err := New(Dependencies{Git: fakeGit}, Options{}).Publish(context.Background(), req)
+
+	got, ok := err.(*Error)
+	if !ok {
+		t.Fatalf("error type = %T", err)
+	}
+	if got.Code != CodePreflightFailed {
+		t.Fatalf("Code = %q", got.Code)
+	}
+	assertCallAbsent(t, fakeGit.Calls, "add")
+	assertCallAbsent(t, fakeGit.Calls, "push")
+}
+
+func TestPublishRejectsExistingRemoteTagBeforeMutation(t *testing.T) {
+	req, fakeGit, worktree := publishRequest(t, nil)
+	fakeGit.Statuses[worktree] = dirtyStatus()
+	fakeGit.RemoteRefs[porttest.RemoteRefKeyForRepo(worktree, "origin", "refs/tags/v0.3.0")] = true
+
+	_, err := New(Dependencies{Git: fakeGit}, Options{}).Publish(context.Background(), req)
+
+	got, ok := err.(*Error)
+	if !ok {
+		t.Fatalf("error type = %T", err)
+	}
+	if got.Code != CodePreflightFailed {
+		t.Fatalf("Code = %q", got.Code)
+	}
+	assertCallAbsent(t, fakeGit.Calls, "add")
+	assertCallAbsent(t, fakeGit.Calls, "push")
+}
+
+func TestPublishPreflightsAllModulesBeforeMutation(t *testing.T) {
+	req, fakeGit, foundationWorktree := publishRequestForModules(
+		t,
+		publishertest.Module{Name: "foundation"},
+		publishertest.Module{Name: "control"},
+	)
+	fakeGit.Statuses[foundationWorktree] = dirtyStatus()
+	controlWorktree, ok := targetWorktree(req, "control")
+	if !ok {
+		t.Fatal("control worktree missing")
+	}
+	fakeGit.Statuses[controlWorktree] = dirtyStatus()
+	fakeGit.RemoteRefs[porttest.RemoteRefKeyForRepo(controlWorktree, "origin", "refs/tags/v0.3.0")] = true
+
+	_, err := New(Dependencies{Git: fakeGit}, Options{}).Publish(context.Background(), req)
+
+	got, ok := err.(*Error)
+	if !ok {
+		t.Fatalf("error type = %T", err)
+	}
+	if got.Code != CodePreflightFailed {
+		t.Fatalf("Code = %q", got.Code)
+	}
+	assertCallAbsent(t, fakeGit.Calls, "add")
+	assertCallAbsent(t, fakeGit.Calls, "commit")
+	assertCallAbsent(t, fakeGit.Calls, "push")
+}
+
+func TestPublishRejectsMultiBranchModule(t *testing.T) {
+	req, fakeGit, worktree := publishRequest(t, nil)
+	req.Plan = multiBranchPlan(t)
+	fakeGit.Statuses[worktree] = dirtyStatus()
+
+	_, err := New(Dependencies{Git: fakeGit}, Options{}).Publish(context.Background(), req)
+
+	got, ok := err.(*Error)
+	if !ok {
+		t.Fatalf("error type = %T", err)
+	}
+	if got.Code != CodePreflightFailed {
+		t.Fatalf("Code = %q", got.Code)
+	}
+	assertCallAbsent(t, fakeGit.Calls, "add")
 }
 
 func TestPublishCommitTrailersIncludeSourceProjectionHash(t *testing.T) {
@@ -205,24 +310,35 @@ func publishRequest(
 ) (Request, *porttest.Git, string) {
 	t.Helper()
 
-	opts := publishertest.PlanOptions{}
 	if publishSpec != nil {
-		opts.Publish = *publishSpec
+		return publishRequestWithPolicy(t, publishSpec)
 	}
-	p, err := publishertest.Plan(opts, publishertest.Module{Name: "foundation"})
+	return publishRequestForModules(t, publishertest.Module{Name: "foundation"})
+}
+
+func publishRequestForModules(
+	t *testing.T,
+	modules ...publishertest.Module,
+) (Request, *porttest.Git, string) {
+	t.Helper()
+
+	opts := publishertest.PlanOptions{}
+	p, err := publishertest.Plan(opts, modules...)
 	if err != nil {
 		t.Fatalf("publishertest.Plan() error = %v", err)
 	}
 
 	fakeFS := porttest.NewFileSystem()
-	fakeFS.AddFile(
-		"/repo/staging/src/arcoris.dev/foundation/go.mod",
-		[]byte("module arcoris.dev/foundation\n"),
-	)
-	fakeFS.AddFile(
-		"/repo/staging/src/arcoris.dev/foundation/contracts/doc.go",
-		[]byte("package contracts\n"),
-	)
+	for _, mod := range modules {
+		fakeFS.AddFile(
+			"/repo/staging/src/arcoris.dev/"+mod.Name+"/go.mod",
+			[]byte("module arcoris.dev/"+mod.Name+"\n"),
+		)
+		fakeFS.AddFile(
+			"/repo/staging/src/arcoris.dev/"+mod.Name+"/contracts/doc.go",
+			[]byte("package contracts\n"),
+		)
+	}
 	fakeFS.AddDir("/target")
 	fakeGit := porttest.NewGit()
 	snapshot, err := source.New(
@@ -253,6 +369,26 @@ func publishRequest(
 	}
 
 	return Request{Plan: p, Source: snapshot, Targets: targets}, fakeGit, ws.WorktreeDir()
+}
+
+func publishRequestWithPolicy(
+	t *testing.T,
+	publishSpec *manifest.PublishSpec,
+) (Request, *porttest.Git, string) {
+	t.Helper()
+
+	opts := publishertest.PlanOptions{}
+	if publishSpec != nil {
+		opts.Publish = *publishSpec
+	}
+	p, err := publishertest.Plan(opts, publishertest.Module{Name: "foundation"})
+	if err != nil {
+		t.Fatalf("publishertest.Plan() error = %v", err)
+	}
+
+	req, fakeGit, worktree := publishRequestForModules(t, publishertest.Module{Name: "foundation"})
+	req.Plan = p
+	return req, fakeGit, worktree
 }
 
 func changedModuleFileResult(t *testing.T) modulefile.Result {
@@ -292,6 +428,65 @@ func changedModuleFileResult(t *testing.T) modulefile.Result {
 	}
 
 	return result
+}
+
+func multiBranchPlan(t *testing.T) plan.Plan {
+	t.Helper()
+
+	stagingManifest, err := staging.New(staging.Spec{
+		APIVersion: string(manifest.APIVersionV1Alpha1),
+		Kind:       string(manifest.KindStagingManifest),
+		Metadata:   manifest.MetadataSpec{Name: "arcoris"},
+		Source: manifest.SourceSpec{
+			Repository:    "arcoris/arcoris",
+			DefaultBranch: "main",
+		},
+		Defaults: staging.DefaultsSpec{
+			Branches: []manifest.BranchMappingSpec{
+				{Source: "main", Target: "main"},
+				{Source: "release", Target: "release"},
+			},
+		},
+		Modules: []staging.ModuleSpec{
+			{
+				Name:       "foundation",
+				SourceDir:  "src/arcoris.dev/foundation",
+				Repository: "arcoris/foundation",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("staging.New() error = %v", err)
+	}
+
+	moduleManifest, err := modulemanifest.New(modulemanifest.Spec{
+		APIVersion: string(manifest.APIVersionV1Alpha1),
+		Kind:       string(manifest.KindModuleManifest),
+		Metadata:   manifest.MetadataSpec{Name: "foundation"},
+		Module:     manifest.ModuleIdentitySpec{Path: "arcoris.dev/foundation"},
+		Publish: modulemanifest.PublishSpec{
+			Entries: publishertest.DefaultEntries(),
+		},
+	})
+	if err != nil {
+		t.Fatalf("modulemanifest.New() error = %v", err)
+	}
+
+	set, err := resolved.Resolve(resolved.ResolveInput{
+		Staging: stagingManifest,
+		Modules: []modulemanifest.Manifest{
+			moduleManifest,
+		},
+	})
+	if err != nil {
+		t.Fatalf("resolved.Resolve() error = %v", err)
+	}
+
+	p, err := plan.FromPublicationSet(set, versioning.Must("v0.3.0"))
+	if err != nil {
+		t.Fatalf("plan.FromPublicationSet() error = %v", err)
+	}
+	return p
 }
 
 func dirtyStatus() git.Status {

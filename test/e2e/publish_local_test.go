@@ -20,43 +20,25 @@ import (
 )
 
 func TestPublishLocalBareRepositories(t *testing.T) {
-	requireGitAndGo(t)
-
-	root := copyFixture(t, "local-publish")
-	initGitRepo(t, root)
-	targetRoot := t.TempDir()
-	remoteRoot := t.TempDir()
-
-	repositories := []struct {
-		name     string
-		bareName string
-	}{
-		{name: "arcoris/foundation", bareName: "foundation.git"},
-		{name: "arcoris/control", bareName: "control.git"},
-	}
-	for _, repo := range repositories {
-		bare := filepath.Join(remoteRoot, repo.bareName)
-		initBareGitRepo(t, bare)
-		initTargetGitWorktree(t, targetWorktreePath(targetRoot, repo.name), bare)
-	}
+	setup := prepareLocalPublish(t)
 
 	result, decoded := runArcpubJSON(t,
 		0,
 		"publish",
-		"--manifest", e2eManifest(root),
+		"--manifest", e2eManifest(setup.root),
 		"--version", "v0.1.0",
-		"--source-repo", root,
-		"--staging-dir", root,
-		"--target-root", targetRoot,
+		"--source-repo", setup.root,
+		"--staging-dir", setup.root,
+		"--target-root", setup.targetRoot,
 		"--output", "json",
 	)
 	if decoded["status"] != "published" {
 		t.Fatalf("workflow status = %#v, want published\n%s", decoded["status"], result.Stdout)
 	}
-	assertNoLocalPathLeak(t, result.Stdout, root, targetRoot, remoteRoot)
+	assertNoLocalPathLeak(t, result.Stdout, setup.root, setup.targetRoot, setup.remoteRoot)
 
-	for _, repo := range repositories {
-		bare := filepath.Join(remoteRoot, repo.bareName)
+	for _, repo := range setup.repositories {
+		bare := setup.bareRepo(repo.name)
 		assertGitRefExists(t, bare, "refs/heads/main")
 		assertGitRefExists(t, bare, "refs/tags/v0.1.0")
 
@@ -73,4 +55,62 @@ func TestPublishLocalBareRepositories(t *testing.T) {
 		gitTreeMissing(t, bare, "refs/heads/main", "private/secret.go")
 		gitTreeMissing(t, bare, "refs/heads/main", "private")
 	}
+}
+
+type localPublishSetup struct {
+	root         string
+	targetRoot   string
+	remoteRoot   string
+	repositories []localPublishRepository
+}
+
+type localPublishRepository struct {
+	name     string
+	bareName string
+}
+
+func prepareLocalPublish(t *testing.T) localPublishSetup {
+	t.Helper()
+	requireGitAndGo(t)
+
+	setup := localPublishSetup{
+		root:       copyFixture(t, "local-publish"),
+		targetRoot: t.TempDir(),
+		remoteRoot: t.TempDir(),
+		repositories: []localPublishRepository{
+			{name: "arcoris/foundation", bareName: "foundation.git"},
+			{name: "arcoris/control", bareName: "control.git"},
+		},
+	}
+	initGitRepo(t, setup.root)
+	for _, repo := range setup.repositories {
+		bare := setup.bareRepo(repo.name)
+		initBareGitRepo(t, bare)
+		initTargetGitWorktree(t, targetWorktreePath(setup.targetRoot, repo.name), bare)
+	}
+	return setup
+}
+
+func (s localPublishSetup) bareRepo(repository string) string {
+	for _, repo := range s.repositories {
+		if repo.name == repository {
+			return filepath.Join(s.remoteRoot, repo.bareName)
+		}
+	}
+	return ""
+}
+
+func runLocalPublish(t *testing.T, setup localPublishSetup, wantCode int) commandResult {
+	t.Helper()
+	result := runArcpub(t,
+		"publish",
+		"--manifest", e2eManifest(setup.root),
+		"--version", "v0.1.0",
+		"--source-repo", setup.root,
+		"--staging-dir", setup.root,
+		"--target-root", setup.targetRoot,
+		"--output", "json",
+	)
+	assertExitCode(t, result, wantCode)
+	return result
 }

@@ -30,6 +30,9 @@ const (
 	// is unavailable.
 	CodeMissingSourceSnapshot ErrorCode = "missing_source_snapshot"
 
+	// CodePreflightFailed indicates publication was blocked before Git mutation.
+	CodePreflightFailed ErrorCode = "preflight_failed"
+
 	// CodePublishFailed indicates a Git publication operation failed.
 	CodePublishFailed ErrorCode = "publish_failed"
 )

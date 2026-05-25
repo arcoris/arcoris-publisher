@@ -73,6 +73,25 @@ func TestRunPublishFactoryReceivesDryRunOption(t *testing.T) {
 	}
 }
 
+func TestRunPublishDryRunHelpDescribesMutationBoundary(t *testing.T) {
+	t.Parallel()
+
+	cli := New(Dependencies{}, Options{})
+	var stdout, stderr bytes.Buffer
+
+	code := cli.Run(context.Background(), []string{"publish", "--help"}, &stdout, &stderr)
+
+	if code != ExitOK {
+		t.Fatalf("Run(publish --help) code = %d, stderr = %s", code, stderr.String())
+	}
+	output := stdout.String()
+	for _, want := range []string{"construct and verify", "skip commit, tag, and push"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("publish help missing %q:\n%s", want, output)
+		}
+	}
+}
+
 func TestRunPublishVerificationFailedReturnsVerificationExit(t *testing.T) {
 	t.Parallel()
 

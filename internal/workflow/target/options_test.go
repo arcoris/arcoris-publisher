@@ -22,7 +22,7 @@ func TestDefaultOptions(t *testing.T) {
 	if opts.RemoteName != "origin" {
 		t.Fatalf("RemoteName = %q", opts.RemoteName)
 	}
-	if !opts.CheckoutBranch || !opts.CreateMissing || !opts.Fetch || !opts.RequireClean {
+	if !opts.CheckoutBranch || opts.CreateMissing || !opts.Fetch || !opts.FetchRequired || !opts.RequireClean {
 		t.Fatalf("default options are not conservative: %#v", opts)
 	}
 }

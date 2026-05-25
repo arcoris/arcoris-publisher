@@ -149,7 +149,13 @@ func (s Service) prepareModule(
 		return ModuleWorkspace{}, false
 	}
 
-	s.fetchWorktree(ctx, worktree)
+	if !s.validateGitWorktree(ctx, mod, worktree, issues) {
+		return ModuleWorkspace{}, false
+	}
+
+	if !s.fetchWorktree(ctx, mod, worktree, issues) {
+		return ModuleWorkspace{}, false
+	}
 	s.checkCleanWorktree(ctx, mod, worktree, issues)
 
 	branches := branchWorkspaces(mod)
@@ -254,17 +260,44 @@ func (s Service) validateWorktreeDirectory(
 	return true
 }
 
-// fetchWorktree refreshes remote state when requested. Fetch failures are
-// deliberately non-fatal because local checkout validation may still succeed.
-func (s Service) fetchWorktree(ctx context.Context, worktree string) {
-	if !s.opts.Fetch {
-		return
+// validateGitWorktree rejects directories that cannot be inspected as Git
+// worktrees before construct or publish stages mutate them.
+func (s Service) validateGitWorktree(
+	ctx context.Context,
+	mod plan.ModulePlan,
+	worktree string,
+	issues *issueCollector,
+) bool {
+	if _, err := s.deps.Git.Status(ctx, worktree); err != nil {
+		issues.Add(IssueWorktreeStatusFailed, mod.Name(), worktree, "target Git status failed: %v", err)
+		return false
 	}
 
-	_ = s.deps.Git.Fetch(ctx, worktree, s.opts.RemoteName, git.FetchOptions{
+	return true
+}
+
+// fetchWorktree refreshes remote state when requested. FetchRequired controls
+// whether transport failures block construction.
+func (s Service) fetchWorktree(
+	ctx context.Context,
+	mod plan.ModulePlan,
+	worktree string,
+	issues *issueCollector,
+) bool {
+	if !s.opts.Fetch {
+		return true
+	}
+
+	err := s.deps.Git.Fetch(ctx, worktree, s.opts.RemoteName, git.FetchOptions{
 		Prune: true,
 		Tags:  git.FetchTagsAll,
 	})
+	if err != nil && s.opts.FetchRequired {
+		issues.Add(IssueFetchFailed, mod.Name(), worktree, "git fetch failed: %v", err)
+		return false
+	}
+
+	return true
 }
 
 // checkCleanWorktree records a dirty worktree when policy requires cleanliness.
@@ -279,7 +312,11 @@ func (s Service) checkCleanWorktree(
 	}
 
 	status, err := s.deps.Git.Status(ctx, worktree)
-	if err == nil && (!status.Clean || status.HasEntries()) {
+	if err != nil {
+		issues.Add(IssueWorktreeStatusFailed, mod.Name(), worktree, "target Git status failed: %v", err)
+		return
+	}
+	if !status.Clean || status.HasEntries() {
 		issues.Add(IssueWorktreeDirty, mod.Name(), worktree, "target worktree is dirty")
 	}
 }

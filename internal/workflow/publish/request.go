@@ -54,6 +54,10 @@ type Options struct {
 
 	// DryRun records publish intent without mutating Git repositories.
 	DryRun bool
+
+	// AllowStatusFallback permits tests or degraded ports to infer publishable
+	// changes from prior workflow stages when Git status is unavailable.
+	AllowStatusFallback bool
 }
 
 // DefaultOptions returns conservative publication defaults.

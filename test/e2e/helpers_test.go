@@ -293,7 +293,9 @@ func initTargetGitWorktree(t *testing.T, dir string, remote string) {
 	}
 	mustRun(t, dir, "git", "add", ".seed")
 	mustRun(t, dir, "git", "commit", "-m", "test: seed target")
-	mustRun(t, dir, "git", "remote", "add", "origin", remote)
+	if remote != "" {
+		mustRun(t, dir, "git", "remote", "add", "origin", remote)
+	}
 }
 
 func mustRun(t *testing.T, dir string, name string, args ...string) {
@@ -320,9 +322,7 @@ func requireGitAndGo(t *testing.T) {
 func prepareTargetWorktrees(t *testing.T, targetRoot string, repositories ...string) {
 	t.Helper()
 	for _, repository := range repositories {
-		if err := os.MkdirAll(targetWorktreePath(targetRoot, repository), 0o755); err != nil {
-			t.Fatalf("create target worktree for %s: %v", repository, err)
-		}
+		initTargetGitWorktree(t, targetWorktreePath(targetRoot, repository), "")
 	}
 }
 
@@ -335,6 +335,14 @@ func assertGitRefExists(t *testing.T, gitDir string, ref string) {
 	result := runCommand(t, repoRoot(t), nil, "git", "--git-dir", gitDir, "show-ref", "--verify", "--quiet", ref)
 	if result.Code != 0 {
 		t.Fatalf("git ref %s missing in %s\nstdout:\n%s\nstderr:\n%s", ref, gitDir, result.Stdout, result.Stderr)
+	}
+}
+
+func assertGitRefMissing(t *testing.T, gitDir string, ref string) {
+	t.Helper()
+	result := runCommand(t, repoRoot(t), nil, "git", "--git-dir", gitDir, "show-ref", "--verify", "--quiet", ref)
+	if result.Code == 0 {
+		t.Fatalf("git ref %s unexpectedly exists in %s", ref, gitDir)
 	}
 }
 

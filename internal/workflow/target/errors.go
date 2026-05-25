@@ -25,7 +25,9 @@ const (
 	IssueRootNotDirectory     IssueCode = "root_not_directory"
 	IssueWorktreeMissing      IssueCode = "worktree_missing"
 	IssueWorktreeNotDirectory IssueCode = "worktree_not_directory"
+	IssueWorktreeStatusFailed IssueCode = "worktree_status_failed"
 	IssueWorktreeDirty        IssueCode = "worktree_dirty"
+	IssueFetchFailed          IssueCode = "fetch_failed"
 	IssueCloneURLMissing      IssueCode = "clone_url_missing"
 )
 
