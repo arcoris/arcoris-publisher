@@ -29,11 +29,12 @@ type TransactionListReport struct {
 
 // TransactionSummaryReport describes one durable publish transaction.
 type TransactionSummaryReport struct {
-	ID        string `json:"id"`
-	Status    string `json:"status"`
-	Version   string `json:"version,omitempty"`
-	StartedAt string `json:"startedAt,omitempty"`
-	UpdatedAt string `json:"updatedAt,omitempty"`
+	ID             string `json:"id"`
+	Status         string `json:"status"`
+	RollbackStatus string `json:"rollbackStatus,omitempty"`
+	Version        string `json:"version,omitempty"`
+	StartedAt      string `json:"startedAt,omitempty"`
+	UpdatedAt      string `json:"updatedAt,omitempty"`
 }
 
 // TransactionReport is the stable report DTO for one publish transaction.
@@ -87,11 +88,12 @@ func BuildTransactionListReport(summaries []publish.TransactionSummary) Transact
 	}
 	for _, summary := range summaries {
 		out.Transactions = append(out.Transactions, TransactionSummaryReport{
-			ID:        summary.ID.String(),
-			Status:    string(summary.Status),
-			Version:   summary.Version,
-			StartedAt: summary.StartedAt.Format(timeFormat),
-			UpdatedAt: summary.UpdatedAt.Format(timeFormat),
+			ID:             summary.ID.String(),
+			Status:         string(summary.Status),
+			RollbackStatus: string(summary.Rollback),
+			Version:        summary.Version,
+			StartedAt:      summary.StartedAt.Format(timeFormat),
+			UpdatedAt:      summary.UpdatedAt.Format(timeFormat),
 		})
 	}
 	return out
@@ -149,7 +151,11 @@ func writeTransactionListText(w io.Writer, report TransactionListReport) error {
 		return err
 	}
 	for _, tx := range report.Transactions {
-		if err := writeLine(w, "  %s: %s", tx.ID, tx.Status); err != nil {
+		status := tx.Status
+		if tx.RollbackStatus != "" {
+			status += " rollback=" + tx.RollbackStatus
+		}
+		if err := writeLine(w, "  %s: %s", tx.ID, status); err != nil {
 			return err
 		}
 	}

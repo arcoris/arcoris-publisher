@@ -24,9 +24,11 @@ import (
 
 func (r *transactionRunner) rollback(ctx context.Context) error {
 	r.journal.Rollback = RollbackStatusPending
+	r.journal.ManualActions = nil
 	_ = r.setStatus(ctx, TransactionStatusRollingBack)
 
 	for i := len(r.journal.Modules) - 1; i >= 0; i-- {
+		r.journal.Modules[i].Rollback.FailedActions = nil
 		r.rollbackModule(ctx, &r.journal.Modules[i])
 		_ = r.update(ctx)
 	}
@@ -69,16 +71,23 @@ func (r *transactionRunner) rollbackRemoteTag(ctx context.Context, mod *ModuleTr
 	if !mod.RemoteTagPushed || mod.FinalTagRef == "" {
 		return
 	}
-	if mod.RemoteTagHash != "" {
-		current, ok, err := r.service.deps.Git.RemoteRefHash(ctx, mod.WorktreeDir, r.service.opts.RemoteName, mod.FinalTagRef)
-		if err != nil {
-			r.recordRollbackFailure(mod, "remote tag lookup failed", err)
-			return
-		}
-		if ok && current != mod.RemoteTagHash {
-			r.recordManualAction(*mod, mod.FinalTagRef, mod.RemoteTagHash, "", "remote tag changed after transaction; refusing to delete")
-			return
-		}
+	current, ok, err := r.service.deps.Git.RemoteRefHash(ctx, mod.WorktreeDir, r.service.opts.RemoteName, mod.FinalTagRef)
+	if err != nil {
+		r.recordRollbackFailure(mod, "remote tag lookup failed", err)
+		return
+	}
+	if !ok {
+		mod.Rollback.RemoteTagDeleted = true
+		mod.RemoteTagPushed = false
+		return
+	}
+	if mod.RemoteTagHash == "" {
+		r.recordManualAction(*mod, mod.FinalTagRef, current, "", "remote tag hash was not recorded; refusing to delete")
+		return
+	}
+	if current != mod.RemoteTagHash {
+		r.recordManualAction(*mod, mod.FinalTagRef, mod.RemoteTagHash, "", "remote tag changed after transaction; refusing to delete")
+		return
 	}
 	if err := r.service.deps.Git.DeleteRemoteRef(ctx, mod.WorktreeDir, r.service.opts.RemoteName, mod.FinalTagRef, git.PushOptions{}); err != nil {
 		r.recordRollbackFailure(mod, "remote tag delete failed", err)
@@ -100,6 +109,11 @@ func (r *transactionRunner) rollbackFinalBranch(ctx context.Context, mod *Module
 		r.recordRollbackFailure(mod, "remote branch lookup failed", err)
 		return
 	}
+	if !ok && !mod.RemoteBaseExists {
+		mod.Rollback.FinalBranchRestored = true
+		mod.FinalBranchPromoted = false
+		return
+	}
 	if !ok || current != mod.CreatedCommit {
 		r.recordManualAction(*mod, mod.FinalBranchRef, mod.CreatedCommit, mod.RemoteBaseCommit, "remote branch moved after transaction; refusing to overwrite")
 		return
@@ -107,7 +121,10 @@ func (r *transactionRunner) rollbackFinalBranch(ctx context.Context, mod *Module
 
 	if mod.RemoteBaseExists {
 		refspec := git.RefSpec(mod.RemoteBaseCommit.String() + ":" + mod.FinalBranchRef)
-		if err := r.service.deps.Git.Push(ctx, mod.WorktreeDir, r.service.opts.RemoteName, refspec, git.PushOptions{ForceWithLease: true}); err != nil {
+		if err := r.service.deps.Git.Push(ctx, mod.WorktreeDir, r.service.opts.RemoteName, refspec, git.PushOptions{
+			ForceWithLeaseRef:    mod.FinalBranchRef,
+			ForceWithLeaseExpect: mod.CreatedCommit,
+		}); err != nil {
 			r.recordRollbackFailure(mod, "remote branch restore failed", err)
 			return
 		}
@@ -122,6 +139,14 @@ func (r *transactionRunner) rollbackFinalBranch(ctx context.Context, mod *Module
 
 func (r *transactionRunner) rollbackCandidate(ctx context.Context, mod *ModuleTransactionState) {
 	if !mod.CandidatePushed {
+		return
+	}
+	if _, ok, err := r.service.deps.Git.RemoteRefHash(ctx, mod.WorktreeDir, r.service.opts.RemoteName, mod.CandidateBranchRef); err != nil {
+		r.recordRollbackFailure(mod, "candidate ref lookup failed", err)
+		return
+	} else if !ok {
+		mod.Rollback.CandidateDeleted = true
+		mod.CandidatePushed = false
 		return
 	}
 	if err := r.service.deps.Git.DeleteRemoteRef(ctx, mod.WorktreeDir, r.service.opts.RemoteName, mod.CandidateBranchRef, git.PushOptions{}); err != nil {

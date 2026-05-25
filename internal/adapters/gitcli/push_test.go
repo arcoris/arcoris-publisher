@@ -49,6 +49,14 @@ func TestPushArgsSupportsForce(t *testing.T) {
 	assertStringSlice(t, args, []string{"push", "--force", "upstream", "main"})
 }
 
+func TestPushArgsSupportsExactForceWithLease(t *testing.T) {
+	args := pushArgs("origin", gitport.RefSpec("new:refs/heads/main"), gitport.PushOptions{
+		ForceWithLeaseRef:    "refs/heads/main",
+		ForceWithLeaseExpect: "old",
+	})
+	assertStringSlice(t, args, []string{"push", "--force-with-lease=refs/heads/main:old", "origin", "new:refs/heads/main"})
+}
+
 func TestDeleteRemoteRefBuildsDeleteRefspec(t *testing.T) {
 	runner := &fakeRunner{}
 	client := New(runner, Options{})

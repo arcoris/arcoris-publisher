@@ -35,6 +35,12 @@ type GitCall struct {
 
 	// ForceWithLease records whether a push used lease protection.
 	ForceWithLease bool
+
+	// ForceWithLeaseRef records exact lease ref when supplied.
+	ForceWithLeaseRef string
+
+	// ForceWithLeaseExpect records exact lease object when supplied.
+	ForceWithLeaseExpect git.CommitHash
 }
 
 // Git is a deterministic in-memory Git port for workflow tests.
@@ -220,7 +226,7 @@ func (g *Git) Push(
 	refspec git.RefSpec,
 	opts git.PushOptions,
 ) error {
-	g.record("push", repoDir, string(refspec), opts.ForceWithLease)
+	g.recordPush("push", repoDir, string(refspec), opts)
 	if g.PushError == nil {
 		g.recordRemotePush(repoDir, remote, refspec)
 	}
@@ -235,7 +241,7 @@ func (g *Git) DeleteRemoteRef(
 	ref string,
 	opts git.PushOptions,
 ) error {
-	g.record("delete-remote-ref", repoDir, ref, opts.ForceWithLease)
+	g.recordPush("delete-remote-ref", repoDir, ref, opts)
 	if g.DeleteRemoteRefError != nil {
 		return g.DeleteRemoteRefError
 	}
@@ -275,7 +281,7 @@ func (g *Git) PushTag(
 	tag git.TagName,
 	opts git.PushOptions,
 ) error {
-	g.record("push-tag", repoDir, string(tag), opts.ForceWithLease)
+	g.recordPush("push-tag", repoDir, string(tag), opts)
 	if g.PushTagError == nil {
 		ref := "refs/tags/" + tag.String()
 		g.RemoteRefs[remoteRefKeyForRepo(repoDir, remote, ref)] = true
@@ -300,6 +306,17 @@ func (g *Git) record(op, repoDir, ref string, forceWithLease bool) {
 		RepoDir:        repoDir,
 		Ref:            ref,
 		ForceWithLease: forceWithLease,
+	})
+}
+
+func (g *Git) recordPush(op, repoDir, ref string, opts git.PushOptions) {
+	g.Calls = append(g.Calls, GitCall{
+		Op:                   op,
+		RepoDir:              repoDir,
+		Ref:                  ref,
+		ForceWithLease:       opts.ForceWithLease || opts.ForceWithLeaseRef != "",
+		ForceWithLeaseRef:    opts.ForceWithLeaseRef,
+		ForceWithLeaseExpect: opts.ForceWithLeaseExpect,
 	})
 }
 

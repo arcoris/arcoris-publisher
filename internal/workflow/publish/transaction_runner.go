@@ -154,7 +154,12 @@ func (r *transactionRunner) promoteBranches(ctx context.Context) error {
 			return err
 		}
 		refspec := git.RefSpec(mod.CreatedCommit.String() + ":" + mod.FinalBranchRef)
-		if err := r.service.deps.Git.Push(ctx, mod.WorktreeDir, r.service.opts.RemoteName, refspec, pushOptions(r.request)); err != nil {
+		opts := pushOptions(r.request)
+		if opts.ForceWithLease && mod.RemoteBaseExists {
+			opts.ForceWithLeaseRef = mod.FinalBranchRef
+			opts.ForceWithLeaseExpect = mod.RemoteBaseCommit
+		}
+		if err := r.service.deps.Git.Push(ctx, mod.WorktreeDir, r.service.opts.RemoteName, refspec, opts); err != nil {
 			return transactionError(CodePromotionFailed, mod.Module, "final branch promotion failed", err)
 		}
 		mod.FinalBranchPromoted = true
@@ -195,9 +200,14 @@ func (r *transactionRunner) publishTags(ctx context.Context) error {
 			return transactionError(CodeTagPublishFailed, mod.Module, "remote tag push failed", err)
 		}
 		mod.RemoteTagPushed = true
-		if hash, ok, err := r.service.deps.Git.RemoteRefHash(ctx, mod.WorktreeDir, r.service.opts.RemoteName, mod.FinalTagRef); err == nil && ok {
-			mod.RemoteTagHash = hash
+		hash, ok, err := r.service.deps.Git.RemoteRefHash(ctx, mod.WorktreeDir, r.service.opts.RemoteName, mod.FinalTagRef)
+		if err != nil {
+			return transactionError(CodeTagPublishFailed, mod.Module, "remote tag snapshot failed after push", err)
 		}
+		if !ok {
+			return transactionError(CodeTagPublishFailed, mod.Module, "remote tag snapshot missing after push", fmt.Errorf("ref %s is absent", mod.FinalTagRef))
+		}
+		mod.RemoteTagHash = hash
 		if err := r.update(ctx); err != nil {
 			return err
 		}

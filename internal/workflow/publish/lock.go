@@ -20,12 +20,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
 type transactionLock struct {
 	path string
 	id   TransactionID
+}
+
+type transactionLockInfo struct {
+	ID        TransactionID
+	PID       string
+	StartedAt string
 }
 
 func acquireTransactionLock(ctx context.Context, stateDir string, id TransactionID, now time.Time) (transactionLock, error) {
@@ -35,7 +42,10 @@ func acquireTransactionLock(ctx context.Context, stateDir string, id Transaction
 	if stateDir == "" {
 		return transactionLock{}, fmt.Errorf("state dir is required")
 	}
-	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+	if err := validateTransactionID(id); err != nil {
+		return transactionLock{}, err
+	}
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		return transactionLock{}, err
 	}
 	path := filepath.Join(stateDir, "publish.lock")
@@ -46,13 +56,22 @@ func acquireTransactionLock(ctx context.Context, stateDir string, id Transaction
 		}
 		return transactionLock{}, err
 	}
-	content := fmt.Sprintf("transaction=%s\npid=%d\nstartedAt=%s\n", id, os.Getpid(), now.UTC().Format(time.RFC3339Nano))
+	content := fmt.Sprintf("transaction=%s\npid=%d\nstartedAt=%s\ncommand=publish\n", id, os.Getpid(), now.UTC().Format(time.RFC3339Nano))
 	if _, err := file.WriteString(content); err != nil {
 		_ = file.Close()
 		_ = os.Remove(path)
 		return transactionLock{}, err
 	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		_ = os.Remove(path)
+		return transactionLock{}, err
+	}
 	if err := file.Close(); err != nil {
+		_ = os.Remove(path)
+		return transactionLock{}, err
+	}
+	if err := syncParentDir(path); err != nil {
 		_ = os.Remove(path)
 		return transactionLock{}, err
 	}
@@ -63,16 +82,52 @@ func (l transactionLock) Release() error {
 	if l.path == "" {
 		return nil
 	}
+	info, err := readTransactionLock(l.path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	if info.ID != l.id {
+		return fmt.Errorf("publish lock belongs to transaction %s, not %s", info.ID, l.id)
+	}
 	return os.Remove(l.path)
 }
 
-func releaseTransactionLock(stateDir string) error {
-	if stateDir == "" {
-		return nil
+func currentTransactionLock(stateDir string) (transactionLockInfo, bool, error) {
+	info, err := readTransactionLock(filepath.Join(stateDir, "publish.lock"))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return transactionLockInfo{}, false, nil
+		}
+		return transactionLockInfo{}, false, err
 	}
-	path := filepath.Join(stateDir, "publish.lock")
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+	return info, true, nil
+}
+
+func readTransactionLock(path string) (transactionLockInfo, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return transactionLockInfo{}, err
 	}
-	return nil
+	info := transactionLockInfo{}
+	for _, line := range strings.Split(string(data), "\n") {
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		switch key {
+		case "transaction":
+			info.ID = TransactionID(value)
+		case "pid":
+			info.PID = value
+		case "startedAt":
+			info.StartedAt = value
+		}
+	}
+	if info.ID == "" {
+		return transactionLockInfo{}, fmt.Errorf("publish lock is missing transaction id")
+	}
+	return info, nil
 }

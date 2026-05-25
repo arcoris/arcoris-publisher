@@ -17,6 +17,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"path/filepath"
 	"testing"
 
 	"arcoris.dev/arcoris-publisher/internal/app"
@@ -39,6 +40,26 @@ func TestRunTransactionsListUsesStateDir(t *testing.T) {
 	}
 	if !app.listCalled || app.transactionRequest.StateDir != "/state" {
 		t.Fatalf("transaction request = %+v listCalled=%v", app.transactionRequest, app.listCalled)
+	}
+}
+
+func TestRunTransactionsListDerivesStateDirFromTargetRoot(t *testing.T) {
+	t.Parallel()
+
+	app := newFakeApplication(t)
+	cli := New(Dependencies{App: app}, Options{})
+	var stdout, stderr bytes.Buffer
+
+	code := cli.Run(context.Background(), []string{
+		"transactions", "list",
+		"--target-root", "/targets",
+	}, &stdout, &stderr)
+
+	if code != ExitOK {
+		t.Fatalf("Run(transactions list) code = %d stderr = %s", code, stderr.String())
+	}
+	if want := filepath.Join("/targets", ".arcpub", "state"); app.transactionRequest.StateDir != want {
+		t.Fatalf("StateDir = %q, want %q", app.transactionRequest.StateDir, want)
 	}
 }
 
@@ -102,5 +123,26 @@ func TestRunPublishPassesStateDirAndRollbackMode(t *testing.T) {
 	}
 	if !got {
 		t.Fatal("publish state dir or rollback mode was not passed to app factory")
+	}
+}
+
+func TestRunPublishInvalidRollbackModeIsUsage(t *testing.T) {
+	t.Parallel()
+
+	fake := newFakeApplication(t)
+	cli := New(Dependencies{App: fake}, Options{})
+	var stdout, stderr bytes.Buffer
+
+	code := cli.Run(context.Background(), []string{
+		"publish",
+		"--version", "v0.3.0",
+		"--rollback", "banana",
+	}, &stdout, &stderr)
+
+	if code != ExitUsage {
+		t.Fatalf("Run(publish) code = %d stderr = %s", code, stderr.String())
+	}
+	if fake.publishCalled {
+		t.Fatal("Publish called for invalid rollback mode")
 	}
 }

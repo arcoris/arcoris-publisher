@@ -20,6 +20,10 @@ type PushOptions struct {
 	Force bool
 	// ForceWithLease permits overwriting only when the remote ref is unchanged.
 	ForceWithLease bool
+	// ForceWithLeaseRef names the exact ref protected by ForceWithLeaseExpect.
+	ForceWithLeaseRef string
+	// ForceWithLeaseExpect is the object expected at ForceWithLeaseRef.
+	ForceWithLeaseExpect CommitHash
 	// Atomic requests all ref updates to succeed or fail together.
 	Atomic bool
 	// SensitiveValues are raw values that adapters must redact in diagnostics.

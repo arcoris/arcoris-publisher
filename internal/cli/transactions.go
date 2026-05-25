@@ -17,6 +17,7 @@ package cli
 import (
 	"context"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"arcoris.dev/arcoris-publisher/internal/app"
@@ -157,5 +158,5 @@ func transactionStateDir(flags transactionFlags) string {
 	if strings.TrimSpace(flags.stateDir) != "" {
 		return flags.stateDir
 	}
-	return flags.targetRootDir + "/.arcpub/state"
+	return filepath.Join(flags.targetRootDir, ".arcpub", "state")
 }

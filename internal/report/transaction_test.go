@@ -48,6 +48,20 @@ func TestRendererTransactionJSON(t *testing.T) {
 	}
 }
 
+func TestBuildTransactionListReportIncludesRollbackStatus(t *testing.T) {
+	t.Parallel()
+
+	report := BuildTransactionListReport([]publish.TransactionSummary{{
+		ID:       "tx-test",
+		Status:   publish.TransactionStatusRollbackFailed,
+		Rollback: publish.RollbackStatusFailed,
+	}})
+
+	if report.Transactions[0].RollbackStatus != "failed" {
+		t.Fatalf("RollbackStatus = %q", report.Transactions[0].RollbackStatus)
+	}
+}
+
 func transactionFixture() publish.TransactionJournal {
 	now := time.Unix(1, 2).UTC()
 	return publish.TransactionJournal{

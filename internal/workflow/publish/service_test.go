@@ -292,6 +292,7 @@ func TestPublishMapsForceWithLease(t *testing.T) {
 		PushPolicy: &pushPolicy,
 	})
 	fakeGit.Statuses[worktree] = dirtyStatus()
+	fakeGit.RemoteRefHashes[porttest.RemoteRefKeyForRepo(worktree, "origin", "refs/heads/main")] = "base"
 
 	_, err := New(Dependencies{Git: fakeGit}, publishOptions(t, Options{})).Publish(context.Background(), req)
 
@@ -301,6 +302,9 @@ func TestPublishMapsForceWithLease(t *testing.T) {
 	push := findPushContaining(fakeGit.Calls, "refs/heads/main")
 	if !push.ForceWithLease {
 		t.Fatal("branch push did not use force-with-lease")
+	}
+	if push.ForceWithLeaseRef != "refs/heads/main" || push.ForceWithLeaseExpect == "" {
+		t.Fatalf("branch push exact lease = ref %q expect %q", push.ForceWithLeaseRef, push.ForceWithLeaseExpect)
 	}
 }
 

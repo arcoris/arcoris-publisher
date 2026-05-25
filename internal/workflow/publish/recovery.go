@@ -44,6 +44,14 @@ func (s Service) RollbackTransaction(ctx context.Context, stateDir string, id Tr
 	if err != nil {
 		return TransactionJournal{}, &Error{Code: CodeRecoveryFailed, Message: "load publish transaction failed", Cause: err}
 	}
+	if lock, ok, err := currentTransactionLock(stateDir); err != nil {
+		return journal, &Error{Code: CodeLockFailed, Message: "read publish transaction lock failed", Cause: err}
+	} else if ok {
+		return journal, &Error{
+			Code:    CodeLockFailed,
+			Message: fmt.Sprintf("publish transaction lock exists for %s; refusing rollback while publish may be active", lock.ID),
+		}
+	}
 	if journal.Status == TransactionStatusCommitted {
 		return journal, &Error{
 			Code:    CodeRecoveryFailed,
@@ -59,6 +67,5 @@ func (s Service) RollbackTransaction(ctx context.Context, stateDir string, id Tr
 	}
 	runner := transactionRunner{service: s, store: store, journal: journal}
 	err = runner.rollback(ctx)
-	_ = releaseTransactionLock(stateDir)
 	return runner.journal, err
 }

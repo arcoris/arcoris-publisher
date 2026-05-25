@@ -132,14 +132,25 @@ func (s Service) publishTransaction(
 	if err != nil {
 		return Result{}, &Error{Code: CodeLockFailed, Message: "publish transaction lock failed", Cause: err}
 	}
-	defer func() { _ = lock.Release() }()
 
 	if err := store.Create(ctx, journal); err != nil {
+		_ = lock.Release()
 		return Result{}, &Error{Code: CodeJournalFailed, Message: "create transaction journal failed", Cause: err}
 	}
 
 	tx := transactionRunner{service: s, request: req, store: store, journal: journal}
-	return tx.run(ctx, preflight)
+	result, err := tx.run(ctx, preflight)
+	if releaseErr := lock.Release(); releaseErr != nil {
+		if result.HasTransaction() {
+			journal := result.Transaction()
+			journal.Warnings = append(journal.Warnings, "publish transaction lock cleanup failed: "+releaseErr.Error())
+			result = Result{modules: result.Modules(), transaction: journal}
+		}
+		if err == nil {
+			err = &Error{Code: CodeLockFailed, Message: "publish transaction lock cleanup failed", Cause: releaseErr}
+		}
+	}
+	return result, err
 }
 
 type modulePreflight struct {
@@ -167,6 +178,13 @@ func (s Service) preflightModule(
 		return modulePreflight{}, &Error{
 			Code:    CodePreflightFailed,
 			Message: fmt.Sprintf("module %s has %d branch mappings; multi-branch publish is not supported yet", name, len(mod.Branches())),
+		}
+	}
+	if err := validateGitRef(branchRef(mod.Branches()[0].Target())); err != nil {
+		return modulePreflight{}, &Error{
+			Code:    CodePreflightFailed,
+			Message: fmt.Sprintf("module %s target branch is not a safe Git ref", name),
+			Cause:   err,
 		}
 	}
 

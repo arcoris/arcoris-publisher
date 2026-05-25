@@ -19,8 +19,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 )
@@ -73,7 +75,7 @@ func (s FileJournalStore) Load(ctx context.Context, id TransactionID) (Transacti
 	}
 	var journal TransactionJournal
 	if err := json.Unmarshal(data, &journal); err != nil {
-		return TransactionJournal{}, err
+		return TransactionJournal{}, fmt.Errorf("transaction journal %s is corrupt: %w", filepath.Base(path), err)
 	}
 	return journal, nil
 }
@@ -103,7 +105,7 @@ func (s FileJournalStore) List(ctx context.Context) ([]TransactionSummary, error
 		}
 		var journal TransactionJournal
 		if err := json.Unmarshal(data, &journal); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("transaction journal %s is corrupt: %w", entry.Name(), err)
 		}
 		out = append(out, journal.Summary())
 	}
@@ -138,7 +140,10 @@ func (s FileJournalStore) write(ctx context.Context, journal TransactionJournal)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(s.stateDir, 0o700); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 
@@ -147,26 +152,7 @@ func (s FileJournalStore) write(ctx context.Context, journal TransactionJournal)
 		return err
 	}
 	data = append(data, '\n')
-
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+journal.ID.String()+"-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmpName)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpName)
-		return err
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		_ = os.Remove(tmpName)
-		return err
-	}
-	return nil
+	return atomicWriteFile(path, data, 0o600)
 }
 
 func (s FileJournalStore) journalPath(id TransactionID) (string, error) {
@@ -176,8 +162,8 @@ func (s FileJournalStore) journalPath(id TransactionID) (string, error) {
 	if s.stateDir == "" {
 		return "", fmt.Errorf("state dir is required")
 	}
-	name := safeRefComponent(id.String())
-	if name != id.String() {
+	name := id.String()
+	if err := validateTransactionID(id); err != nil {
 		return "", fmt.Errorf("transaction id %q is not a safe journal file name", id)
 	}
 	return filepath.Join(s.transactionsDir(), name+".json"), nil
@@ -197,4 +183,52 @@ func deriveStateDir(explicit string, targets []modulePreflight) string {
 		}
 	}
 	return ""
+}
+
+func atomicWriteFile(path string, data []byte, perm fs.FileMode) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+"-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpName)
+		}
+	}()
+
+	if err := tmp.Chmod(perm); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	cleanup = false
+	return syncParentDir(path)
+}
+
+func syncParentDir(path string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	dir, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }

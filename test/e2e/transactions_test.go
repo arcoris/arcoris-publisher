@@ -14,7 +14,11 @@
 
 package e2e_test
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestPublishTransactionHappyPath(t *testing.T) {
 	setup := prepareLocalPublish(t)
@@ -110,6 +114,32 @@ func TestRollbackCommandCompletesPendingTransaction(t *testing.T) {
 	assertWorktreesClean(t, setup)
 }
 
+func TestRollbackCommandIsIdempotent(t *testing.T) {
+	setup := prepareLocalPublish(t)
+	installBareHook(t, setup.bareRepo("arcoris/control"), "pre-receive", rejectRefsHook("refs/heads/arcpub/tx/"))
+	_, decoded := runLocalPublishJSONWithArgs(t, setup, 1, "--rollback", "manual")
+	id := transactionID(t, decoded)
+
+	first := runArcpub(t,
+		"rollback",
+		"--transaction", id,
+		"--target-root", setup.targetRoot,
+		"--output", "json",
+	)
+	assertExitCode(t, first, 0)
+	second := runArcpub(t,
+		"rollback",
+		"--transaction", id,
+		"--target-root", setup.targetRoot,
+		"--output", "json",
+	)
+	assertExitCode(t, second, 0)
+	secondJSON := assertJSON(t, second.Stdout)
+	if got := stringField(t, secondJSON, "status"); got != "rolled_back" {
+		t.Fatalf("second rollback status = %q\n%s", got, second.Stdout)
+	}
+}
+
 func TestRollbackFailureIsReported(t *testing.T) {
 	setup := prepareLocalPublish(t)
 	installBareHook(t, setup.bareRepo("arcoris/foundation"), "pre-receive", rejectDeleteRefsHook("refs/heads/main"))
@@ -119,6 +149,29 @@ func TestRollbackFailureIsReported(t *testing.T) {
 
 	assertContains(t, result.Stdout, "manualRecoveryActions")
 	assertTransactionStatus(t, decoded, "rollback_failed")
+}
+
+func TestTransactionsShowNoPathLeaks(t *testing.T) {
+	setup := prepareLocalPublish(t)
+	_, decoded := runLocalPublishJSON(t, setup, 0)
+	id := transactionID(t, decoded)
+
+	show := runArcpub(t,
+		"transactions", "show", id,
+		"--target-root", setup.targetRoot,
+		"--output", "json",
+	)
+	assertExitCode(t, show, 0)
+	assertNoLocalPathLeak(t, show.Stdout, setup.root, setup.targetRoot, setup.remoteRoot)
+
+	visible := runArcpub(t,
+		"transactions", "show", id,
+		"--target-root", setup.targetRoot,
+		"--include-local-paths",
+		"--output", "json",
+	)
+	assertExitCode(t, visible, 0)
+	assertContains(t, visible.Stdout, setup.targetRoot)
 }
 
 func TestTransactionsListAndShow(t *testing.T) {
@@ -147,6 +200,53 @@ func TestTransactionsListAndShow(t *testing.T) {
 	if got := stringField(t, showJSON, "id"); got != id {
 		t.Fatalf("transaction id = %q, want %q", got, id)
 	}
+}
+
+func TestCorruptedJournalBlocksPublish(t *testing.T) {
+	setup := prepareLocalPublish(t)
+	stateDir := filepath.Join(setup.targetRoot, ".arcpub", "state")
+	txDir := filepath.Join(stateDir, "transactions")
+	if err := os.MkdirAll(txDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(txDir, "tx-bad.json"), []byte("{"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	result := runLocalPublish(t, setup, 1)
+	assertContains(t, result.Stderr, "corrupt")
+	assertNoFinalRefs(t, setup)
+}
+
+func TestStateDirOverride(t *testing.T) {
+	setup := prepareLocalPublish(t)
+	stateDir := t.TempDir()
+
+	_, decoded := runLocalPublishJSONWithArgs(t, setup, 0, "--state-dir", stateDir)
+	id := transactionID(t, decoded)
+	assertFileExists(t, filepath.Join(stateDir, "transactions", id+".json"))
+
+	list := runArcpub(t,
+		"transactions", "list",
+		"--state-dir", stateDir,
+		"--output", "json",
+	)
+	assertExitCode(t, list, 0)
+}
+
+func TestLockConflictBlocksPublish(t *testing.T) {
+	setup := prepareLocalPublish(t)
+	stateDir := filepath.Join(setup.targetRoot, ".arcpub", "state")
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "publish.lock"), []byte("transaction=tx-other\npid=1\nstartedAt=now\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	result := runLocalPublish(t, setup, 1)
+	assertContains(t, result.Stderr, "lock")
+	assertNoFinalRefs(t, setup)
 }
 
 func runLocalPublishJSON(t *testing.T, setup localPublishSetup, wantCode int) (commandResult, map[string]any) {

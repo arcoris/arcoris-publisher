@@ -17,6 +17,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"arcoris.dev/arcoris-publisher/internal/app"
@@ -109,7 +110,7 @@ func publishStateDir(flags workflowFlags) string {
 	if strings.TrimSpace(flags.stateDir) != "" {
 		return flags.stateDir
 	}
-	return flags.targetRootDir + "/.arcpub/state"
+	return filepath.Join(flags.targetRootDir, ".arcpub", "state")
 }
 
 func parseRollbackMode(value string) (app.RollbackMode, error) {

@@ -16,6 +16,10 @@ package publish
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,6 +31,34 @@ func TestCandidateRefSanitizesTransactionAndModule(t *testing.T) {
 	want := "refs/heads/arcpub/tx/tx-bad-value/control-api"
 	if got != want {
 		t.Fatalf("candidateRef() = %q, want %q", got, want)
+	}
+	if err := validateGitRef(got); err != nil {
+		t.Fatalf("candidateRef() invalid Git ref: %v", err)
+	}
+}
+
+func TestCandidateRefAvoidsUnsafeGitRefComponents(t *testing.T) {
+	got := candidateRef("tx..bad.lock", manifest.ModuleName("@{/.lock"))
+	if strings.Contains(got, "..") || strings.Contains(got, "@{") || strings.Contains(got, ".lock") {
+		t.Fatalf("candidateRef() kept unsafe syntax: %q", got)
+	}
+	if err := validateGitRef(got); err != nil {
+		t.Fatalf("candidateRef() invalid Git ref: %v", err)
+	}
+}
+
+func TestValidateGitRefRejectsUnsafeRefs(t *testing.T) {
+	for _, ref := range []string{
+		"refs/heads/a..b",
+		"refs/heads/main.lock",
+		"refs/heads/@{bad",
+		"refs/heads/trailing.",
+		"refs/heads/has space",
+		"refs//heads/main",
+	} {
+		if err := validateGitRef(ref); err == nil {
+			t.Fatalf("validateGitRef(%q) error = nil", ref)
+		}
 	}
 }
 
@@ -44,6 +76,19 @@ func TestFileJournalStoreWriteLoadListPending(t *testing.T) {
 
 	if err := store.Create(ctx, journal); err != nil {
 		t.Fatalf("Create() error = %v", err)
+	}
+	if runtime.GOOS != "windows" {
+		path, err := store.journalPath("tx-test")
+		if err != nil {
+			t.Fatalf("journalPath() error = %v", err)
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("Stat() error = %v", err)
+		}
+		if got := info.Mode().Perm(); got != 0o600 {
+			t.Fatalf("journal permissions = %o, want 0600", got)
+		}
 	}
 	loaded, err := store.Load(ctx, "tx-test")
 	if err != nil {
@@ -73,6 +118,35 @@ func TestFileJournalStoreWriteLoadListPending(t *testing.T) {
 	}
 }
 
+func TestFileJournalStoreRejectsUnsafeTransactionID(t *testing.T) {
+	store := NewFileJournalStore(t.TempDir())
+	if err := store.Create(context.Background(), TransactionJournal{ID: "../escape"}); err == nil {
+		t.Fatal("Create() error = nil")
+	}
+}
+
+func TestFileJournalStoreCorruptJournalBlocksListAndPending(t *testing.T) {
+	ctx := context.Background()
+	store := NewFileJournalStore(t.TempDir())
+	dir := store.transactionsDir()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tx-bad.json"), []byte("{"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	if _, err := store.List(ctx); err == nil {
+		t.Fatal("List() error = nil")
+	}
+	if _, _, err := store.HasPending(ctx); err == nil {
+		t.Fatal("HasPending() error = nil")
+	}
+	if _, err := store.Load(ctx, "tx-bad"); err == nil {
+		t.Fatal("Load() error = nil")
+	}
+}
+
 func TestTransactionLockConflict(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -90,5 +164,24 @@ func TestTransactionLockConflict(t *testing.T) {
 		t.Fatalf("lock after release error = %v", err)
 	} else {
 		_ = second.Release()
+	}
+}
+
+func TestTransactionLockReleaseRefusesMismatchedLock(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	first, err := acquireTransactionLock(ctx, dir, "tx-one", time.Unix(1, 0).UTC())
+	if err != nil {
+		t.Fatalf("first lock error = %v", err)
+	}
+	path := first.path
+	if err := os.WriteFile(path, []byte("transaction=tx-two\npid=1\nstartedAt=now\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := first.Release(); err == nil {
+		t.Fatal("Release() error = nil")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("mismatched lock was removed: %v", err)
 	}
 }

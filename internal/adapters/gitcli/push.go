@@ -50,7 +50,9 @@ func pushArgs(remote string, refspec gitport.RefSpec, opts gitport.PushOptions) 
 	if opts.Force {
 		args = append(args, "--force")
 	}
-	if opts.ForceWithLease {
+	if opts.ForceWithLeaseRef != "" && opts.ForceWithLeaseExpect != "" {
+		args = append(args, "--force-with-lease="+opts.ForceWithLeaseRef+":"+opts.ForceWithLeaseExpect.String())
+	} else if opts.ForceWithLease {
 		args = append(args, "--force-with-lease")
 	}
 	if opts.Atomic {

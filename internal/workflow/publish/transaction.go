@@ -16,6 +16,7 @@ package publish
 
 import (
 	"fmt"
+	"hash/fnv"
 	"strings"
 	"time"
 
@@ -124,6 +125,7 @@ func (j TransactionJournal) Summary() TransactionSummary {
 	return TransactionSummary{
 		ID:        j.ID,
 		Status:    j.Status,
+		Rollback:  j.Rollback,
 		Version:   j.Version,
 		StartedAt: j.StartedAt,
 		UpdatedAt: j.UpdatedAt,
@@ -134,6 +136,7 @@ func (j TransactionJournal) Summary() TransactionSummary {
 type TransactionSummary struct {
 	ID        TransactionID     `json:"id"`
 	Status    TransactionStatus `json:"status"`
+	Rollback  RollbackStatus    `json:"rollbackStatus,omitempty"`
 	Version   string            `json:"version,omitempty"`
 	StartedAt time.Time         `json:"startedAt"`
 	UpdatedAt time.Time         `json:"updatedAt"`
@@ -242,10 +245,67 @@ func branchRef(branch manifest.BranchName) string {
 	return "refs/heads/" + branch.String()
 }
 
+func validateTransactionID(id TransactionID) error {
+	if id == "" {
+		return fmt.Errorf("empty transaction id")
+	}
+	if safeRefComponent(id.String()) != id.String() {
+		return fmt.Errorf("unsafe transaction id")
+	}
+	return validateGitRefComponent(id.String())
+}
+
+func validateGitRef(ref string) error {
+	if ref == "" {
+		return fmt.Errorf("empty ref")
+	}
+	if strings.HasPrefix(ref, "/") || strings.HasSuffix(ref, "/") {
+		return fmt.Errorf("ref has leading or trailing slash")
+	}
+	if strings.Contains(ref, "//") {
+		return fmt.Errorf("ref contains empty component")
+	}
+	if strings.Contains(ref, "..") || strings.Contains(ref, "@{") {
+		return fmt.Errorf("ref contains forbidden sequence")
+	}
+	if strings.HasSuffix(ref, ".") {
+		return fmt.Errorf("ref ends with dot")
+	}
+	for _, r := range ref {
+		if r <= 0x20 || r == 0x7f {
+			return fmt.Errorf("ref contains control or space")
+		}
+		switch r {
+		case '\\', '^', '~', ':', '?', '*', '[':
+			return fmt.Errorf("ref contains forbidden character %q", r)
+		}
+	}
+	for _, component := range strings.Split(ref, "/") {
+		if err := validateGitRefComponent(component); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateGitRefComponent(component string) error {
+	if component == "" {
+		return fmt.Errorf("empty ref component")
+	}
+	if strings.HasPrefix(component, ".") {
+		return fmt.Errorf("ref component %q starts with dot", component)
+	}
+	if strings.HasSuffix(strings.ToLower(component), ".lock") {
+		return fmt.Errorf("ref component %q ends with .lock", component)
+	}
+	return nil
+}
+
 func safeRefComponent(value string) string {
+	original := strings.TrimSpace(value)
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return ""
+		return "value-" + shortHash(original)
 	}
 	var b strings.Builder
 	for _, r := range value {
@@ -259,9 +319,22 @@ func safeRefComponent(value string) string {
 			b.WriteByte('-')
 		}
 	}
-	out := strings.Trim(b.String(), "-.")
+	out := b.String()
+	for strings.Contains(out, "..") {
+		out = strings.ReplaceAll(out, "..", ".")
+	}
+	out = strings.Trim(out, "-.")
+	if strings.HasSuffix(strings.ToLower(out), ".lock") {
+		out = strings.TrimSuffix(out[:len(out)-5], ".-") + "-lock"
+	}
 	if out == "" {
-		return "value"
+		return "value-" + shortHash(original)
 	}
 	return out
+}
+
+func shortHash(value string) string {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(value))
+	return fmt.Sprintf("%08x", h.Sum32())
 }
