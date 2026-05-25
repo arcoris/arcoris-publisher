@@ -28,6 +28,7 @@ import (
 // concrete infrastructure adapters.
 type Application interface {
 	BuildPlan(ctx context.Context, manifestPath string, version versioning.Version) (plan.Plan, error)
+	PrepareTargets(ctx context.Context, req app.Request) (app.Result, error)
 	Preflight(ctx context.Context, req app.Request) (app.Result, error)
 	Verify(ctx context.Context, req app.Request) (app.Result, error)
 	Publish(ctx context.Context, req app.Request) (app.Result, error)

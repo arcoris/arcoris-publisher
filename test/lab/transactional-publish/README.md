@@ -52,11 +52,36 @@ The fixture publishes only explicit entries. `secret.txt` and `private/` files
 must never appear in pushed target trees. Provenance is enabled at
 `.arcoris/provenance.json`.
 
+## Target Preparation
+
+`run-target-prepare.sh` demonstrates `arcpub target prepare`. The script seeds
+the local bare remotes, removes the target worktrees, then lets `arcpub` clone,
+fetch, checkout, and validate them:
+
+```sh
+bash test/lab/transactional-publish/setup.sh
+bash test/lab/transactional-publish/run-target-prepare.sh
+```
+
+The remote template used by the lab is:
+
+```text
+file://$ARCPUB_LAB_ROOT/remotes/{name}.git
+```
+
+The command supports `{repository}` for the full logical repository ref,
+`{owner}` for the first component, and `{name}` for the final component.
+`target prepare` is not read-only: it may create local target worktrees, add
+`origin`, fetch, and checkout branches. It does not construct publication files,
+rewrite `go.mod`, write provenance, create journals or locks, commit, tag, or
+push.
+
 ## Happy Path
 
 ```sh
 bash test/lab/transactional-publish/setup.sh
 bash test/lab/transactional-publish/run-plan.sh
+bash test/lab/transactional-publish/run-target-prepare.sh
 bash test/lab/transactional-publish/run-preflight.sh
 bash test/lab/transactional-publish/run-verify.sh
 bash test/lab/transactional-publish/run-dry-run.sh
@@ -72,6 +97,10 @@ files, rewrite `go.mod`, create journals, create locks, or push refs. `verify`
 constructs and validates target trees. `publish --dry-run` also constructs and
 verifies target trees, then skips commit, tag, and push. `publish` performs the
 transactional mutation.
+
+`target prepare` sits before preflight in an operator workflow. It prepares the
+local Git worktrees that preflight and publish inspect, but it does not publish
+anything.
 
 ## Failure Scenarios
 

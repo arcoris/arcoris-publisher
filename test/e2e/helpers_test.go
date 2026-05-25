@@ -273,6 +273,15 @@ func initBareGitRepo(t *testing.T, dir string) {
 	mustRun(t, repoRoot(t), "git", "--git-dir", dir, "config", "receive.denyDeleteCurrent", "ignore")
 }
 
+func seedBareGitMain(t *testing.T, bareRepo string) {
+	t.Helper()
+
+	worktree := t.TempDir()
+	initTargetGitWorktree(t, worktree, bareRepo)
+	mustRun(t, worktree, "git", "push", "origin", "HEAD:refs/heads/main")
+	mustRun(t, repoRoot(t), "git", "--git-dir", bareRepo, "symbolic-ref", "HEAD", "refs/heads/main")
+}
+
 func installBareHook(t *testing.T, bareRepo string, name string, script string) {
 	t.Helper()
 	if goruntime.GOOS == "windows" {

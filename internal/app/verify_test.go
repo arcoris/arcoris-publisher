@@ -53,6 +53,8 @@ func appFixture(t *testing.T) (App, *porttest.Git) {
 	fakeGit := porttest.NewGit()
 	fakeGit.Refs["/target/arcoris__foundation\x00refs/heads/main"] = true
 	fakeGit.Refs["/target/arcoris__control\x00refs/heads/stable"] = true
+	fakeGit.RemoteURLs["/target/arcoris__foundation\x00origin"] = "file:///remotes/foundation.git"
+	fakeGit.RemoteURLs["/target/arcoris__control\x00origin"] = "file:///remotes/control.git"
 	deps := Dependencies{
 		Workflow: workflow.Dependencies{
 			Source:     source.Dependencies{FS: fs, Git: fakeGit},

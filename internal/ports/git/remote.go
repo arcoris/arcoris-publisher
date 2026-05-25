@@ -20,6 +20,16 @@ import "context"
 // and push. Hosting-provider metadata APIs belong to the remote port package,
 // not to this Git port.
 type RemoteClient interface {
+	// RemoteURL returns the configured URL for remote in repoDir.
+	//
+	// Missing remotes should return ("", false, nil). The returned URL may
+	// contain credentials and must be redacted by callers before display.
+	RemoteURL(ctx context.Context, repoDir string, remote string) (string, bool, error)
+	// AddRemote adds remote with url in repoDir.
+	//
+	// Implementations must redact url through opts-equivalent process
+	// diagnostics because transport URLs may contain credentials.
+	AddRemote(ctx context.Context, repoDir string, remote string, url string) error
 	// Clone copies remoteURL into dir according to opts.
 	//
 	// Implementations must redact opts.SensitiveValues from command rendering,

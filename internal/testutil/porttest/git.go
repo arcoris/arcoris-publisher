@@ -72,6 +72,9 @@ type Git struct {
 	// RemoteRefHashes reports remote ref object hashes by "remote\x00ref".
 	RemoteRefHashes map[string]git.CommitHash
 
+	// RemoteURLs reports configured remote URLs by "repoDir\x00remote" or remote.
+	RemoteURLs map[string]string
+
 	// TagExistsError forces TagExists to fail.
 	TagExistsError error
 
@@ -103,6 +106,7 @@ func NewGit() *Git {
 		Refs:            map[string]bool{},
 		RemoteRefs:      map[string]bool{},
 		RemoteRefHashes: map[string]git.CommitHash{},
+		RemoteURLs:      map[string]string{},
 		CommitHash:      "abcdef1234567890",
 	}
 }
@@ -156,6 +160,26 @@ func (g *Git) RemoteRefHash(_ context.Context, repoDir string, remote string, re
 	}
 	hash := g.remoteRefHash(repoDir, remote, ref)
 	return hash, hash != "", nil
+}
+
+// RemoteURL reports configured remote URLs.
+func (g *Git) RemoteURL(_ context.Context, repoDir string, remote string) (string, bool, error) {
+	remote = defaultRemote(remote)
+	if url := g.RemoteURLs[repoDir+"\x00"+remote]; url != "" {
+		return url, true, nil
+	}
+	if url := g.RemoteURLs[remote]; url != "" {
+		return url, true, nil
+	}
+	return "", false, nil
+}
+
+// AddRemote records a remote configuration.
+func (g *Git) AddRemote(_ context.Context, repoDir string, remote string, url string) error {
+	remote = defaultRemote(remote)
+	g.record("remote-add", repoDir, remote+"="+url, false)
+	g.RemoteURLs[repoDir+"\x00"+remote] = url
+	return nil
 }
 
 // CommitMessage returns an empty synthetic message.
@@ -347,6 +371,13 @@ func remoteRefKey(remote string, ref string) string {
 
 func remoteRefKeyForRepo(repoDir string, remote string, ref string) string {
 	return repoDir + "\x00" + remote + "\x00" + ref
+}
+
+func defaultRemote(remote string) string {
+	if remote == "" {
+		return "origin"
+	}
+	return remote
 }
 
 func (g *Git) remoteRefHash(repoDir string, remote string, ref string) git.CommitHash {

@@ -28,6 +28,9 @@ type Plan struct {
 	// source is the effective source repository declaration.
 	source manifest.Source
 
+	// target is the effective target worktree preparation policy.
+	target manifest.TargetPolicy
+
 	// publish is the effective global publication policy.
 	publish manifest.PublishPolicy
 
@@ -49,6 +52,9 @@ func (p Plan) Metadata() manifest.Metadata { return p.metadata }
 
 // Source returns the effective source repository declaration.
 func (p Plan) Source() manifest.Source { return p.source }
+
+// TargetPolicy returns the effective target worktree preparation policy.
+func (p Plan) TargetPolicy() manifest.TargetPolicy { return p.target }
 
 // PublishPolicy returns the effective global publication policy.
 func (p Plan) PublishPolicy() manifest.PublishPolicy { return p.publish }

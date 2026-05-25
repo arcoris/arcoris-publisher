@@ -245,6 +245,34 @@ init_target_worktree() {
   git -C "$worktree" remote add origin "$remote"
 }
 
+seed_bare_main() {
+  local repository="$1"
+  local bare
+  local worktree
+  bare="$(bare_repo "$repository")"
+  worktree="$(repository_worktree "$repository")"
+
+  if git --git-dir "$bare" show-ref --verify --quiet refs/heads/main; then
+    return 0
+  fi
+
+  if [[ -d "$worktree/.git" ]]; then
+    git -C "$worktree" push origin HEAD:refs/heads/main >/dev/null 2>&1
+  else
+    local seed
+    seed="$(lab_root)/seed/${repository//\//__}"
+    rm -rf "$seed"
+    mkdir -p "$seed"
+    init_target_worktree "$seed" "$bare"
+    git -C "$seed" push origin HEAD:refs/heads/main >/dev/null 2>&1
+  fi
+  git --git-dir "$bare" symbolic-ref HEAD refs/heads/main
+}
+
+target_prepare_remote_template() {
+  printf 'file://%s/{name}.git\n' "$(lab_remotes)"
+}
+
 write_fixture_source() {
   cp -R "$(lab_repo_root)/internal/testdata/e2e/local-publish/." "$(lab_source)/"
 }

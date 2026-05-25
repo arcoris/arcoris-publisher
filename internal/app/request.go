@@ -32,4 +32,7 @@ type Request struct {
 
 	// TargetRootDir contains target worktrees.
 	TargetRootDir string
+
+	// TargetRemoteTemplate optionally overrides manifest target.remoteTemplate.
+	TargetRemoteTemplate string
 }

@@ -12,15 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package resolved
+package manifest
 
-// publicationSet assembles the validated effective manifest values.
-func (r *resolver) publicationSet(modules []PublicationModule) PublicationSet {
-	return PublicationSet{
-		metadata: r.input.Staging.Metadata(),
-		source:   r.input.Staging.Source(),
-		target:   r.input.Staging.Target(),
-		publish:  r.input.Staging.Publish(),
-		modules:  modules,
+import "testing"
+
+func TestTargetPolicyRemoteTemplate(t *testing.T) {
+	raw := "https://github.com/{repository}.git"
+	policy, err := NewTargetPolicy(TargetSpec{RemoteTemplate: &raw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	template, ok := policy.RemoteTemplate()
+	if !ok || template.String() != raw {
+		t.Fatalf("RemoteTemplate() = %q, %v", template, ok)
+	}
+}
+
+func TestTargetPolicyAllowsOmittedTemplate(t *testing.T) {
+	policy, err := NewTargetPolicy(TargetSpec{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := policy.RemoteTemplate(); ok {
+		t.Fatal("RemoteTemplate() ok = true")
 	}
 }

@@ -12,15 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package resolved
+package target
 
-// publicationSet assembles the validated effective manifest values.
-func (r *resolver) publicationSet(modules []PublicationModule) PublicationSet {
-	return PublicationSet{
-		metadata: r.input.Staging.Metadata(),
-		source:   r.input.Staging.Source(),
-		target:   r.input.Staging.Target(),
-		publish:  r.input.Staging.Publish(),
-		modules:  modules,
-	}
+import (
+	"arcoris.dev/arcoris-publisher/internal/manifest"
+	"arcoris.dev/arcoris-publisher/internal/plan"
+)
+
+// PrepareRequest describes user-facing target worktree preparation.
+type PrepareRequest struct {
+	Plan              plan.Plan
+	RootDir           string
+	RemoteTemplate    manifest.RemoteTemplate
+	HasRemoteTemplate bool
 }

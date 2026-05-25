@@ -41,25 +41,28 @@ func (failingWriter) Write([]byte) (int, error) {
 }
 
 type fakeApplication struct {
-	plan               plan.Plan
-	buildPlanCalled    bool
-	preflightCalled    bool
-	verifyCalled       bool
-	publishCalled      bool
-	listCalled         bool
-	showCalled         bool
-	rollbackCalled     bool
-	buildPlanManifest  string
-	buildPlanVersion   versioning.Version
-	preflightRequest   app.Request
-	verifyRequest      app.Request
-	publishRequest     app.Request
-	transactionRequest app.TransactionRequest
-	buildPlanError     error
-	preflightError     error
-	verifyError        error
-	publishError       error
-	transactionError   error
+	plan                  plan.Plan
+	buildPlanCalled       bool
+	prepareTargetsCalled  bool
+	preflightCalled       bool
+	verifyCalled          bool
+	publishCalled         bool
+	listCalled            bool
+	showCalled            bool
+	rollbackCalled        bool
+	buildPlanManifest     string
+	buildPlanVersion      versioning.Version
+	prepareTargetsRequest app.Request
+	preflightRequest      app.Request
+	verifyRequest         app.Request
+	publishRequest        app.Request
+	transactionRequest    app.TransactionRequest
+	buildPlanError        error
+	prepareTargetsError   error
+	preflightError        error
+	verifyError           error
+	publishError          error
+	transactionError      error
 }
 
 func newFakeApplication(t *testing.T) *fakeApplication {
@@ -79,6 +82,12 @@ func (f *fakeApplication) BuildPlan(_ context.Context, manifestPath string, vers
 	f.buildPlanManifest = manifestPath
 	f.buildPlanVersion = version
 	return f.plan, f.buildPlanError
+}
+
+func (f *fakeApplication) PrepareTargets(_ context.Context, req app.Request) (app.Result, error) {
+	f.prepareTargetsCalled = true
+	f.prepareTargetsRequest = req
+	return app.Result{}, f.prepareTargetsError
 }
 
 func (f *fakeApplication) Verify(_ context.Context, req app.Request) (app.Result, error) {

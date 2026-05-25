@@ -132,6 +132,7 @@ func (b *builder) finalize(modules []ModulePlan) (Plan, error) {
 	out := Plan{
 		metadata: b.request.Set.Metadata(),
 		source:   b.request.Set.Source(),
+		target:   b.request.Set.Target(),
 		publish:  b.request.Set.Publish(),
 		modules:  modules,
 	}

@@ -45,6 +45,9 @@ const (
 	// StatusPassed means checks completed without failures.
 	StatusPassed Status = "passed"
 
+	// StatusPrepared means target worktrees were prepared successfully.
+	StatusPrepared Status = "prepared"
+
 	// StatusFailed means at least one check failed.
 	StatusFailed Status = "failed"
 

@@ -18,6 +18,7 @@ import (
 	"arcoris.dev/arcoris-publisher/internal/plan"
 	"arcoris.dev/arcoris-publisher/internal/workflow"
 	"arcoris.dev/arcoris-publisher/internal/workflow/preflight"
+	"arcoris.dev/arcoris-publisher/internal/workflow/target"
 )
 
 // Result describes a high-level workflow use case result.
@@ -30,6 +31,9 @@ type Result struct {
 
 	// preflight contains read-only publish readiness checks.
 	preflight preflight.Result
+
+	// targetPrepare contains user-facing target preparation checks.
+	targetPrepare target.PrepareResult
 }
 
 // Plan returns the executable plan used for the workflow run.
@@ -40,3 +44,6 @@ func (r Result) Workflow() workflow.Result { return r.workflow }
 
 // Preflight returns read-only publish readiness checks.
 func (r Result) Preflight() preflight.Result { return r.preflight }
+
+// TargetPrepare returns target worktree preparation results.
+func (r Result) TargetPrepare() target.PrepareResult { return r.targetPrepare }

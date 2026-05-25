@@ -26,6 +26,7 @@ type Manifest struct {
 	kind       manifest.Kind
 	metadata   manifest.Metadata
 	source     manifest.Source
+	target     manifest.TargetPolicy
 	publish    manifest.PublishPolicy
 	defaults   Defaults
 	modules    []Module
@@ -46,6 +47,9 @@ func New(spec Spec) (Manifest, error) {
 
 	source, err := manifest.NewSource(spec.Source)
 	collector.AddError("source", err)
+
+	target, err := manifest.NewTargetPolicy(spec.Target)
+	collector.AddError("target", err)
 
 	publish, err := manifest.NewPublishPolicy(spec.Publish)
 	collector.AddError("publish", err)
@@ -75,6 +79,7 @@ func New(spec Spec) (Manifest, error) {
 		kind:       kind,
 		metadata:   metadata,
 		source:     source,
+		target:     target,
 		publish:    publish,
 		defaults:   defaults,
 		modules:    modules,
@@ -97,6 +102,9 @@ func (m Manifest) Metadata() manifest.Metadata { return m.metadata }
 
 // Source returns the source repository declaration.
 func (m Manifest) Source() manifest.Source { return m.source }
+
+// Target returns the target worktree preparation policy.
+func (m Manifest) Target() manifest.TargetPolicy { return m.target }
 
 // Publish returns the global publication policy.
 func (m Manifest) Publish() manifest.PublishPolicy { return m.publish }

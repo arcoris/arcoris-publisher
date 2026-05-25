@@ -35,11 +35,35 @@ func TestNewBuildsValidatedStagingManifest(t *testing.T) {
 	if m.Publish().Mode() != manifest.PublishModeExplicitProjection {
 		t.Fatalf("unexpected publish mode")
 	}
+	if _, ok := m.Target().RemoteTemplate(); ok {
+		t.Fatalf("unexpected target remote template")
+	}
 	if m.Defaults().ModuleManifest().Path().String() != "arcpub.module.yaml" {
 		t.Fatalf("unexpected module manifest default")
 	}
 	if len(m.Modules()) != 2 {
 		t.Fatalf("expected two modules")
+	}
+}
+
+func TestNewLoadsTargetRemoteTemplate(t *testing.T) {
+	spec := validSpec()
+	spec.Target.RemoteTemplate = stringPtr("git@github.com:{repository}.git")
+
+	m, err := staging.New(spec)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	tmpl, ok := m.Target().RemoteTemplate()
+	if !ok {
+		t.Fatal("target remote template missing")
+	}
+	got, err := tmpl.Resolve("arcoris/foundation", "foundation")
+	if err != nil {
+		t.Fatalf("Resolve returned error: %v", err)
+	}
+	if got != "git@github.com:arcoris/foundation.git" {
+		t.Fatalf("resolved template = %q", got)
 	}
 }
 
@@ -71,6 +95,11 @@ func TestNewRejectsMissingModulesAndInvalidSections(t *testing.T) {
 		func() staging.Spec {
 			spec := validSpec()
 			spec.Modules[0].Name = "Foundation"
+			return spec
+		}(),
+		func() staging.Spec {
+			spec := validSpec()
+			spec.Target.RemoteTemplate = stringPtr("file:///{bogus}.git")
 			return spec
 		}(),
 	} {

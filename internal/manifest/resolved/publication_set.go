@@ -20,6 +20,7 @@ import "arcoris.dev/arcoris-publisher/internal/manifest"
 type PublicationSet struct {
 	metadata manifest.Metadata
 	source   manifest.Source
+	target   manifest.TargetPolicy
 	publish  manifest.PublishPolicy
 	modules  []PublicationModule
 }
@@ -29,6 +30,9 @@ func (s PublicationSet) Metadata() manifest.Metadata { return s.metadata }
 
 // Source returns the effective source repository declaration.
 func (s PublicationSet) Source() manifest.Source { return s.source }
+
+// Target returns the effective target preparation policy.
+func (s PublicationSet) Target() manifest.TargetPolicy { return s.target }
 
 // Publish returns the effective global publication policy.
 func (s PublicationSet) Publish() manifest.PublishPolicy { return s.publish }

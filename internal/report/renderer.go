@@ -21,6 +21,7 @@ import (
 	"arcoris.dev/arcoris-publisher/internal/workflow"
 	"arcoris.dev/arcoris-publisher/internal/workflow/preflight"
 	"arcoris.dev/arcoris-publisher/internal/workflow/publish"
+	"arcoris.dev/arcoris-publisher/internal/workflow/target"
 	"arcoris.dev/arcoris-publisher/internal/workflow/verify"
 )
 
@@ -58,6 +59,12 @@ func (r Renderer) Publish(w io.Writer, result publish.Result) error {
 func (r Renderer) Preflight(w io.Writer, result preflight.Result) error {
 	report := BuildPreflightReport(result, r.opts)
 	return renderFormatted(w, report, r.opts, writePreflightText)
+}
+
+// TargetPrepare renders target worktree preparation results.
+func (r Renderer) TargetPrepare(w io.Writer, result target.PrepareResult) error {
+	report := BuildTargetPrepareReport(result, r.opts)
+	return renderFormatted(w, report, r.opts, writeTargetPrepareText)
 }
 
 // TransactionList renders a publish transaction list report.

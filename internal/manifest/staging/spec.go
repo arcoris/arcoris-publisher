@@ -22,6 +22,7 @@ type Spec struct {
 	Kind       string                `json:"kind" yaml:"kind"`
 	Metadata   manifest.MetadataSpec `json:"metadata" yaml:"metadata"`
 	Source     manifest.SourceSpec   `json:"source" yaml:"source"`
+	Target     manifest.TargetSpec   `json:"target,omitempty" yaml:"target,omitempty"`
 	Publish    manifest.PublishSpec  `json:"publish,omitempty" yaml:"publish,omitempty"`
 	Defaults   DefaultsSpec          `json:"defaults,omitempty" yaml:"defaults,omitempty"`
 	Modules    []ModuleSpec          `json:"modules" yaml:"modules"`
