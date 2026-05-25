@@ -49,6 +49,9 @@ type Options struct {
 	// RemoteName is the remote to push branches and tags to.
 	RemoteName string
 
+	// StateDir stores durable publish transaction journals and locks.
+	StateDir string
+
 	// AllowEmptyCommits permits Git commits when no file content changed.
 	AllowEmptyCommits bool
 
@@ -58,9 +61,29 @@ type Options struct {
 	// AllowStatusFallback permits tests or degraded ports to infer publishable
 	// changes from prior workflow stages when Git status is unavailable.
 	AllowStatusFallback bool
+
+	// RollbackMode controls compensating rollback after a transaction failure.
+	RollbackMode RollbackMode
+
+	// TransactionIDFunc creates transaction identifiers. Tests may inject a
+	// deterministic generator.
+	TransactionIDFunc TransactionIDFunc
 }
 
 // DefaultOptions returns conservative publication defaults.
 func DefaultOptions() Options {
-	return Options{RemoteName: "origin"}
+	return Options{RemoteName: "origin", RollbackMode: RollbackAutomatic}
 }
+
+// RollbackMode controls transaction rollback behavior after publish failure.
+type RollbackMode string
+
+const (
+	// RollbackAutomatic attempts compensating rollback immediately.
+	RollbackAutomatic RollbackMode = "automatic"
+	// RollbackManual writes the journal and leaves rollback to the operator.
+	RollbackManual RollbackMode = "manual"
+	// RollbackDisabled leaves transaction side effects in place. It is intended
+	// only for focused tests and should not be used for production publish.
+	RollbackDisabled RollbackMode = "disabled"
+)

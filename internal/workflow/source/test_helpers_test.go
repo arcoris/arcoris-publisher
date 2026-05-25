@@ -225,6 +225,11 @@ func (g fakeGit) RemoteRefExists(context.Context, string, string, string) (bool,
 	return false, nil
 }
 
+// RemoteRefHash is unused by source inspection and returns a stable missing ref.
+func (g fakeGit) RemoteRefHash(context.Context, string, string, string) (portgit.CommitHash, bool, error) {
+	return "", false, nil
+}
+
 // CommitMessage is unused by source inspection and returns an empty message.
 func (g fakeGit) CommitMessage(context.Context, string, string) (string, error) { return "", nil }
 

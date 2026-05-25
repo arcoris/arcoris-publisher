@@ -36,7 +36,7 @@ func (a App) Publish(ctx context.Context, req Request) (Result, error) {
 		Publish:             true,
 	})
 	if err != nil {
-		return Result{}, fmt.Errorf("workflow: %w", err)
+		return Result{plan: plan, workflow: result}, fmt.Errorf("workflow: %w", err)
 	}
 
 	return Result{plan: plan, workflow: result}, nil

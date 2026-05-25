@@ -44,3 +44,17 @@ func TestDefaultRemote(t *testing.T) {
 		t.Fatalf("defaultRemote(upstream) = %q, want upstream", got)
 	}
 }
+
+func TestRemoteRefHashParsesLsRemote(t *testing.T) {
+	runner := &fakeRunner{results: []processport.Result{{
+		ExitCode: 0,
+		Stdout:   []byte("abc123\trefs/heads/main\n"),
+	}}}
+	client := New(runner, Options{})
+
+	hash, ok, err := client.RemoteRefHash(context.Background(), "/repo", "origin", "refs/heads/main")
+
+	if err != nil || !ok || hash != "abc123" {
+		t.Fatalf("RemoteRefHash() = %q, %v, %v", hash, ok, err)
+	}
+}

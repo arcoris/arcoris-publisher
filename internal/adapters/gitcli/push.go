@@ -29,6 +29,21 @@ func (c *Client) Push(ctx context.Context, repoDir string, remote string, refspe
 	return nil
 }
 
+// DeleteRemoteRef deletes one remote ref with git push <remote> :<ref>.
+func (c *Client) DeleteRemoteRef(
+	ctx context.Context,
+	repoDir string,
+	remote string,
+	ref string,
+	opts gitport.PushOptions,
+) error {
+	result, err := c.runner.Run(ctx, c.command(repoDir, deleteRemoteRefArgs(remote, ref, opts), opts.SensitiveValues, true, true))
+	if err != nil {
+		return wrapGitCommandError("git remote ref delete failed", result, err)
+	}
+	return nil
+}
+
 // pushArgs renders force and atomic options before the remote/refspec pair.
 func pushArgs(remote string, refspec gitport.RefSpec, opts gitport.PushOptions) []string {
 	args := []string{"push"}
@@ -42,4 +57,8 @@ func pushArgs(remote string, refspec gitport.RefSpec, opts gitport.PushOptions) 
 		args = append(args, "--atomic")
 	}
 	return append(args, defaultRemote(remote), refspec.String())
+}
+
+func deleteRemoteRefArgs(remote string, ref string, opts gitport.PushOptions) []string {
+	return pushArgs(remote, gitport.RefSpec(":"+ref), opts)
 }

@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"strings"
 
+	"arcoris.dev/arcoris-publisher/internal/app"
 	"arcoris.dev/arcoris-publisher/internal/report"
 	"arcoris.dev/arcoris-publisher/internal/versioning"
 	"github.com/spf13/cobra"
@@ -49,6 +50,8 @@ type workflowFlags struct {
 	sourceRepositoryDir string
 	stagingDir          string
 	targetRootDir       string
+	stateDir            string
+	rollback            string
 	dryRun              bool
 }
 
@@ -96,7 +99,29 @@ func addWorkflowFlags(flags *pflag.FlagSet, values *workflowFlags, opts Options,
 	flags.StringVar(&values.stagingDir, "staging-dir", values.stagingDir, "staging directory containing module sources")
 	flags.StringVar(&values.targetRootDir, "target-root", values.targetRootDir, "directory containing target worktrees")
 	if includeDryRun {
+		flags.StringVar(&values.stateDir, "state-dir", values.stateDir, "publish transaction state directory")
+		flags.StringVar(&values.rollback, "rollback", "automatic", "rollback mode after publish failure: automatic, manual, or disabled")
 		flags.BoolVar(&values.dryRun, "dry-run", values.dryRun, "construct and verify target worktrees, then skip commit, tag, and push")
+	}
+}
+
+func publishStateDir(flags workflowFlags) string {
+	if strings.TrimSpace(flags.stateDir) != "" {
+		return flags.stateDir
+	}
+	return flags.targetRootDir + "/.arcpub/state"
+}
+
+func parseRollbackMode(value string) (app.RollbackMode, error) {
+	switch strings.TrimSpace(strings.ToLower(value)) {
+	case "", "automatic":
+		return app.RollbackAutomatic, nil
+	case "manual":
+		return app.RollbackManual, nil
+	case "disabled":
+		return app.RollbackDisabled, nil
+	default:
+		return "", usageError("invalid --rollback; expected automatic, manual, or disabled")
 	}
 }
 

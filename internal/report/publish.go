@@ -29,6 +29,7 @@ type PublishReport struct {
 	PublishedCount int                   `json:"publishedCount"`
 	SkippedCount   int                   `json:"skippedCount"`
 	Modules        []PublishModuleReport `json:"modules"`
+	Transaction    *TransactionReport    `json:"transaction,omitempty"`
 }
 
 // PublishModuleReport describes publication outcome for one module.
@@ -42,7 +43,7 @@ type PublishModuleReport struct {
 }
 
 // BuildPublishReport converts publication results into a stable report DTO.
-func BuildPublishReport(result publish.Result, _ Options) PublishReport {
+func BuildPublishReport(result publish.Result, opts Options) PublishReport {
 	modules := result.Modules()
 	out := PublishReport{
 		Kind:        "publish",
@@ -70,6 +71,22 @@ func BuildPublishReport(result publish.Result, _ Options) PublishReport {
 			moduleReport.Status = StatusPending
 		}
 		out.Modules = append(out.Modules, moduleReport)
+	}
+	if result.HasTransaction() {
+		transaction := BuildTransactionReport(result.Transaction(), opts)
+		out.Transaction = &transaction
+		out.Present = true
+		switch transaction.Status {
+		case string(publish.TransactionStatusRolledBack):
+			out.Status = StatusRolledBack
+		case string(publish.TransactionStatusRollbackFailed):
+			out.Status = StatusRollbackFailed
+		case string(publish.TransactionStatusCommitted):
+			out.Status = StatusPublished
+		}
+		if out.Status == StatusRolledBack || out.Status == StatusRollbackFailed {
+			return out
+		}
 	}
 	switch {
 	case out.PublishedCount > 0:
@@ -107,6 +124,16 @@ func writePublishText(w io.Writer, report PublishReport) error {
 	}
 	if err := writeLine(w, "  Skipped: %d", report.SkippedCount); err != nil {
 		return err
+	}
+	if report.Transaction != nil {
+		if err := writeLine(w, "  Transaction: %s (%s)", report.Transaction.ID, report.Transaction.Status); err != nil {
+			return err
+		}
+		if report.Transaction.RollbackStatus != "" {
+			if err := writeLine(w, "  Rollback: %s", report.Transaction.RollbackStatus); err != nil {
+				return err
+			}
+		}
 	}
 	if err := writeLine(w, ""); err != nil {
 		return err

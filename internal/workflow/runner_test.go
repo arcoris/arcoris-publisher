@@ -64,7 +64,7 @@ func TestRunnerPublishRun(t *testing.T) {
 	if !result.Publish().Published() {
 		t.Fatal("publish stage did not publish")
 	}
-	assertWorkflowCallOrder(t, fakeGit.Calls, "add", "commit", "push", "tag", "push-tag")
+	assertWorkflowCallOrder(t, fakeGit.Calls, "add", "commit", "push", "push", "tag", "push-tag")
 }
 
 func TestRunnerVerificationFailurePreventsPublish(t *testing.T) {
@@ -143,6 +143,10 @@ func workflowFixture(t *testing.T) (Runner, Request, *porttest.Git) {
 		},
 		Construct: construct.Options{PreserveGitDir: true},
 		Verify:    verify.Options{RequireClean: false},
+		Publish: publish.Options{
+			StateDir:          t.TempDir(),
+			TransactionIDFunc: func(publish.TransactionInput) publish.TransactionID { return "tx-workflow" },
+		},
 	}
 
 	return New(deps, opts), Request{

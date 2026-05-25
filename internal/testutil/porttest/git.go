@@ -17,6 +17,7 @@ package porttest
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"arcoris.dev/arcoris-publisher/internal/ports/git"
 )
@@ -59,11 +60,23 @@ type Git struct {
 	// RemoteRefs reports remote ref existence by "remote\x00ref".
 	RemoteRefs map[string]bool
 
+	// RemoteRefHashes reports remote ref object hashes by "remote\x00ref".
+	RemoteRefHashes map[string]git.CommitHash
+
 	// TagExistsError forces TagExists to fail.
 	TagExistsError error
 
 	// RemoteRefExistsError forces RemoteRefExists to fail.
 	RemoteRefExistsError error
+
+	// RemoteRefHashError forces RemoteRefHash to fail.
+	RemoteRefHashError error
+
+	// DeleteRemoteRefError forces DeleteRemoteRef to fail.
+	DeleteRemoteRefError error
+
+	// DeleteTagError forces DeleteTag to fail.
+	DeleteTagError error
 
 	// CommitHash is returned by Commit when non-empty.
 	CommitHash git.CommitHash
@@ -75,11 +88,12 @@ type Git struct {
 // NewGit returns a fake Git port with clean default status.
 func NewGit() *Git {
 	return &Git{
-		Statuses:     map[string]git.Status{},
-		StatusErrors: map[string]error{},
-		Tags:         map[git.TagName]bool{},
-		RemoteRefs:   map[string]bool{},
-		CommitHash:   "abcdef1234567890",
+		Statuses:        map[string]git.Status{},
+		StatusErrors:    map[string]error{},
+		Tags:            map[git.TagName]bool{},
+		RemoteRefs:      map[string]bool{},
+		RemoteRefHashes: map[string]git.CommitHash{},
+		CommitHash:      "abcdef1234567890",
 	}
 }
 
@@ -116,10 +130,22 @@ func (g *Git) RemoteRefExists(_ context.Context, repoDir string, remote string, 
 	if g.RemoteRefExistsError != nil {
 		return false, g.RemoteRefExistsError
 	}
+	if hash := g.remoteRefHash(repoDir, remote, ref); hash != "" {
+		return true, nil
+	}
 	if g.RemoteRefs[remoteRefKeyForRepo(repoDir, remote, ref)] {
 		return true, nil
 	}
 	return g.RemoteRefs[remoteRefKey(remote, ref)], nil
+}
+
+// RemoteRefHash reports configured remote ref hashes.
+func (g *Git) RemoteRefHash(_ context.Context, repoDir string, remote string, ref string) (git.CommitHash, bool, error) {
+	if g.RemoteRefHashError != nil {
+		return "", false, g.RemoteRefHashError
+	}
+	hash := g.remoteRefHash(repoDir, remote, ref)
+	return hash, hash != "", nil
 }
 
 // CommitMessage returns an empty synthetic message.
@@ -190,12 +216,34 @@ func (g *Git) Fetch(_ context.Context, repoDir string, remote string, _ git.Fetc
 func (g *Git) Push(
 	_ context.Context,
 	repoDir string,
-	_ string,
+	remote string,
 	refspec git.RefSpec,
 	opts git.PushOptions,
 ) error {
 	g.record("push", repoDir, string(refspec), opts.ForceWithLease)
+	if g.PushError == nil {
+		g.recordRemotePush(repoDir, remote, refspec)
+	}
 	return g.PushError
+}
+
+// DeleteRemoteRef records a remote ref deletion.
+func (g *Git) DeleteRemoteRef(
+	_ context.Context,
+	repoDir string,
+	remote string,
+	ref string,
+	opts git.PushOptions,
+) error {
+	g.record("delete-remote-ref", repoDir, ref, opts.ForceWithLease)
+	if g.DeleteRemoteRefError != nil {
+		return g.DeleteRemoteRefError
+	}
+	delete(g.RemoteRefs, remoteRefKey(remote, ref))
+	delete(g.RemoteRefs, remoteRefKeyForRepo(repoDir, remote, ref))
+	delete(g.RemoteRefHashes, remoteRefKey(remote, ref))
+	delete(g.RemoteRefHashes, remoteRefKeyForRepo(repoDir, remote, ref))
+	return nil
 }
 
 // TagExists reports configured local tags.
@@ -215,6 +263,7 @@ func (g *Git) CreateTag(
 	_ git.TagOptions,
 ) error {
 	g.record("tag", repoDir, fmt.Sprintf("%s@%s", tag, target), false)
+	g.Tags[tag] = true
 	return nil
 }
 
@@ -222,12 +271,27 @@ func (g *Git) CreateTag(
 func (g *Git) PushTag(
 	_ context.Context,
 	repoDir string,
-	_ string,
+	remote string,
 	tag git.TagName,
 	opts git.PushOptions,
 ) error {
 	g.record("push-tag", repoDir, string(tag), opts.ForceWithLease)
+	if g.PushTagError == nil {
+		ref := "refs/tags/" + tag.String()
+		g.RemoteRefs[remoteRefKeyForRepo(repoDir, remote, ref)] = true
+		g.RemoteRefHashes[remoteRefKeyForRepo(repoDir, remote, ref)] = g.CommitHash
+	}
 	return g.PushTagError
+}
+
+// DeleteTag records a local tag deletion.
+func (g *Git) DeleteTag(_ context.Context, repoDir string, tag git.TagName) error {
+	g.record("delete-tag", repoDir, string(tag), false)
+	if g.DeleteTagError != nil {
+		return g.DeleteTagError
+	}
+	delete(g.Tags, tag)
+	return nil
 }
 
 func (g *Git) record(op, repoDir, ref string, forceWithLease bool) {
@@ -262,4 +326,25 @@ func remoteRefKey(remote string, ref string) string {
 
 func remoteRefKeyForRepo(repoDir string, remote string, ref string) string {
 	return repoDir + "\x00" + remote + "\x00" + ref
+}
+
+func (g *Git) remoteRefHash(repoDir string, remote string, ref string) git.CommitHash {
+	if hash := g.RemoteRefHashes[remoteRefKeyForRepo(repoDir, remote, ref)]; hash != "" {
+		return hash
+	}
+	return g.RemoteRefHashes[remoteRefKey(remote, ref)]
+}
+
+func (g *Git) recordRemotePush(repoDir string, remote string, refspec git.RefSpec) {
+	before, after, ok := strings.Cut(refspec.String(), ":")
+	if !ok || after == "" || before == "" {
+		return
+	}
+	hash := git.CommitHash(before)
+	if before == "HEAD" {
+		hash = g.CommitHash
+	}
+	key := remoteRefKeyForRepo(repoDir, remote, after)
+	g.RemoteRefs[key] = true
+	g.RemoteRefHashes[key] = hash
 }

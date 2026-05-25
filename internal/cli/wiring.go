@@ -30,6 +30,9 @@ type Application interface {
 	BuildPlan(ctx context.Context, manifestPath string, version versioning.Version) (plan.Plan, error)
 	Verify(ctx context.Context, req app.Request) (app.Result, error)
 	Publish(ctx context.Context, req app.Request) (app.Result, error)
+	ListTransactions(ctx context.Context, req app.TransactionRequest) (app.TransactionListResult, error)
+	ShowTransaction(ctx context.Context, req app.TransactionRequest) (app.TransactionResult, error)
+	RollbackTransaction(ctx context.Context, req app.TransactionRequest) (app.TransactionResult, error)
 }
 
 // AppFactory constructs an application instance for one command invocation.

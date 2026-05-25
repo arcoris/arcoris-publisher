@@ -92,6 +92,10 @@ func reportWorkflowResult(t *testing.T, cfg workflowReportFixture) workflow.Resu
 			},
 			Construct: construct.Options{PreserveGitDir: true},
 			Verify:    verify.Options{RequireClean: false},
+			Publish: publish.Options{
+				StateDir:          t.TempDir(),
+				TransactionIDFunc: func(publish.TransactionInput) publish.TransactionID { return "tx-report" },
+			},
 		},
 	)
 

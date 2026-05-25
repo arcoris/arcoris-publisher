@@ -33,4 +33,10 @@ type TagClient interface {
 	// PushOptions apply to the tag ref update in the same way they apply to
 	// branch refspec pushes.
 	PushTag(ctx context.Context, repoDir string, remote string, tag TagName, opts PushOptions) error
+	// DeleteTag removes a local tag.
+	//
+	// Missing tags should be treated as a successful no-op by workflow-safe
+	// adapters or returned as a structured missing-ref error if the adapter
+	// cannot distinguish that case.
+	DeleteTag(ctx context.Context, repoDir string, tag TagName) error
 }

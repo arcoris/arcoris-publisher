@@ -30,7 +30,7 @@ import (
 )
 
 func TestVerifyRunsWorkflow(t *testing.T) {
-	app, _ := appFixture()
+	app, _ := appFixture(t)
 
 	result, err := app.Verify(context.Background(), appRequest())
 
@@ -45,7 +45,9 @@ func TestVerifyRunsWorkflow(t *testing.T) {
 	}
 }
 
-func appFixture() (App, *porttest.Git) {
+func appFixture(t *testing.T) (App, *porttest.Git) {
+	t.Helper()
+
 	fs := appFS()
 	fakeGit := porttest.NewGit()
 	deps := Dependencies{
@@ -66,6 +68,10 @@ func appFixture() (App, *porttest.Git) {
 			},
 			Construct: construct.Options{PreserveGitDir: true},
 			Verify:    verify.Options{RequireClean: false},
+			Publish: publish.Options{
+				StateDir:          t.TempDir(),
+				TransactionIDFunc: func(publish.TransactionInput) publish.TransactionID { return "tx-app" },
+			},
 		},
 	}
 

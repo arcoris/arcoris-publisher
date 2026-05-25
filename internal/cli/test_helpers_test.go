@@ -41,17 +41,22 @@ func (failingWriter) Write([]byte) (int, error) {
 }
 
 type fakeApplication struct {
-	plan              plan.Plan
-	buildPlanCalled   bool
-	verifyCalled      bool
-	publishCalled     bool
-	buildPlanManifest string
-	buildPlanVersion  versioning.Version
-	verifyRequest     app.Request
-	publishRequest    app.Request
-	buildPlanError    error
-	verifyError       error
-	publishError      error
+	plan               plan.Plan
+	buildPlanCalled    bool
+	verifyCalled       bool
+	publishCalled      bool
+	listCalled         bool
+	showCalled         bool
+	rollbackCalled     bool
+	buildPlanManifest  string
+	buildPlanVersion   versioning.Version
+	verifyRequest      app.Request
+	publishRequest     app.Request
+	transactionRequest app.TransactionRequest
+	buildPlanError     error
+	verifyError        error
+	publishError       error
+	transactionError   error
 }
 
 func newFakeApplication(t *testing.T) *fakeApplication {
@@ -85,12 +90,32 @@ func (f *fakeApplication) Publish(_ context.Context, req app.Request) (app.Resul
 	return app.Result{}, f.publishError
 }
 
+func (f *fakeApplication) ListTransactions(_ context.Context, req app.TransactionRequest) (app.TransactionListResult, error) {
+	f.listCalled = true
+	f.transactionRequest = req
+	return app.TransactionListResult{}, f.transactionError
+}
+
+func (f *fakeApplication) ShowTransaction(_ context.Context, req app.TransactionRequest) (app.TransactionResult, error) {
+	f.showCalled = true
+	f.transactionRequest = req
+	return app.TransactionResult{}, f.transactionError
+}
+
+func (f *fakeApplication) RollbackTransaction(_ context.Context, req app.TransactionRequest) (app.TransactionResult, error) {
+	f.rollbackCalled = true
+	f.transactionRequest = req
+	return app.TransactionResult{}, f.transactionError
+}
+
 type realApplicationOptions struct {
 	tidyError error
 	dirty     bool
 }
 
-func newRealApplication(opts realApplicationOptions) app.App {
+func newRealApplication(t *testing.T, opts realApplicationOptions) app.App {
+	t.Helper()
+
 	fs := porttest.NewFileSystem()
 	for _, module := range []struct {
 		name string
@@ -141,6 +166,10 @@ func newRealApplication(opts realApplicationOptions) app.App {
 				},
 				Construct: construct.Options{PreserveGitDir: true},
 				Verify:    verify.Options{RequireClean: false},
+				Publish: publish.Options{
+					StateDir:          t.TempDir(),
+					TransactionIDFunc: func(publish.TransactionInput) publish.TransactionID { return "tx-cli" },
+				},
 			},
 		},
 	)

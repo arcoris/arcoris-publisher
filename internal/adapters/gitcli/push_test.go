@@ -48,3 +48,14 @@ func TestPushArgsSupportsForce(t *testing.T) {
 	args := pushArgs("upstream", gitport.RefSpec("main"), gitport.PushOptions{Force: true})
 	assertStringSlice(t, args, []string{"push", "--force", "upstream", "main"})
 }
+
+func TestDeleteRemoteRefBuildsDeleteRefspec(t *testing.T) {
+	runner := &fakeRunner{}
+	client := New(runner, Options{})
+
+	err := client.DeleteRemoteRef(context.Background(), "/repo", "origin", "refs/heads/main", gitport.PushOptions{})
+	if err != nil {
+		t.Fatalf("DeleteRemoteRef() error = %v", err)
+	}
+	assertStringSlice(t, runner.specs[0].Args, []string{"push", "origin", ":refs/heads/main"})
+}

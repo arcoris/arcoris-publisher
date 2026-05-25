@@ -17,6 +17,7 @@ package publish
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"arcoris.dev/arcoris-publisher/internal/manifest"
 	"arcoris.dev/arcoris-publisher/internal/plan"
@@ -35,8 +36,12 @@ type Service struct {
 
 // New returns a publication service.
 func New(deps Dependencies, opts Options) Service {
+	defaults := DefaultOptions()
 	if opts.RemoteName == "" {
-		opts.RemoteName = DefaultOptions().RemoteName
+		opts.RemoteName = defaults.RemoteName
+	}
+	if opts.RollbackMode == "" {
+		opts.RollbackMode = defaults.RollbackMode
 	}
 	return Service{deps: deps, opts: opts}
 }
@@ -52,12 +57,15 @@ func (s Service) Publish(ctx context.Context, req Request) (Result, error) {
 		return Result{}, err
 	}
 
-	results, err := s.publishModules(ctx, req, preflight)
-	if err != nil {
-		return Result{}, err
+	if s.opts.DryRun {
+		results := make([]ModuleResult, 0, len(preflight))
+		for _, item := range preflight {
+			results = append(results, ModuleResult{module: item.mod.Name(), skipped: item.skip})
+		}
+		return Result{modules: results}, nil
 	}
 
-	return Result{modules: results}, nil
+	return s.publishTransaction(ctx, req, preflight)
 }
 
 // validateRequest rejects invalid publication inputs before Git is mutated.
@@ -92,23 +100,46 @@ func (s Service) preflightModules(ctx context.Context, req Request) ([]modulePre
 	return preflight, nil
 }
 
-// publishModules publishes planned modules in deterministic plan order after
-// all preflight checks have passed.
-func (s Service) publishModules(
+func (s Service) publishTransaction(
 	ctx context.Context,
 	req Request,
 	preflight []modulePreflight,
-) ([]ModuleResult, error) {
-	results := make([]ModuleResult, 0, len(preflight))
-	for _, item := range preflight {
-		mr, err := s.publishModule(ctx, req, item)
-		if err != nil {
-			return nil, err
+) (Result, error) {
+	stateDir := deriveStateDir(s.opts.StateDir, preflight)
+	if stateDir == "" {
+		return Result{}, &Error{Code: CodeJournalFailed, Message: "transaction state dir is unavailable"}
+	}
+	store := NewFileJournalStore(stateDir)
+	if pending, ok, err := store.HasPending(ctx); err != nil {
+		return Result{}, &Error{Code: CodeJournalFailed, Message: "pending transaction lookup failed", Cause: err}
+	} else if ok {
+		return Result{}, &Error{
+			Code:    CodePendingTransaction,
+			Message: fmt.Sprintf("pending publish transaction %s has status %s; run arcpub transactions show %s or arcpub rollback --transaction %s", pending.ID, pending.Status, pending.ID, pending.ID),
 		}
-		results = append(results, mr)
 	}
 
-	return results, nil
+	now := time.Now().UTC()
+	idFunc := s.opts.TransactionIDFunc
+	if idFunc == nil {
+		idFunc = defaultTransactionID
+	}
+	journal := newTransactionJournal(idFunc(TransactionInput{
+		Version: transactionVersion(req),
+	}), req, s.opts.RemoteName, preflight, now)
+
+	lock, err := acquireTransactionLock(ctx, stateDir, journal.ID, now)
+	if err != nil {
+		return Result{}, &Error{Code: CodeLockFailed, Message: "publish transaction lock failed", Cause: err}
+	}
+	defer func() { _ = lock.Release() }()
+
+	if err := store.Create(ctx, journal); err != nil {
+		return Result{}, &Error{Code: CodeJournalFailed, Message: "create transaction journal failed", Cause: err}
+	}
+
+	tx := transactionRunner{service: s, request: req, store: store, journal: journal}
+	return tx.run(ctx, preflight)
 }
 
 type modulePreflight struct {
@@ -162,36 +193,6 @@ func (s Service) preflightModule(
 		sourceModule: sourceModule,
 		skip:         skip,
 	}, nil
-}
-
-// publishModule publishes one changed module target worktree.
-func (s Service) publishModule(
-	ctx context.Context,
-	req Request,
-	item modulePreflight,
-) (ModuleResult, error) {
-	if item.skip {
-		return ModuleResult{module: item.mod.Name(), skipped: true}, nil
-	}
-	if s.opts.DryRun {
-		return ModuleResult{module: item.mod.Name(), skipped: false}, nil
-	}
-
-	commit, err := s.commitWorktree(ctx, item.worktree, item.mod, item.sourceModule, req)
-	if err != nil {
-		return ModuleResult{}, err
-	}
-
-	if err := s.pushBranches(ctx, req, item.mod, item.worktree); err != nil {
-		return ModuleResult{}, err
-	}
-
-	tags, err := s.createAndPushTags(ctx, req, item.mod, item.worktree, commit)
-	if err != nil {
-		return ModuleResult{}, err
-	}
-
-	return ModuleResult{module: item.mod.Name(), commit: commit, tags: tags, pushed: true}, nil
 }
 
 // targetWorktree returns the prepared worktree path for name.
@@ -324,57 +325,6 @@ func (s Service) preflightTag(
 	}
 
 	return nil
-}
-
-// createAndPushTags creates and pushes the release tag after branch refs are
-// safely updated.
-func (s Service) createAndPushTags(
-	ctx context.Context,
-	req Request,
-	mod plan.ModulePlan,
-	worktree string,
-	commit git.CommitHash,
-) ([]git.TagName, error) {
-	if !req.Plan.PublishPolicy().Tags().Enabled() {
-		return nil, nil
-	}
-
-	tag := git.TagName(mod.Version().String())
-	if err := s.deps.Git.CreateTag(ctx, worktree, tag, commit, git.TagOptions{
-		Annotated: true,
-		Message:   "release " + mod.Version().String(),
-	}); err != nil {
-		return nil, &Error{Code: CodePublishFailed, Message: "git tag failed", Cause: err}
-	}
-
-	if err := s.deps.Git.PushTag(ctx, worktree, s.opts.RemoteName, tag, git.PushOptions{}); err != nil {
-		return nil, &Error{Code: CodePublishFailed, Message: "git push tag failed", Cause: err}
-	}
-
-	return []git.TagName{tag}, nil
-}
-
-// pushBranches pushes all planned target branches for one module.
-func (s Service) pushBranches(
-	ctx context.Context,
-	req Request,
-	mod plan.ModulePlan,
-	worktree string,
-) error {
-	for _, branch := range mod.Branches() {
-		refspec := branchRefspec(branch.Target())
-		if err := s.deps.Git.Push(ctx, worktree, s.opts.RemoteName, refspec, pushOptions(req)); err != nil {
-			return &Error{Code: CodePublishFailed, Message: "git push branch failed", Cause: err}
-		}
-	}
-
-	return nil
-}
-
-// branchRefspec renders the local-to-remote branch update for one target branch.
-func branchRefspec(branch manifest.BranchName) git.RefSpec {
-	ref := "refs/heads/" + branch.String()
-	return git.RefSpec(ref + ":" + ref)
 }
 
 // pushOptions maps the resolved publication push policy to Git push flags.

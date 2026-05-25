@@ -24,3 +24,14 @@ import (
 func (c *Client) TagExists(ctx context.Context, repoDir string, tag gitport.TagName) (bool, error) {
 	return c.RefExists(ctx, repoDir, tagRef(tag))
 }
+
+// DeleteTag removes one local tag if Git accepts the deletion.
+func (c *Client) DeleteTag(ctx context.Context, repoDir string, tag gitport.TagName) error {
+	spec := c.command(repoDir, []string{"tag", "-d", tag.String()}, nil, true, true)
+	spec.AllowedExitCodes = []int{0, 1}
+	result, err := c.runner.Run(ctx, spec)
+	if err != nil {
+		return wrapGitCommandError("git tag delete failed", result, err)
+	}
+	return nil
+}

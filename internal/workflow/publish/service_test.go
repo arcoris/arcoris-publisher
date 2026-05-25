@@ -46,12 +46,12 @@ func TestPublishRejectsInvalidRequest(t *testing.T) {
 	}
 }
 
-func TestBranchRefspecUsesTargetBranch(t *testing.T) {
-	got := branchRefspec(manifest.BranchName("release/v1"))
-	want := git.RefSpec("refs/heads/release/v1:refs/heads/release/v1")
+func TestBranchRefUsesTargetBranch(t *testing.T) {
+	got := branchRef(manifest.BranchName("release/v1"))
+	want := "refs/heads/release/v1"
 
 	if got != want {
-		t.Fatalf("branchRefspec() = %q, want %q", got, want)
+		t.Fatalf("branchRef() = %q, want %q", got, want)
 	}
 }
 
@@ -59,7 +59,7 @@ func TestPublishPushesBranchBeforeTag(t *testing.T) {
 	req, fakeGit, worktree := publishRequest(t, nil)
 	fakeGit.Statuses[worktree] = dirtyStatus()
 
-	result, err := New(Dependencies{Git: fakeGit}, Options{}).Publish(context.Background(), req)
+	result, err := New(Dependencies{Git: fakeGit}, publishOptions(t, Options{})).Publish(context.Background(), req)
 
 	if err != nil {
 		t.Fatalf("Publish() error = %v", err)
@@ -67,7 +67,7 @@ func TestPublishPushesBranchBeforeTag(t *testing.T) {
 	if !result.Published() {
 		t.Fatal("Published() = false")
 	}
-	assertCallOrder(t, fakeGit.Calls, "add", "commit", "push", "tag", "push-tag")
+	assertCallOrder(t, fakeGit.Calls, "add", "commit", "push", "push", "tag", "push-tag")
 }
 
 func TestPublishDoesNotPushTagWhenBranchPushFails(t *testing.T) {
@@ -75,7 +75,7 @@ func TestPublishDoesNotPushTagWhenBranchPushFails(t *testing.T) {
 	fakeGit.Statuses[worktree] = dirtyStatus()
 	fakeGit.PushError = errors.New("push failed")
 
-	_, err := New(Dependencies{Git: fakeGit}, Options{}).Publish(context.Background(), req)
+	_, err := New(Dependencies{Git: fakeGit}, publishOptions(t, Options{})).Publish(context.Background(), req)
 
 	if err == nil {
 		t.Fatal("Publish() error = nil")
@@ -88,7 +88,7 @@ func TestPublishDryRunDoesNotMutateGit(t *testing.T) {
 	req, fakeGit, worktree := publishRequest(t, nil)
 	fakeGit.Statuses[worktree] = dirtyStatus()
 
-	result, err := New(Dependencies{Git: fakeGit}, Options{DryRun: true}).Publish(context.Background(), req)
+	result, err := New(Dependencies{Git: fakeGit}, publishOptions(t, Options{DryRun: true})).Publish(context.Background(), req)
 
 	if err != nil {
 		t.Fatalf("Publish() error = %v", err)
@@ -105,7 +105,7 @@ func TestPublishSkipsCleanWorktree(t *testing.T) {
 	req, fakeGit, worktree := publishRequest(t, nil)
 	fakeGit.Statuses[worktree] = git.Status{Clean: true}
 
-	result, err := New(Dependencies{Git: fakeGit}, Options{}).Publish(context.Background(), req)
+	result, err := New(Dependencies{Git: fakeGit}, publishOptions(t, Options{})).Publish(context.Background(), req)
 
 	if err != nil {
 		t.Fatalf("Publish() error = %v", err)
@@ -121,7 +121,7 @@ func TestPublishRejectsMissingSourceModuleBeforeGitMutation(t *testing.T) {
 	req.Source = source.Snapshot{}
 	fakeGit.Statuses[worktree] = dirtyStatus()
 
-	_, err := New(Dependencies{Git: fakeGit}, Options{}).Publish(context.Background(), req)
+	_, err := New(Dependencies{Git: fakeGit}, publishOptions(t, Options{})).Publish(context.Background(), req)
 
 	got, ok := err.(*Error)
 	if !ok {
@@ -143,7 +143,7 @@ func TestPublishFallsBackToModulefileChangeWhenStatusUnavailable(t *testing.T) {
 
 	result, err := New(
 		Dependencies{Git: fakeGit},
-		Options{AllowStatusFallback: true},
+		publishOptions(t, Options{AllowStatusFallback: true}),
 	).Publish(context.Background(), req)
 
 	if err != nil {
@@ -158,7 +158,7 @@ func TestPublishStatusErrorFailsByDefault(t *testing.T) {
 	req, fakeGit, worktree := publishRequest(t, nil)
 	fakeGit.StatusErrors[worktree] = errors.New("status unavailable")
 
-	_, err := New(Dependencies{Git: fakeGit}, Options{}).Publish(context.Background(), req)
+	_, err := New(Dependencies{Git: fakeGit}, publishOptions(t, Options{})).Publish(context.Background(), req)
 
 	got, ok := err.(*Error)
 	if !ok {
@@ -175,7 +175,7 @@ func TestPublishUsesCleanGitStatusOverStageResults(t *testing.T) {
 	req.ModuleFile = changedModuleFileResult(t)
 	fakeGit.Statuses[worktree] = git.Status{Clean: true}
 
-	result, err := New(Dependencies{Git: fakeGit}, Options{}).Publish(context.Background(), req)
+	result, err := New(Dependencies{Git: fakeGit}, publishOptions(t, Options{})).Publish(context.Background(), req)
 
 	if err != nil {
 		t.Fatalf("Publish() error = %v", err)
@@ -190,7 +190,7 @@ func TestPublishRejectsExistingLocalTagBeforeMutation(t *testing.T) {
 	fakeGit.Statuses[worktree] = dirtyStatus()
 	fakeGit.Tags["v0.3.0"] = true
 
-	_, err := New(Dependencies{Git: fakeGit}, Options{}).Publish(context.Background(), req)
+	_, err := New(Dependencies{Git: fakeGit}, publishOptions(t, Options{})).Publish(context.Background(), req)
 
 	got, ok := err.(*Error)
 	if !ok {
@@ -208,7 +208,7 @@ func TestPublishRejectsExistingRemoteTagBeforeMutation(t *testing.T) {
 	fakeGit.Statuses[worktree] = dirtyStatus()
 	fakeGit.RemoteRefs[porttest.RemoteRefKeyForRepo(worktree, "origin", "refs/tags/v0.3.0")] = true
 
-	_, err := New(Dependencies{Git: fakeGit}, Options{}).Publish(context.Background(), req)
+	_, err := New(Dependencies{Git: fakeGit}, publishOptions(t, Options{})).Publish(context.Background(), req)
 
 	got, ok := err.(*Error)
 	if !ok {
@@ -235,7 +235,7 @@ func TestPublishPreflightsAllModulesBeforeMutation(t *testing.T) {
 	fakeGit.Statuses[controlWorktree] = dirtyStatus()
 	fakeGit.RemoteRefs[porttest.RemoteRefKeyForRepo(controlWorktree, "origin", "refs/tags/v0.3.0")] = true
 
-	_, err := New(Dependencies{Git: fakeGit}, Options{}).Publish(context.Background(), req)
+	_, err := New(Dependencies{Git: fakeGit}, publishOptions(t, Options{})).Publish(context.Background(), req)
 
 	got, ok := err.(*Error)
 	if !ok {
@@ -254,7 +254,7 @@ func TestPublishRejectsMultiBranchModule(t *testing.T) {
 	req.Plan = multiBranchPlan(t)
 	fakeGit.Statuses[worktree] = dirtyStatus()
 
-	_, err := New(Dependencies{Git: fakeGit}, Options{}).Publish(context.Background(), req)
+	_, err := New(Dependencies{Git: fakeGit}, publishOptions(t, Options{})).Publish(context.Background(), req)
 
 	got, ok := err.(*Error)
 	if !ok {
@@ -270,7 +270,7 @@ func TestPublishCommitTrailersIncludeSourceProjectionHash(t *testing.T) {
 	req, fakeGit, worktree := publishRequest(t, nil)
 	fakeGit.Statuses[worktree] = dirtyStatus()
 
-	_, err := New(Dependencies{Git: fakeGit}, Options{}).Publish(context.Background(), req)
+	_, err := New(Dependencies{Git: fakeGit}, publishOptions(t, Options{})).Publish(context.Background(), req)
 
 	if err != nil {
 		t.Fatalf("Publish() error = %v", err)
@@ -293,12 +293,12 @@ func TestPublishMapsForceWithLease(t *testing.T) {
 	})
 	fakeGit.Statuses[worktree] = dirtyStatus()
 
-	_, err := New(Dependencies{Git: fakeGit}, Options{}).Publish(context.Background(), req)
+	_, err := New(Dependencies{Git: fakeGit}, publishOptions(t, Options{})).Publish(context.Background(), req)
 
 	if err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}
-	push := findCall(fakeGit.Calls, "push")
+	push := findPushContaining(fakeGit.Calls, "refs/heads/main")
 	if !push.ForceWithLease {
 		t.Fatal("branch push did not use force-with-lease")
 	}
@@ -314,6 +314,17 @@ func publishRequest(
 		return publishRequestWithPolicy(t, publishSpec)
 	}
 	return publishRequestForModules(t, publishertest.Module{Name: "foundation"})
+}
+
+func publishOptions(t *testing.T, opts Options) Options {
+	t.Helper()
+	if opts.StateDir == "" {
+		opts.StateDir = t.TempDir()
+	}
+	if opts.TransactionIDFunc == nil {
+		opts.TransactionIDFunc = func(TransactionInput) TransactionID { return TransactionID("tx-test") }
+	}
+	return opts
 }
 
 func publishRequestForModules(
@@ -526,6 +537,15 @@ func assertCallAbsent(t *testing.T, calls []porttest.GitCall, op string) {
 func findCall(calls []porttest.GitCall, op string) porttest.GitCall {
 	for _, call := range calls {
 		if call.Op == op {
+			return call
+		}
+	}
+	return porttest.GitCall{}
+}
+
+func findPushContaining(calls []porttest.GitCall, ref string) porttest.GitCall {
+	for _, call := range calls {
+		if call.Op == "push" && strings.Contains(call.Ref, ref) {
 			return call
 		}
 	}

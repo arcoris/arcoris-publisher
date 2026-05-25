@@ -96,7 +96,7 @@ func TestRunPublishVerificationFailedReturnsVerificationExit(t *testing.T) {
 	t.Parallel()
 
 	cli := New(
-		Dependencies{App: newRealApplication(realApplicationOptions{tidyError: errors.New("tidy failed")})},
+		Dependencies{App: newRealApplication(t, realApplicationOptions{tidyError: errors.New("tidy failed")})},
 		Options{},
 	)
 	var stdout, stderr bytes.Buffer
@@ -114,7 +114,7 @@ func TestRunPublishVerificationFailedReturnsVerificationExit(t *testing.T) {
 func TestRunPublishSkippedReturnsOK(t *testing.T) {
 	t.Parallel()
 
-	cli := New(Dependencies{App: newRealApplication(realApplicationOptions{})}, Options{})
+	cli := New(Dependencies{App: newRealApplication(t, realApplicationOptions{})}, Options{})
 	var stdout, stderr bytes.Buffer
 
 	code := cli.Run(context.Background(), workflowCommandArgs("publish"), &stdout, &stderr)

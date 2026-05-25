@@ -47,6 +47,15 @@ const (
 
 	// StatusPending means a module has no final published/skipped state.
 	StatusPending Status = "pending"
+
+	// StatusCommitted means a publish transaction completed final refs.
+	StatusCommitted Status = "committed"
+
+	// StatusRolledBack means failed publish side effects were rolled back.
+	StatusRolledBack Status = "rolled_back"
+
+	// StatusRollbackFailed means rollback could not safely finish.
+	StatusRollbackFailed Status = "rollback_failed"
 )
 
 // String returns the stable textual representation of s.

@@ -32,3 +32,14 @@ func TestTagExistsUsesRefsTags(t *testing.T) {
 	}
 	assertStringSlice(t, runner.specs[0].Args, []string{"rev-parse", "--verify", "--quiet", "refs/tags/v1.0.0"})
 }
+
+func TestDeleteTagBuildsCommand(t *testing.T) {
+	runner := &fakeRunner{results: []processport.Result{{ExitCode: 0}}}
+	client := New(runner, Options{})
+
+	err := client.DeleteTag(context.Background(), "/repo", gitport.TagName("v1.0.0"))
+	if err != nil {
+		t.Fatalf("DeleteTag() error = %v", err)
+	}
+	assertStringSlice(t, runner.specs[0].Args, []string{"tag", "-d", "v1.0.0"})
+}

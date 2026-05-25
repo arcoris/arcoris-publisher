@@ -22,7 +22,7 @@ import (
 )
 
 func TestPublishRunsWorkflow(t *testing.T) {
-	app, fakeGit := appFixture()
+	app, fakeGit := appFixture(t)
 	fakeGit.Statuses["/target/arcoris__foundation"] = dirtyStatus()
 	fakeGit.Statuses["/target/arcoris__control"] = dirtyStatus()
 

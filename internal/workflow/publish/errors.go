@@ -35,6 +35,33 @@ const (
 
 	// CodePublishFailed indicates a Git publication operation failed.
 	CodePublishFailed ErrorCode = "publish_failed"
+
+	// CodePendingTransaction indicates an unresolved transaction already exists.
+	CodePendingTransaction ErrorCode = "pending_transaction"
+
+	// CodeJournalFailed indicates the durable transaction journal failed.
+	CodeJournalFailed ErrorCode = "journal_failed"
+
+	// CodeLockFailed indicates the transaction lock could not be acquired.
+	CodeLockFailed ErrorCode = "lock_failed"
+
+	// CodeTransactionFailed indicates the saga failed after transaction start.
+	CodeTransactionFailed ErrorCode = "transaction_failed"
+
+	// CodeRollbackFailed indicates automatic or explicit rollback failed.
+	CodeRollbackFailed ErrorCode = "rollback_failed"
+
+	// CodeCandidatePushFailed indicates a candidate ref push failed.
+	CodeCandidatePushFailed ErrorCode = "candidate_push_failed"
+
+	// CodePromotionFailed indicates final branch promotion failed.
+	CodePromotionFailed ErrorCode = "promotion_failed"
+
+	// CodeTagPublishFailed indicates final tag publication failed.
+	CodeTagPublishFailed ErrorCode = "tag_publish_failed"
+
+	// CodeRecoveryFailed indicates transaction recovery failed.
+	CodeRecoveryFailed ErrorCode = "recovery_failed"
 )
 
 // Error describes why publication could not complete.

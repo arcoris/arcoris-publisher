@@ -81,6 +81,8 @@ func workflowStatus(
 		return StatusPublished
 	case StatusSkipped:
 		return StatusSkipped
+	case StatusRolledBack, StatusRollbackFailed:
+		return publishReport.Status
 	default:
 		return StatusVerified
 	}

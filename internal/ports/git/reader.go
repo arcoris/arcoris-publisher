@@ -42,6 +42,12 @@ type RepositoryReader interface {
 	// Implementations may query cached remote refs or contact the remote, but
 	// they should document that behavior because it affects freshness.
 	RemoteRefExists(ctx context.Context, repoDir string, remote string, ref string) (bool, error)
+	// RemoteRefHash returns the object hash for ref on the named remote.
+	//
+	// Missing refs should return ("", false, nil). Command failures or ambiguous
+	// output should return an error so callers do not make rollback decisions from
+	// incomplete remote state.
+	RemoteRefHash(ctx context.Context, repoDir string, remote string, ref string) (CommitHash, bool, error)
 	// CommitMessage returns the commit message for ref.
 	//
 	// The returned string should preserve the message body as Git reports it,

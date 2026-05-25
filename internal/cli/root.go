@@ -45,6 +45,8 @@ func (c CLI) newRootCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
 	root.AddCommand(c.newPlanCommand(&output))
 	root.AddCommand(c.newVerifyCommand(&output))
 	root.AddCommand(c.newPublishCommand(&output))
+	root.AddCommand(c.newTransactionsCommand(&output))
+	root.AddCommand(c.newRollbackCommand(&output))
 	root.AddCommand(c.newVersionCommand(&output))
 	root.AddCommand(c.newCompletionCommand())
 

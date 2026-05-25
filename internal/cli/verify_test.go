@@ -134,7 +134,7 @@ func TestRunVerifyFailedReturnsVerificationExit(t *testing.T) {
 	t.Parallel()
 
 	cli := New(
-		Dependencies{App: newRealApplication(realApplicationOptions{tidyError: errors.New("tidy failed")})},
+		Dependencies{App: newRealApplication(t, realApplicationOptions{tidyError: errors.New("tidy failed")})},
 		Options{},
 	)
 	var stdout, stderr bytes.Buffer

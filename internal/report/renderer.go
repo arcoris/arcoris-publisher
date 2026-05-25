@@ -53,6 +53,18 @@ func (r Renderer) Publish(w io.Writer, result publish.Result) error {
 	return renderFormatted(w, report, r.opts, writePublishText)
 }
 
+// TransactionList renders a publish transaction list report.
+func (r Renderer) TransactionList(w io.Writer, summaries []publish.TransactionSummary) error {
+	report := BuildTransactionListReport(summaries)
+	return renderFormatted(w, report, r.opts, writeTransactionListText)
+}
+
+// Transaction renders one publish transaction journal report.
+func (r Renderer) Transaction(w io.Writer, journal publish.TransactionJournal) error {
+	report := BuildTransactionReport(journal, r.opts)
+	return renderFormatted(w, report, r.opts, writeTransactionText)
+}
+
 func renderFormatted[T any](
 	w io.Writer,
 	value T,

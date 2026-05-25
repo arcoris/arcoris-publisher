@@ -270,6 +270,18 @@ func initBareGitRepo(t *testing.T, dir string) {
 		t.Fatalf("create bare repo parent: %v", err)
 	}
 	mustRun(t, repoRoot(t), "git", "init", "--bare", dir)
+	mustRun(t, repoRoot(t), "git", "--git-dir", dir, "config", "receive.denyDeleteCurrent", "ignore")
+}
+
+func installBareHook(t *testing.T, bareRepo string, name string, script string) {
+	t.Helper()
+	if goruntime.GOOS == "windows" {
+		t.Skip("bare repository hook e2e tests require POSIX shell hooks")
+	}
+	path := filepath.Join(bareRepo, "hooks", name)
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("write hook %s: %v", path, err)
+	}
 }
 
 func initTargetGitWorktree(t *testing.T, dir string, remote string) {
@@ -343,6 +355,17 @@ func assertGitRefMissing(t *testing.T, gitDir string, ref string) {
 	result := runCommand(t, repoRoot(t), nil, "git", "--git-dir", gitDir, "show-ref", "--verify", "--quiet", ref)
 	if result.Code == 0 {
 		t.Fatalf("git ref %s unexpectedly exists in %s", ref, gitDir)
+	}
+}
+
+func assertWorktreeClean(t *testing.T, worktree string) {
+	t.Helper()
+	result := runCommand(t, worktree, nil, "git", "status", "--porcelain")
+	if result.Code != 0 {
+		t.Fatalf("git status failed in %s\nstdout:\n%s\nstderr:\n%s", worktree, result.Stdout, result.Stderr)
+	}
+	if strings.TrimSpace(result.Stdout) != "" {
+		t.Fatalf("worktree %s is dirty:\n%s", worktree, result.Stdout)
 	}
 }
 

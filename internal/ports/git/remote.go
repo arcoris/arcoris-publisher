@@ -36,4 +36,9 @@ type RemoteClient interface {
 	// prefer lease-protected publishing and reserve unguarded force pushes for
 	// explicit operator decisions.
 	Push(ctx context.Context, repoDir string, remote string, refspec RefSpec, opts PushOptions) error
+	// DeleteRemoteRef removes ref from remote.
+	//
+	// Callers should verify the remote ref still points at the expected object
+	// before invoking this operation when rollback safety matters.
+	DeleteRemoteRef(ctx context.Context, repoDir string, remote string, ref string, opts PushOptions) error
 }

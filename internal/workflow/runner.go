@@ -82,10 +82,10 @@ func (r Runner) Run(ctx context.Context, req Request) (Result, error) {
 	}
 
 	published, err := r.publishTargets(ctx, req, snapshot, workspaces, constructed, rewritten, verified)
+	result.publish = published
 	if err != nil {
 		return result, err
 	}
-	result.publish = published
 
 	return result, nil
 }
@@ -187,7 +187,7 @@ func (r Runner) publishTargets(
 		Verify:     verified,
 	})
 	if err != nil {
-		return publish.Result{}, fmt.Errorf("publish: %w", err)
+		return result, fmt.Errorf("publish: %w", err)
 	}
 
 	return result, nil

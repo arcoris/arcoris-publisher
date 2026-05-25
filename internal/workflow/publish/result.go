@@ -20,7 +20,10 @@ import (
 )
 
 // Result describes publication outcomes in plan order.
-type Result struct{ modules []ModuleResult }
+type Result struct {
+	modules     []ModuleResult
+	transaction TransactionJournal
+}
 
 // Modules returns detached module publication results.
 func (r Result) Modules() []ModuleResult {
@@ -28,6 +31,13 @@ func (r Result) Modules() []ModuleResult {
 	copy(out, r.modules)
 	return out
 }
+
+// Transaction returns the durable publish transaction journal when publication
+// created one.
+func (r Result) Transaction() TransactionJournal { return r.transaction }
+
+// HasTransaction reports whether a transaction journal is present.
+func (r Result) HasTransaction() bool { return r.transaction.ID != "" }
 
 // Published reports whether at least one module was pushed.
 func (r Result) Published() bool {

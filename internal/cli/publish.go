@@ -49,6 +49,12 @@ func (c CLI) executePublish(ctx context.Context, flags workflowFlags, output out
 
 	appOptions := c.opts.App
 	appOptions.Workflow.DryRun = flags.dryRun
+	appOptions.Workflow.Publish.StateDir = publishStateDir(flags)
+	rollbackMode, err := parseRollbackMode(flags.rollback)
+	if err != nil {
+		return err
+	}
+	appOptions.Workflow.Publish.RollbackMode = rollbackMode
 
 	application, err := c.deps.application(appOptions)
 	if err != nil {
@@ -63,6 +69,10 @@ func (c CLI) executePublish(ctx context.Context, flags workflowFlags, output out
 		TargetRootDir:       flags.targetRootDir,
 	})
 	if err != nil {
+		workflowResult := result.Workflow()
+		if workflowResult.Publish().HasTransaction() {
+			_ = newRenderer(reportOptions).Workflow(stdout, workflowResult)
+		}
 		return &Error{Code: CodeUseCaseFailed, Message: "publish failed", Cause: err}
 	}
 
