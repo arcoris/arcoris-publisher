@@ -17,6 +17,7 @@ package workflow
 import (
 	"arcoris.dev/arcoris-publisher/internal/workflow/construct"
 	"arcoris.dev/arcoris-publisher/internal/workflow/modulefile"
+	"arcoris.dev/arcoris-publisher/internal/workflow/preflight"
 	"arcoris.dev/arcoris-publisher/internal/workflow/publish"
 	"arcoris.dev/arcoris-publisher/internal/workflow/source"
 	"arcoris.dev/arcoris-publisher/internal/workflow/target"
@@ -39,6 +40,9 @@ type Options struct {
 
 	// Verify configures target verification.
 	Verify verify.Options
+
+	// Preflight configures read-only publish readiness checks.
+	Preflight preflight.Options
 
 	// Publish configures optional publication.
 	Publish publish.Options

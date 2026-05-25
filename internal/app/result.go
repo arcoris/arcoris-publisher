@@ -17,6 +17,7 @@ package app
 import (
 	"arcoris.dev/arcoris-publisher/internal/plan"
 	"arcoris.dev/arcoris-publisher/internal/workflow"
+	"arcoris.dev/arcoris-publisher/internal/workflow/preflight"
 )
 
 // Result describes a high-level workflow use case result.
@@ -26,6 +27,9 @@ type Result struct {
 
 	// workflow contains completed stage results.
 	workflow workflow.Result
+
+	// preflight contains read-only publish readiness checks.
+	preflight preflight.Result
 }
 
 // Plan returns the executable plan used for the workflow run.
@@ -33,3 +37,6 @@ func (r Result) Plan() plan.Plan { return r.plan }
 
 // Workflow returns completed workflow stage results.
 func (r Result) Workflow() workflow.Result { return r.workflow }
+
+// Preflight returns read-only publish readiness checks.
+func (r Result) Preflight() preflight.Result { return r.preflight }

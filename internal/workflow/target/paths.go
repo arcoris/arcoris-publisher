@@ -21,8 +21,15 @@ import (
 	"arcoris.dev/arcoris-publisher/internal/manifest"
 )
 
-// repositoryWorktree maps a repository reference to a deterministic local path.
-func repositoryWorktree(root string, repo manifest.RepositoryRef) string {
+// RepositoryWorktree maps a repository reference to the deterministic local
+// worktree path used by target preparation and read-only preflight checks.
+func RepositoryWorktree(root string, repo manifest.RepositoryRef) string {
 	name := strings.ReplaceAll(repo.String(), "/", "__")
 	return filepath.Join(root, name)
+}
+
+// repositoryWorktree keeps the historical unexported helper name local callers
+// used before preflight needed the same mapping without target mutation.
+func repositoryWorktree(root string, repo manifest.RepositoryRef) string {
+	return RepositoryWorktree(root, repo)
 }

@@ -19,6 +19,7 @@ import (
 	"arcoris.dev/arcoris-publisher/internal/workflow"
 	"arcoris.dev/arcoris-publisher/internal/workflow/construct"
 	"arcoris.dev/arcoris-publisher/internal/workflow/modulefile"
+	"arcoris.dev/arcoris-publisher/internal/workflow/preflight"
 	"arcoris.dev/arcoris-publisher/internal/workflow/publish"
 	"arcoris.dev/arcoris-publisher/internal/workflow/source"
 	"arcoris.dev/arcoris-publisher/internal/workflow/target"
@@ -46,6 +47,14 @@ func (r Runtime) WorkflowDependencies() workflow.Dependencies {
 			FS:  r.deps.FileSystem,
 			Git: r.deps.Git,
 			Go:  r.deps.Go,
+		},
+		Preflight: preflight.Dependencies{
+			Source: source.Dependencies{
+				Git: r.deps.Git,
+				FS:  r.deps.FileSystem,
+			},
+			Git: r.deps.Git,
+			FS:  r.deps.FileSystem,
 		},
 		Publish: publish.Dependencies{
 			Git: r.deps.Git,

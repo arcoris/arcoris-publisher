@@ -19,7 +19,7 @@ import "testing"
 func TestArcpubHelp(t *testing.T) {
 	result := runArcpub(t, "help")
 	assertExitCode(t, result, 0)
-	for _, command := range []string{"plan", "verify", "publish", "version", "completion"} {
+	for _, command := range []string{"plan", "preflight", "verify", "publish", "version", "completion"} {
 		assertContains(t, result.Stdout, command)
 	}
 }
@@ -27,7 +27,7 @@ func TestArcpubHelp(t *testing.T) {
 func TestArcpubRootHelp(t *testing.T) {
 	result := runArcpub(t, "--help")
 	assertExitCode(t, result, 0)
-	for _, command := range []string{"plan", "verify", "publish", "version", "completion"} {
+	for _, command := range []string{"plan", "preflight", "verify", "publish", "version", "completion"} {
 		assertContains(t, result.Stdout, command)
 	}
 }

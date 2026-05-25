@@ -57,6 +57,7 @@ must never appear in pushed target trees. Provenance is enabled at
 ```sh
 bash test/lab/transactional-publish/setup.sh
 bash test/lab/transactional-publish/run-plan.sh
+bash test/lab/transactional-publish/run-preflight.sh
 bash test/lab/transactional-publish/run-verify.sh
 bash test/lab/transactional-publish/run-dry-run.sh
 bash test/lab/transactional-publish/run-happy-path.sh
@@ -65,6 +66,12 @@ bash test/lab/transactional-publish/show-transactions.sh
 
 `run-happy-path.sh` recreates the lab first so dirty worktrees from verify or
 dry-run cannot affect publish preflight.
+
+`run-preflight.sh` is the read-only safety check. It does not construct target
+files, rewrite `go.mod`, create journals, create locks, or push refs. `verify`
+constructs and validates target trees. `publish --dry-run` also constructs and
+verifies target trees, then skips commit, tag, and push. `publish` performs the
+transactional mutation.
 
 ## Failure Scenarios
 

@@ -66,6 +66,9 @@ type Git struct {
 	// RemoteRefs reports remote ref existence by "remote\x00ref".
 	RemoteRefs map[string]bool
 
+	// Refs reports local ref existence by "repoDir\x00ref" or ref.
+	Refs map[string]bool
+
 	// RemoteRefHashes reports remote ref object hashes by "remote\x00ref".
 	RemoteRefHashes map[string]git.CommitHash
 
@@ -97,6 +100,7 @@ func NewGit() *Git {
 		Statuses:        map[string]git.Status{},
 		StatusErrors:    map[string]error{},
 		Tags:            map[git.TagName]bool{},
+		Refs:            map[string]bool{},
 		RemoteRefs:      map[string]bool{},
 		RemoteRefHashes: map[string]git.CommitHash{},
 		CommitHash:      "abcdef1234567890",
@@ -126,9 +130,9 @@ func (g *Git) Status(_ context.Context, repoDir string) (git.Status, error) {
 	return cloneStatus(status), nil
 }
 
-// RefExists reports that refs are absent unless a test records them separately.
-func (g *Git) RefExists(context.Context, string, string) (bool, error) {
-	return false, nil
+// RefExists reports configured local refs.
+func (g *Git) RefExists(_ context.Context, repoDir string, ref string) (bool, error) {
+	return g.Refs[repoDir+"\x00"+ref] || g.Refs[ref], nil
 }
 
 // RemoteRefExists reports configured remote refs.

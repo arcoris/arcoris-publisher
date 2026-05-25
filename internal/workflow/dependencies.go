@@ -17,6 +17,7 @@ package workflow
 import (
 	"arcoris.dev/arcoris-publisher/internal/workflow/construct"
 	"arcoris.dev/arcoris-publisher/internal/workflow/modulefile"
+	"arcoris.dev/arcoris-publisher/internal/workflow/preflight"
 	"arcoris.dev/arcoris-publisher/internal/workflow/publish"
 	"arcoris.dev/arcoris-publisher/internal/workflow/source"
 	"arcoris.dev/arcoris-publisher/internal/workflow/target"
@@ -39,6 +40,9 @@ type Dependencies struct {
 
 	// Verify wires target verification.
 	Verify verify.Dependencies
+
+	// Preflight wires read-only publish readiness checks.
+	Preflight preflight.Dependencies
 
 	// Publish wires optional Git publication.
 	Publish publish.Dependencies

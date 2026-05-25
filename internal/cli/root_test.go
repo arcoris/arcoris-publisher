@@ -76,7 +76,7 @@ func TestRunHelpPlan(t *testing.T) {
 
 func assertRootHelp(t *testing.T, output string) {
 	t.Helper()
-	for _, want := range []string{"plan", "verify", "publish", "version", "completion"} {
+	for _, want := range []string{"plan", "preflight", "verify", "publish", "version", "completion"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("help missing %q:\n%s", want, output)
 		}

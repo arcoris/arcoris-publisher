@@ -39,6 +39,9 @@ const (
 	// StatusSkipped means all publishable modules were skipped.
 	StatusSkipped Status = "skipped"
 
+	// StatusWarning means checks completed with a non-fatal warning.
+	StatusWarning Status = "warning"
+
 	// StatusPassed means checks completed without failures.
 	StatusPassed Status = "passed"
 

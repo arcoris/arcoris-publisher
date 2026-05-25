@@ -43,6 +43,7 @@ func (failingWriter) Write([]byte) (int, error) {
 type fakeApplication struct {
 	plan               plan.Plan
 	buildPlanCalled    bool
+	preflightCalled    bool
 	verifyCalled       bool
 	publishCalled      bool
 	listCalled         bool
@@ -50,10 +51,12 @@ type fakeApplication struct {
 	rollbackCalled     bool
 	buildPlanManifest  string
 	buildPlanVersion   versioning.Version
+	preflightRequest   app.Request
 	verifyRequest      app.Request
 	publishRequest     app.Request
 	transactionRequest app.TransactionRequest
 	buildPlanError     error
+	preflightError     error
 	verifyError        error
 	publishError       error
 	transactionError   error
@@ -88,6 +91,12 @@ func (f *fakeApplication) Publish(_ context.Context, req app.Request) (app.Resul
 	f.publishCalled = true
 	f.publishRequest = req
 	return app.Result{}, f.publishError
+}
+
+func (f *fakeApplication) Preflight(_ context.Context, req app.Request) (app.Result, error) {
+	f.preflightCalled = true
+	f.preflightRequest = req
+	return app.Result{}, f.preflightError
 }
 
 func (f *fakeApplication) ListTransactions(_ context.Context, req app.TransactionRequest) (app.TransactionListResult, error) {

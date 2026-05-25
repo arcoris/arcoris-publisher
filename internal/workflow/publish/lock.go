@@ -29,7 +29,9 @@ type transactionLock struct {
 	id   TransactionID
 }
 
-type transactionLockInfo struct {
+// TransactionLockInfo describes an existing publish lock without exposing the
+// lock file path. Preflight and recovery commands use it for diagnostics.
+type TransactionLockInfo struct {
 	ID        TransactionID
 	PID       string
 	StartedAt string
@@ -95,23 +97,28 @@ func (l transactionLock) Release() error {
 	return os.Remove(l.path)
 }
 
-func currentTransactionLock(stateDir string) (transactionLockInfo, bool, error) {
+func currentTransactionLock(stateDir string) (TransactionLockInfo, bool, error) {
 	info, err := readTransactionLock(filepath.Join(stateDir, "publish.lock"))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return transactionLockInfo{}, false, nil
+			return TransactionLockInfo{}, false, nil
 		}
-		return transactionLockInfo{}, false, err
+		return TransactionLockInfo{}, false, err
 	}
 	return info, true, nil
 }
 
-func readTransactionLock(path string) (transactionLockInfo, error) {
+// CurrentTransactionLock returns the current lock, if one exists.
+func CurrentTransactionLock(stateDir string) (TransactionLockInfo, bool, error) {
+	return currentTransactionLock(stateDir)
+}
+
+func readTransactionLock(path string) (TransactionLockInfo, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return transactionLockInfo{}, err
+		return TransactionLockInfo{}, err
 	}
-	info := transactionLockInfo{}
+	info := TransactionLockInfo{}
 	for _, line := range strings.Split(string(data), "\n") {
 		key, value, ok := strings.Cut(line, "=")
 		if !ok {
@@ -127,7 +134,7 @@ func readTransactionLock(path string) (transactionLockInfo, error) {
 		}
 	}
 	if info.ID == "" {
-		return transactionLockInfo{}, fmt.Errorf("publish lock is missing transaction id")
+		return TransactionLockInfo{}, fmt.Errorf("publish lock is missing transaction id")
 	}
 	return info, nil
 }

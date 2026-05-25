@@ -241,8 +241,18 @@ func candidateRef(id TransactionID, module manifest.ModuleName) string {
 	return "refs/heads/arcpub/tx/" + safeRefComponent(id.String()) + "/" + safeRefComponent(module.String())
 }
 
+// CandidateRef returns the staged transaction branch ref for module.
+func CandidateRef(id TransactionID, module manifest.ModuleName) string {
+	return candidateRef(id, module)
+}
+
 func branchRef(branch manifest.BranchName) string {
 	return "refs/heads/" + branch.String()
+}
+
+// BranchRef returns the fully qualified heads ref for branch.
+func BranchRef(branch manifest.BranchName) string {
+	return branchRef(branch)
 }
 
 func validateTransactionID(id TransactionID) error {
@@ -286,6 +296,12 @@ func validateGitRef(ref string) error {
 		}
 	}
 	return nil
+}
+
+// ValidateGitRef rejects refs that cannot safely be used by publish and
+// preflight when constructing branch, tag, and candidate ref checks.
+func ValidateGitRef(ref string) error {
+	return validateGitRef(ref)
 }
 
 func validateGitRefComponent(component string) error {

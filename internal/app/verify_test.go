@@ -23,6 +23,7 @@ import (
 	"arcoris.dev/arcoris-publisher/internal/workflow"
 	"arcoris.dev/arcoris-publisher/internal/workflow/construct"
 	"arcoris.dev/arcoris-publisher/internal/workflow/modulefile"
+	"arcoris.dev/arcoris-publisher/internal/workflow/preflight"
 	"arcoris.dev/arcoris-publisher/internal/workflow/publish"
 	"arcoris.dev/arcoris-publisher/internal/workflow/source"
 	"arcoris.dev/arcoris-publisher/internal/workflow/target"
@@ -50,6 +51,8 @@ func appFixture(t *testing.T) (App, *porttest.Git) {
 
 	fs := appFS()
 	fakeGit := porttest.NewGit()
+	fakeGit.Refs["/target/arcoris__foundation\x00refs/heads/main"] = true
+	fakeGit.Refs["/target/arcoris__control\x00refs/heads/stable"] = true
 	deps := Dependencies{
 		Workflow: workflow.Dependencies{
 			Source:     source.Dependencies{FS: fs, Git: fakeGit},
@@ -57,6 +60,7 @@ func appFixture(t *testing.T) (App, *porttest.Git) {
 			Construct:  construct.Dependencies{FS: fs},
 			ModuleFile: modulefile.Dependencies{FS: fs},
 			Verify:     verify.Dependencies{FS: fs, Go: porttest.GoToolchain{}},
+			Preflight:  preflight.Dependencies{FS: fs, Git: fakeGit},
 			Publish:    publish.Dependencies{Git: fakeGit},
 		},
 	}
@@ -106,5 +110,8 @@ func appFS() *porttest.FileSystem {
 		"/repo/staging/src/arcoris.dev/control/runtime/doc.go",
 		[]byte("package runtime\n"),
 	)
+	fs.AddDir("/target")
+	fs.AddDir("/target/arcoris__foundation")
+	fs.AddDir("/target/arcoris__control")
 	return fs
 }

@@ -19,6 +19,7 @@ import (
 
 	"arcoris.dev/arcoris-publisher/internal/plan"
 	"arcoris.dev/arcoris-publisher/internal/workflow"
+	"arcoris.dev/arcoris-publisher/internal/workflow/preflight"
 	"arcoris.dev/arcoris-publisher/internal/workflow/publish"
 	"arcoris.dev/arcoris-publisher/internal/workflow/verify"
 )
@@ -51,6 +52,12 @@ func (r Renderer) Verify(w io.Writer, result verify.Result) error {
 func (r Renderer) Publish(w io.Writer, result publish.Result) error {
 	report := BuildPublishReport(result, r.opts)
 	return renderFormatted(w, report, r.opts, writePublishText)
+}
+
+// Preflight renders read-only publish readiness checks.
+func (r Renderer) Preflight(w io.Writer, result preflight.Result) error {
+	report := BuildPreflightReport(result, r.opts)
+	return renderFormatted(w, report, r.opts, writePreflightText)
 }
 
 // TransactionList renders a publish transaction list report.
