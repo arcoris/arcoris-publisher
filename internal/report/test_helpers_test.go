@@ -67,6 +67,11 @@ func reportWorkflowResult(t *testing.T, cfg workflowReportFixture) workflow.Resu
 
 	fs := reportWorkflowFS()
 	fakeGit := porttest.NewGit()
+	for _, name := range []string{"foundation", "control"} {
+		worktree := reportWorktreeDir(name)
+		fakeGit.ConfigValues[worktree+"\x00user.name"] = "ARCORIS Test"
+		fakeGit.ConfigValues[worktree+"\x00user.email"] = "arcoris-test@example.invalid"
+	}
 	for _, name := range cfg.dirtyModules {
 		fakeGit.Statuses[reportWorktreeDir(name)] = reportDirtyStatus()
 	}

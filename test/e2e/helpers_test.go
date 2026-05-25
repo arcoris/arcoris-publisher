@@ -119,6 +119,11 @@ func runArcpub(t *testing.T, args ...string) commandResult {
 	return runArcpubInDir(t, repoRoot(t), args...)
 }
 
+func runArcpubWithEnv(t *testing.T, env []string, args ...string) commandResult {
+	t.Helper()
+	return runCommand(t, repoRoot(t), env, arcpubBinary(t), args...)
+}
+
 func runArcpubInDir(t *testing.T, dir string, args ...string) commandResult {
 	t.Helper()
 	return runCommand(t, dir, nil, arcpubBinary(t), args...)
@@ -316,6 +321,45 @@ func initTargetGitWorktree(t *testing.T, dir string, remote string) {
 	mustRun(t, dir, "git", "commit", "-m", "test: seed target")
 	if remote != "" {
 		mustRun(t, dir, "git", "remote", "add", "origin", remote)
+	}
+}
+
+func configureGitIdentity(t *testing.T, dir string) {
+	t.Helper()
+	mustRun(t, dir, "git", "config", "user.name", "ARCORIS Test")
+	mustRun(t, dir, "git", "config", "user.email", "arcoris-test@example.invalid")
+}
+
+func clearGitIdentity(t *testing.T, dir string) {
+	t.Helper()
+	for _, key := range []string{"user.name", "user.email"} {
+		result := runCommand(t, dir, nil, "git", "config", "--unset-all", key)
+		if result.Code != 0 && result.Code != 5 {
+			t.Fatalf("git config --unset-all %s failed\nstdout:\n%s\nstderr:\n%s", key, result.Stdout, result.Stderr)
+		}
+	}
+}
+
+func isolatedGitConfigEnv(t *testing.T) []string {
+	t.Helper()
+	home := t.TempDir()
+	global := filepath.Join(home, "gitconfig")
+	if err := os.WriteFile(global, nil, 0o600); err != nil {
+		t.Fatalf("write isolated git config: %v", err)
+	}
+	return []string{"HOME=" + home, "GIT_CONFIG_GLOBAL=" + global}
+}
+
+func assertLocalGitIdentityMissing(t *testing.T, dir string) {
+	t.Helper()
+	for _, key := range []string{"user.name", "user.email"} {
+		result := runCommand(t, dir, nil, "git", "config", "--local", "--get", key)
+		if result.Code == 0 {
+			t.Fatalf("local %s unexpectedly configured in %s", key, dir)
+		}
+		if result.Code != 1 {
+			t.Fatalf("git config --local --get %s failed with code %d\nstdout:\n%s\nstderr:\n%s", key, result.Code, result.Stdout, result.Stderr)
+		}
 	}
 }
 

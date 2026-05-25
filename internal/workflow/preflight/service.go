@@ -229,6 +229,7 @@ func (s Service) checkWorktree(ctx context.Context, mod plan.ModulePlan, worktre
 		return append(checks, pathCheck(failed("target-status", "target_worktree_dirty", "target worktree is dirty"), worktree))
 	}
 	checks = append(checks, pathCheck(passed("target-status", "target worktree is clean"), worktree))
+	checks = append(checks, s.checkCommitIdentity(ctx, worktree))
 
 	if len(mod.Branches()) == 1 {
 		ref := publish.BranchRef(mod.Branches()[0].Target())
@@ -248,6 +249,14 @@ func (s Service) checkWorktree(ctx context.Context, mod plan.ModulePlan, worktre
 	}
 
 	return checks
+}
+
+func (s Service) checkCommitIdentity(ctx context.Context, worktree string) CheckResult {
+	check := target.CheckCommitIdentity(ctx, s.deps.Git, worktree)
+	if check.Passed() {
+		return passed("commit-identity", "Git commit identity is configured")
+	}
+	return failed("commit-identity", check.Code(), check.Message())
 }
 
 func (s Service) checkTags(ctx context.Context, p plan.Plan, mod plan.ModulePlan, worktree string) []CheckResult {

@@ -128,6 +128,8 @@ func workflowFixture(t *testing.T) (Runner, Request, *porttest.Git) {
 
 	fs := workflowFS()
 	fakeGit := porttest.NewGit()
+	fakeGit.ConfigValues["/target/arcoris__foundation\x00user.name"] = "ARCORIS Test"
+	fakeGit.ConfigValues["/target/arcoris__foundation\x00user.email"] = "arcoris-test@example.invalid"
 	deps := Dependencies{
 		Source:     source.Dependencies{FS: fs, Git: fakeGit},
 		Target:     target.Dependencies{FS: fs, Git: fakeGit},

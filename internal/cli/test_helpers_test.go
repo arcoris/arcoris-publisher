@@ -153,6 +153,10 @@ func newRealApplication(t *testing.T, opts realApplicationOptions) app.App {
 	}
 
 	fakeGit := porttest.NewGit()
+	for _, dir := range []string{"/target/arcoris__foundation", "/target/arcoris__control"} {
+		fakeGit.ConfigValues[dir+"\x00user.name"] = "ARCORIS Test"
+		fakeGit.ConfigValues[dir+"\x00user.email"] = "arcoris-test@example.invalid"
+	}
 	if opts.dirty {
 		for _, dir := range []string{"/target/arcoris__foundation", "/target/arcoris__control"} {
 			fakeGit.Statuses[dir] = git.Status{

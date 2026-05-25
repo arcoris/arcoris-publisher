@@ -61,9 +61,37 @@ func TestPreflightTextRendersStatus(t *testing.T) {
 	if !strings.Contains(output, "Preflight") || !strings.Contains(output, "Status: passed") {
 		t.Fatalf("preflight text output = %q", output)
 	}
+	if !strings.Contains(output, "commit-identity: passed") {
+		t.Fatalf("preflight text missing commit identity check = %q", output)
+	}
+	if strings.Contains(output, "arcoris-test@example.invalid") {
+		t.Fatalf("preflight text leaked configured identity = %q", output)
+	}
+}
+
+func TestPreflightReportRendersCommitIdentityFailure(t *testing.T) {
+	result := preflightResultFixtureWithoutIdentity()
+
+	report := BuildPreflightReport(result, Options{})
+
+	check := findPreflightReportCheck(t, report, "commit-identity")
+	if check.Status != StatusFailed || check.Code != "missing_commit_identity" {
+		t.Fatalf("commit identity report check = %#v", check)
+	}
+	if strings.Contains(check.Message, "/target") || strings.Contains(check.Message, "example.invalid") {
+		t.Fatalf("commit identity message leaked sensitive data: %q", check.Message)
+	}
 }
 
 func preflightResultFixture() preflight.Result {
+	return buildPreflightResultFixture(true)
+}
+
+func preflightResultFixtureWithoutIdentity() preflight.Result {
+	return buildPreflightResultFixture(false)
+}
+
+func buildPreflightResultFixture(withIdentity bool) preflight.Result {
 	p, err := publishertest.Plan(
 		publishertest.PlanOptions{Version: "v0.1.0"},
 		publishertest.Module{Name: "foundation"},
@@ -83,6 +111,10 @@ func preflightResultFixture() preflight.Result {
 
 	fakeGit := porttest.NewGit()
 	fakeGit.Refs[worktree+"\x00refs/heads/main"] = true
+	if withIdentity {
+		fakeGit.ConfigValues[worktree+"\x00user.name"] = "ARCORIS Test"
+		fakeGit.ConfigValues[worktree+"\x00user.email"] = "arcoris-test@example.invalid"
+	}
 
 	result, err := preflight.New(
 		preflight.Dependencies{FS: fs, Git: fakeGit},
@@ -97,4 +129,17 @@ func preflightResultFixture() preflight.Result {
 		panic(err)
 	}
 	return result
+}
+
+func findPreflightReportCheck(t *testing.T, report PreflightReport, name string) PreflightCheckReport {
+	t.Helper()
+	for _, mod := range report.Modules {
+		for _, check := range mod.Checks {
+			if check.Name == name {
+				return check
+			}
+		}
+	}
+	t.Fatalf("preflight check %q not found in %#v", name, report)
+	return PreflightCheckReport{}
 }

@@ -51,6 +51,12 @@ type Git struct {
 	// StatusErrors forces Status to fail for a worktree path.
 	StatusErrors map[string]error
 
+	// ConfigValues reports effective Git config values by "repoDir\x00key" or key.
+	ConfigValues map[string]string
+
+	// ConfigErrors forces ConfigGet to fail for "repoDir\x00key" or key.
+	ConfigErrors map[string]error
+
 	// FetchError forces Fetch to fail.
 	FetchError error
 
@@ -102,6 +108,8 @@ func NewGit() *Git {
 	return &Git{
 		Statuses:        map[string]git.Status{},
 		StatusErrors:    map[string]error{},
+		ConfigValues:    map[string]string{},
+		ConfigErrors:    map[string]error{},
 		Tags:            map[git.TagName]bool{},
 		Refs:            map[string]bool{},
 		RemoteRefs:      map[string]bool{},
@@ -132,6 +140,25 @@ func (g *Git) Status(_ context.Context, repoDir string) (git.Status, error) {
 	}
 
 	return cloneStatus(status), nil
+}
+
+// ConfigGet reports configured effective Git config values.
+func (g *Git) ConfigGet(_ context.Context, repoDir string, key string) (string, bool, error) {
+	if err := g.ConfigErrors[repoDir+"\x00"+key]; err != nil {
+		return "", false, err
+	}
+	if err := g.ConfigErrors[key]; err != nil {
+		return "", false, err
+	}
+	if value, ok := g.ConfigValues[repoDir+"\x00"+key]; ok {
+		value = strings.TrimSpace(value)
+		return value, value != "", nil
+	}
+	if value, ok := g.ConfigValues[key]; ok {
+		value = strings.TrimSpace(value)
+		return value, value != "", nil
+	}
+	return "", false, nil
 }
 
 // RefExists reports configured local refs.

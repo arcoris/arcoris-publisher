@@ -46,6 +46,9 @@ if [[ -e "$(lab_state_dir)/publish.lock" || -d "$(lab_state_dir)/transactions" ]
   fail "target prepare created publish transaction state"
 fi
 
+run_step "configuring target commit identity for readiness checks"
+configure_target_identity
+
 run_step "running preflight after target prepare"
 code="$(run_common_arcpub_json "$preflight_report" "$preflight_stderr" preflight)"
 assert_code "$code" 0 "$preflight_stderr"

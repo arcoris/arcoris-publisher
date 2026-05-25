@@ -41,6 +41,8 @@ func TestTargetPrepareClonesMissingWorktrees(t *testing.T) {
 		if remote := strings.TrimSpace(mustGitOutput(t, worktree, "remote", "get-url", "origin")); remote != targetPrepareRemoteURL(setup, repo) {
 			t.Fatalf("%s origin = %q, want %q", repo.name, remote, targetPrepareRemoteURL(setup, repo))
 		}
+		assertLocalGitIdentityMissing(t, worktree)
+		configureGitIdentity(t, worktree)
 	}
 	if _, err := os.Stat(filepath.Join(setup.targetRoot, ".arcpub", "state")); !os.IsNotExist(err) {
 		t.Fatalf("target prepare created transaction state; stat err = %v", err)

@@ -17,6 +17,8 @@ package publish
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -168,6 +170,34 @@ func TestPublishStatusErrorFailsByDefault(t *testing.T) {
 		t.Fatalf("Code = %q", got.Code)
 	}
 	assertCallAbsent(t, fakeGit.Calls, "add")
+}
+
+func TestPublishRejectsMissingCommitIdentityBeforeTransaction(t *testing.T) {
+	req, fakeGit, worktree := publishRequest(t, nil)
+	fakeGit.Statuses[worktree] = dirtyStatus()
+	delete(fakeGit.ConfigValues, worktree+"\x00user.name")
+	delete(fakeGit.ConfigValues, worktree+"\x00user.email")
+	opts := publishOptions(t, Options{})
+
+	_, err := New(Dependencies{Git: fakeGit}, opts).Publish(context.Background(), req)
+
+	got, ok := err.(*Error)
+	if !ok {
+		t.Fatalf("error type = %T", err)
+	}
+	if got.Code != CodePreflightFailed {
+		t.Fatalf("Code = %q", got.Code)
+	}
+	assertCallAbsent(t, fakeGit.Calls, "add")
+	assertCallAbsent(t, fakeGit.Calls, "commit")
+	assertCallAbsent(t, fakeGit.Calls, "push")
+	assertCallAbsent(t, fakeGit.Calls, "push-tag")
+	if _, err := os.Stat(filepath.Join(opts.StateDir, "transactions")); !os.IsNotExist(err) {
+		t.Fatalf("transactions dir exists after identity failure: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(opts.StateDir, "publish.lock")); !os.IsNotExist(err) {
+		t.Fatalf("publish lock exists after identity failure: %v", err)
+	}
 }
 
 func TestPublishUsesCleanGitStatusOverStageResults(t *testing.T) {
@@ -377,6 +407,9 @@ func publishRequestForModules(
 	if err != nil {
 		t.Fatalf("target.Prepare() error = %v", err)
 	}
+	for _, ws := range targets.Workspaces() {
+		setPublishCommitIdentity(fakeGit, ws.WorktreeDir())
+	}
 
 	ws, ok := targets.WorkspaceByModule("foundation")
 	if !ok {
@@ -384,6 +417,11 @@ func publishRequestForModules(
 	}
 
 	return Request{Plan: p, Source: snapshot, Targets: targets}, fakeGit, ws.WorktreeDir()
+}
+
+func setPublishCommitIdentity(fakeGit *porttest.Git, worktree string) {
+	fakeGit.ConfigValues[worktree+"\x00user.name"] = "ARCORIS Test"
+	fakeGit.ConfigValues[worktree+"\x00user.email"] = "arcoris-test@example.invalid"
 }
 
 func publishRequestWithPolicy(

@@ -23,6 +23,7 @@ import (
 	"arcoris.dev/arcoris-publisher/internal/plan"
 	"arcoris.dev/arcoris-publisher/internal/ports/git"
 	"arcoris.dev/arcoris-publisher/internal/workflow/source"
+	"arcoris.dev/arcoris-publisher/internal/workflow/target"
 )
 
 // Service publishes verified target repositories.
@@ -193,6 +194,14 @@ func (s Service) preflightModule(
 		return modulePreflight{}, &Error{
 			Code:    CodeMissingSourceSnapshot,
 			Message: fmt.Sprintf("source snapshot for %s is missing", name),
+		}
+	}
+
+	if check := target.CheckCommitIdentity(ctx, s.deps.Git, worktree); !check.Passed() {
+		return modulePreflight{}, &Error{
+			Code:    CodePreflightFailed,
+			Message: fmt.Sprintf("module %s target commit identity failed: %s", name, check.Message()),
+			Cause:   check.Err(),
 		}
 	}
 

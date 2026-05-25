@@ -124,6 +124,7 @@ func preflightFixture(t *testing.T) (Dependencies, Request, Options) {
 
 	fakeGit := porttest.NewGit()
 	fakeGit.Refs[worktree+"\x00refs/heads/main"] = true
+	setFakeCommitIdentity(fakeGit, worktree)
 
 	return Dependencies{FS: fs, Git: fakeGit}, Request{
 		Plan:                p,
@@ -131,6 +132,64 @@ func preflightFixture(t *testing.T) (Dependencies, Request, Options) {
 		StagingDir:          "/repo/staging",
 		TargetRootDir:       "/target",
 	}, Options{StateDir: t.TempDir()}
+}
+
+func TestCheckFailsMissingCommitIdentity(t *testing.T) {
+	deps, req, opts := preflightFixture(t)
+	fakeGit := deps.Git.(*porttest.Git)
+	worktree := target.RepositoryWorktree("/target", "arcoris/foundation")
+	delete(fakeGit.ConfigValues, worktree+"\x00user.name")
+	delete(fakeGit.ConfigValues, worktree+"\x00user.email")
+
+	result, err := New(deps, opts).Check(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Check() error = %v", err)
+	}
+	assertModuleCheckCode(t, result, "commit-identity", StatusFailed, target.CommitIdentityCodeMissingBoth)
+}
+
+func TestCheckFailsMissingCommitEmail(t *testing.T) {
+	deps, req, opts := preflightFixture(t)
+	fakeGit := deps.Git.(*porttest.Git)
+	worktree := target.RepositoryWorktree("/target", "arcoris/foundation")
+	delete(fakeGit.ConfigValues, worktree+"\x00user.email")
+
+	result, err := New(deps, opts).Check(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Check() error = %v", err)
+	}
+	assertModuleCheckCode(t, result, "commit-identity", StatusFailed, target.CommitIdentityCodeMissingEmail)
+}
+
+func TestCheckFailsMissingCommitName(t *testing.T) {
+	deps, req, opts := preflightFixture(t)
+	fakeGit := deps.Git.(*porttest.Git)
+	worktree := target.RepositoryWorktree("/target", "arcoris/foundation")
+	delete(fakeGit.ConfigValues, worktree+"\x00user.name")
+
+	result, err := New(deps, opts).Check(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Check() error = %v", err)
+	}
+	assertModuleCheckCode(t, result, "commit-identity", StatusFailed, target.CommitIdentityCodeMissingName)
+}
+
+func TestCheckFailsCommitIdentityReadError(t *testing.T) {
+	deps, req, opts := preflightFixture(t)
+	fakeGit := deps.Git.(*porttest.Git)
+	worktree := target.RepositoryWorktree("/target", "arcoris/foundation")
+	fakeGit.ConfigErrors[worktree+"\x00user.name"] = os.ErrPermission
+
+	result, err := New(deps, opts).Check(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Check() error = %v", err)
+	}
+	assertModuleCheckCode(t, result, "commit-identity", StatusFailed, target.CommitIdentityCodeReadFailed)
+}
+
+func setFakeCommitIdentity(fakeGit *porttest.Git, worktree string) {
+	fakeGit.ConfigValues[worktree+"\x00user.name"] = "ARCORIS Test"
+	fakeGit.ConfigValues[worktree+"\x00user.email"] = "arcoris-test@example.invalid"
 }
 
 func writePreflightJournal(t *testing.T, stateDir string, statusFragment string) {
@@ -157,12 +216,17 @@ func assertGlobalCheck(t *testing.T, result Result, name string, status Status) 
 
 func assertModuleCheck(t *testing.T, result Result, name string, status Status) {
 	t.Helper()
+	assertModuleCheckCode(t, result, name, status, "")
+}
+
+func assertModuleCheckCode(t *testing.T, result Result, name string, status Status, code string) {
+	t.Helper()
 	for _, mod := range result.Modules() {
 		for _, check := range mod.Checks() {
-			if check.Name() == name && check.Status() == status {
+			if check.Name() == name && check.Status() == status && (code == "" || check.Code() == code) {
 				return
 			}
 		}
 	}
-	t.Fatalf("module check %s=%s not found: %#v", name, status, result.Modules())
+	t.Fatalf("module check %s=%s code %s not found: %#v", name, status, code, result.Modules())
 }

@@ -216,6 +216,11 @@ func (g fakeGit) Status(context.Context, string) (portgit.Status, error) {
 	return cloneStatus(g.status), g.statusErr
 }
 
+// ConfigGet is unused by source inspection and returns a stable missing value.
+func (g fakeGit) ConfigGet(context.Context, string, string) (string, bool, error) {
+	return "", false, nil
+}
+
 // RefExists is unused by source inspection and returns a stable false result.
 func (g fakeGit) RefExists(context.Context, string, string) (bool, error) { return false, nil }
 

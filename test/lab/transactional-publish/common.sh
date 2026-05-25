@@ -212,6 +212,36 @@ configure_git_identity() {
   git -C "$dir" config init.defaultBranch main
 }
 
+configure_target_identity() {
+  for repo in arcoris/foundation arcoris/control; do
+    local worktree
+    worktree="$(repository_worktree "$repo")"
+    [[ -d "$worktree/.git" ]] || fail "target worktree missing: $worktree"
+    configure_git_identity "$worktree"
+  done
+}
+
+clear_target_identity() {
+  for repo in arcoris/foundation arcoris/control; do
+    local worktree
+    worktree="$(repository_worktree "$repo")"
+    [[ -d "$worktree/.git" ]] || fail "target worktree missing: $worktree"
+    git -C "$worktree" config --unset-all user.name >/dev/null 2>&1 || true
+    git -C "$worktree" config --unset-all user.email >/dev/null 2>&1 || true
+  done
+}
+
+isolate_git_identity() {
+  local home
+  local global
+  home="$(lab_root)/identity-home"
+  global="$(lab_root)/empty-global-gitconfig"
+  mkdir -p "$home"
+  : >"$global"
+  export HOME="$home"
+  export GIT_CONFIG_GLOBAL="$global"
+}
+
 init_git_repo() {
   local dir="$1"
   git -C "$dir" init -b main >/dev/null 2>&1 || {

@@ -32,6 +32,12 @@ type RepositoryReader interface {
 	// Adapters should preserve enough entry detail for diagnostics while keeping
 	// Status.Clean and Status.Entries internally consistent.
 	Status(ctx context.Context, repoDir string) (Status, error)
+	// ConfigGet returns the effective Git configuration value for key in repoDir.
+	//
+	// Missing keys should return ("", false, nil). Returned values should be
+	// trimmed so callers can treat empty values as missing without duplicating
+	// adapter-specific whitespace handling.
+	ConfigGet(ctx context.Context, repoDir string, key string) (string, bool, error)
 	// RefExists reports whether ref resolves in the local repository.
 	//
 	// Missing refs should return (false, nil); invalid repositories or command
