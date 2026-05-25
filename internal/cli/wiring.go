@@ -36,6 +36,8 @@ type Application interface {
 	ShowTransaction(ctx context.Context, req app.TransactionRequest) (app.TransactionResult, error)
 	RollbackTransaction(ctx context.Context, req app.TransactionRequest) (app.TransactionResult, error)
 	PruneTransactions(ctx context.Context, req app.TransactionPruneRequest) (app.TransactionPruneResult, error)
+	ShowTransactionLock(ctx context.Context, req app.TransactionLockRequest) (app.TransactionLockResult, error)
+	ClearTransactionLock(ctx context.Context, req app.TransactionLockRequest) (app.TransactionLockClearResult, error)
 }
 
 // AppFactory constructs an application instance for one command invocation.

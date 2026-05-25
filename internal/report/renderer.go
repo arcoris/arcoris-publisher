@@ -85,6 +85,18 @@ func (r Renderer) TransactionPrune(w io.Writer, result publish.PruneResult) erro
 	return renderFormatted(w, report, r.opts, writeTransactionPruneText)
 }
 
+// TransactionLock renders a publish transaction lock inspection report.
+func (r Renderer) TransactionLock(w io.Writer, result publish.LockShowResult) error {
+	report := BuildTransactionLockReport(result, r.opts)
+	return renderFormatted(w, report, r.opts, writeTransactionLockText)
+}
+
+// TransactionLockClear renders a publish transaction lock clear report.
+func (r Renderer) TransactionLockClear(w io.Writer, result publish.LockClearResult) error {
+	report := BuildTransactionLockClearReport(result, r.opts)
+	return renderFormatted(w, report, r.opts, writeTransactionLockClearText)
+}
+
 func renderFormatted[T any](
 	w io.Writer,
 	value T,

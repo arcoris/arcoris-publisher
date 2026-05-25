@@ -35,6 +35,8 @@ type TransactionLockInfo struct {
 	ID        TransactionID
 	PID       string
 	StartedAt string
+	Command   string
+	Path      string
 }
 
 func acquireTransactionLock(ctx context.Context, stateDir string, id TransactionID, now time.Time) (transactionLock, error) {
@@ -98,7 +100,11 @@ func (l transactionLock) Release() error {
 }
 
 func currentTransactionLock(stateDir string) (TransactionLockInfo, bool, error) {
-	info, err := readTransactionLock(filepath.Join(stateDir, "publish.lock"))
+	path, err := transactionLockPath(stateDir)
+	if err != nil {
+		return TransactionLockInfo{}, false, err
+	}
+	info, err := readTransactionLock(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return TransactionLockInfo{}, false, nil
@@ -111,6 +117,13 @@ func currentTransactionLock(stateDir string) (TransactionLockInfo, bool, error) 
 // CurrentTransactionLock returns the current lock, if one exists.
 func CurrentTransactionLock(stateDir string) (TransactionLockInfo, bool, error) {
 	return currentTransactionLock(stateDir)
+}
+
+func transactionLockPath(stateDir string) (string, error) {
+	if strings.TrimSpace(stateDir) == "" {
+		return "", fmt.Errorf("state dir is required")
+	}
+	return filepath.Join(stateDir, "publish.lock"), nil
 }
 
 func readTransactionLock(path string) (TransactionLockInfo, error) {
@@ -131,10 +144,16 @@ func readTransactionLock(path string) (TransactionLockInfo, error) {
 			info.PID = value
 		case "startedAt":
 			info.StartedAt = value
+		case "command":
+			info.Command = value
 		}
 	}
 	if info.ID == "" {
 		return TransactionLockInfo{}, fmt.Errorf("publish lock is missing transaction id")
 	}
+	if err := validateTransactionID(info.ID); err != nil {
+		return TransactionLockInfo{}, fmt.Errorf("publish lock has unsafe transaction id %q", info.ID)
+	}
+	info.Path = path
 	return info, nil
 }

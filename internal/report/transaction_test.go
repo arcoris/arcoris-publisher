@@ -107,6 +107,75 @@ func TestTransactionPruneReportIncludesLocalPathsWhenRequested(t *testing.T) {
 	}
 }
 
+func TestTransactionLockReportJSONAndText(t *testing.T) {
+	t.Parallel()
+
+	var jsonBuf bytes.Buffer
+	if err := New(Options{Format: FormatJSON, Pretty: true}).TransactionLock(&jsonBuf, transactionLockFixture()); err != nil {
+		t.Fatalf("TransactionLock(JSON) error = %v", err)
+	}
+	if !strings.Contains(jsonBuf.String(), `"kind": "transactions-lock"`) ||
+		!strings.Contains(jsonBuf.String(), `"status": "present"`) ||
+		strings.Contains(jsonBuf.String(), "/state") {
+		t.Fatalf("transaction lock JSON = %s", jsonBuf.String())
+	}
+
+	var textBuf bytes.Buffer
+	if err := New(Options{Format: FormatText}).TransactionLock(&textBuf, transactionLockFixture()); err != nil {
+		t.Fatalf("TransactionLock(text) error = %v", err)
+	}
+	if !strings.Contains(textBuf.String(), "Transaction lock") ||
+		!strings.Contains(textBuf.String(), "Transaction: tx-test") {
+		t.Fatalf("transaction lock text = %s", textBuf.String())
+	}
+}
+
+func TestTransactionLockAbsentJSONUsesNullLockAndJournal(t *testing.T) {
+	t.Parallel()
+
+	report := BuildTransactionLockReport(publish.LockShowResult{Status: publish.LockShowStatusAbsent}, Options{})
+
+	if report.Lock != nil || report.Journal != nil || report.Status != "absent" {
+		t.Fatalf("absent report = %#v", report)
+	}
+}
+
+func TestTransactionLockClearReportJSONAndText(t *testing.T) {
+	t.Parallel()
+
+	var jsonBuf bytes.Buffer
+	if err := New(Options{Format: FormatJSON, Pretty: true}).TransactionLockClear(&jsonBuf, transactionLockClearFixture()); err != nil {
+		t.Fatalf("TransactionLockClear(JSON) error = %v", err)
+	}
+	if !strings.Contains(jsonBuf.String(), `"kind": "transactions-lock-clear"`) ||
+		!strings.Contains(jsonBuf.String(), `"status": "cleared"`) ||
+		strings.Contains(jsonBuf.String(), "/state") {
+		t.Fatalf("transaction lock clear JSON = %s", jsonBuf.String())
+	}
+
+	var textBuf bytes.Buffer
+	if err := New(Options{Format: FormatText}).TransactionLockClear(&textBuf, transactionLockClearFixture()); err != nil {
+		t.Fatalf("TransactionLockClear(text) error = %v", err)
+	}
+	if !strings.Contains(textBuf.String(), "Transaction lock clear") ||
+		!strings.Contains(textBuf.String(), "Status: cleared") {
+		t.Fatalf("transaction lock clear text = %s", textBuf.String())
+	}
+}
+
+func TestTransactionLockReportsIncludeLocalPathsWhenRequested(t *testing.T) {
+	t.Parallel()
+
+	show := BuildTransactionLockReport(transactionLockFixture(), Options{IncludeLocalPaths: true})
+	if show.Lock == nil || show.Lock.Path != "/state/publish.lock" {
+		t.Fatalf("lock path = %#v", show.Lock)
+	}
+	clear := BuildTransactionLockClearReport(transactionLockClearFixture(), Options{IncludeLocalPaths: true})
+	if clear.Lock.Path != "/state/publish.lock" {
+		t.Fatalf("clear path = %q", clear.Lock.Path)
+	}
+}
+
 func transactionFixture() publish.TransactionJournal {
 	now := time.Unix(1, 2).UTC()
 	return publish.TransactionJournal{
@@ -130,6 +199,40 @@ func transactionFixture() publish.TransactionJournal {
 			Ref:        "refs/heads/main",
 			Message:    "manual restore required",
 		}},
+	}
+}
+
+func transactionLockFixture() publish.LockShowResult {
+	now := time.Unix(1, 2).UTC()
+	return publish.LockShowResult{
+		Status: publish.LockShowStatusPresent,
+		Lock: publish.TransactionLockInfo{
+			ID:        "tx-test",
+			PID:       "123",
+			Command:   "publish",
+			StartedAt: now.Format(timeFormat),
+			Path:      "/state/publish.lock",
+		},
+		Journal: publish.LockJournalState{
+			Present:   true,
+			Status:    publish.TransactionStatusRollbackFailed,
+			Rollback:  publish.RollbackStatusFailed,
+			Version:   "v0.1.0",
+			StartedAt: now,
+			UpdatedAt: now,
+		},
+	}
+}
+
+func transactionLockClearFixture() publish.LockClearResult {
+	fixture := transactionLockFixture()
+	return publish.LockClearResult{
+		Status:        publish.LockClearStatusCleared,
+		TransactionID: "tx-test",
+		Lock:          fixture.Lock,
+		LockCleared:   true,
+		Journal:       fixture.Journal,
+		Reason:        "publish lock cleared",
 	}
 }
 

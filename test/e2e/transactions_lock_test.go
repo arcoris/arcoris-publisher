@@ -1,0 +1,191 @@
+// Copyright 2026 The ARCORIS Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package e2e_test
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func TestTransactionsLockShowAbsent(t *testing.T) {
+	stateDir := t.TempDir()
+
+	_, decoded := runTransactionsLockShowJSON(t, stateDir, 0)
+
+	if got := stringField(t, decoded, "status"); got != "absent" {
+		t.Fatalf("status = %q", got)
+	}
+}
+
+func TestTransactionsLockShowPresentWithJournal(t *testing.T) {
+	stateDir := t.TempDir()
+	writeE2ETransactionJournal(t, stateDir, "tx-committed", "committed", time.Now())
+	writeE2ELockFile(t, stateDir, "tx-committed")
+
+	_, decoded := runTransactionsLockShowJSON(t, stateDir, 0)
+
+	if got := stringField(t, decoded, "status"); got != "present" {
+		t.Fatalf("status = %q", got)
+	}
+	journal := objectField(t, decoded, "journal")
+	if got := stringField(t, journal, "status"); got != "committed" {
+		t.Fatalf("journal status = %q", got)
+	}
+}
+
+func TestTransactionsLockShowJournalMissing(t *testing.T) {
+	stateDir := t.TempDir()
+	writeE2ELockFile(t, stateDir, "tx-missing")
+
+	_, decoded := runTransactionsLockShowJSON(t, stateDir, 0)
+
+	if got := stringField(t, decoded, "status"); got != "journal_missing" {
+		t.Fatalf("status = %q", got)
+	}
+}
+
+func TestTransactionsLockShowCorruptLock(t *testing.T) {
+	stateDir := t.TempDir()
+	writeE2ERawLockFile(t, stateDir, "pid=1\n")
+
+	result, decoded := runTransactionsLockShowJSON(t, stateDir, 1)
+
+	if got := stringField(t, decoded, "status"); got != "corrupt" {
+		t.Fatalf("status = %q\nstdout=%s\nstderr=%s", got, result.Stdout, result.Stderr)
+	}
+}
+
+func TestTransactionsLockClearRequiresTransactionAndConfirm(t *testing.T) {
+	stateDir := t.TempDir()
+	for _, tt := range []struct {
+		name string
+		args []string
+	}{
+		{name: "missing transaction", args: []string{"transactions", "lock", "clear", "--state-dir", stateDir, "--confirm", "tx-one"}},
+		{name: "missing confirm", args: []string{"transactions", "lock", "clear", "--state-dir", stateDir, "--transaction", "tx-one"}},
+		{name: "confirm mismatch", args: []string{"transactions", "lock", "clear", "--state-dir", stateDir, "--transaction", "tx-one", "--confirm", "tx-two"}},
+	} {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			result := runArcpub(t, tt.args...)
+			assertExitCode(t, result, 64)
+		})
+	}
+}
+
+func TestTransactionsLockClearRejectsMismatch(t *testing.T) {
+	stateDir := t.TempDir()
+	writeE2ELockFile(t, stateDir, "tx-other")
+
+	result := runTransactionsLockClear(t, stateDir, 1, "tx-want")
+
+	assertContains(t, result.Stderr, "lock")
+	assertFileExists(t, transactionLockPath(stateDir))
+}
+
+func TestTransactionsLockClearDeletesTerminalLockOnly(t *testing.T) {
+	stateDir := t.TempDir()
+	writeE2ETransactionJournal(t, stateDir, "tx-committed", "committed", time.Now())
+	writeE2ELockFile(t, stateDir, "tx-committed")
+
+	_, decoded := runTransactionsLockClearJSON(t, stateDir, 0, "tx-committed")
+
+	if got := stringField(t, decoded, "status"); got != "cleared" {
+		t.Fatalf("status = %q", got)
+	}
+	assertPathMissing(t, transactionLockPath(stateDir))
+	assertFileExists(t, transactionJournalPath(stateDir, "tx-committed"))
+}
+
+func TestTransactionsLockClearRejectsActiveTransaction(t *testing.T) {
+	stateDir := t.TempDir()
+	writeE2ETransactionJournal(t, stateDir, "tx-pending", "pending", time.Now())
+	writeE2ELockFile(t, stateDir, "tx-pending")
+
+	result := runTransactionsLockClear(t, stateDir, 1, "tx-pending")
+
+	assertContains(t, result.Stderr, "active")
+	assertFileExists(t, transactionLockPath(stateDir))
+	assertFileExists(t, transactionJournalPath(stateDir, "tx-pending"))
+}
+
+func TestTransactionsLockClearRollbackFailedPolicy(t *testing.T) {
+	stateDir := t.TempDir()
+	writeE2ETransactionJournal(t, stateDir, "tx-rollback-failed", "rollback_failed", time.Now())
+	writeE2ELockFile(t, stateDir, "tx-rollback-failed")
+
+	runTransactionsLockClearJSON(t, stateDir, 0, "tx-rollback-failed")
+
+	assertPathMissing(t, transactionLockPath(stateDir))
+	assertFileExists(t, transactionJournalPath(stateDir, "tx-rollback-failed"))
+}
+
+func TestTransactionsLockNoPathLeaksByDefault(t *testing.T) {
+	stateDir := t.TempDir()
+	writeE2ETransactionJournal(t, stateDir, "tx-committed", "committed", time.Now())
+	writeE2ELockFile(t, stateDir, "tx-committed")
+
+	result, _ := runTransactionsLockShowJSON(t, stateDir, 0)
+
+	assertNoLocalPathLeak(t, result.Stdout, stateDir)
+}
+
+func runTransactionsLockShowJSON(t *testing.T, stateDir string, wantCode int) (commandResult, map[string]any) {
+	t.Helper()
+	result := runArcpub(t, "transactions", "lock", "show", "--state-dir", stateDir, "--output", "json")
+	assertExitCode(t, result, wantCode)
+	return result, assertJSON(t, result.Stdout)
+}
+
+func runTransactionsLockClearJSON(t *testing.T, stateDir string, wantCode int, id string) (commandResult, map[string]any) {
+	t.Helper()
+	result := runTransactionsLockClear(t, stateDir, wantCode, id, "--output", "json")
+	return result, assertJSON(t, result.Stdout)
+}
+
+func runTransactionsLockClear(t *testing.T, stateDir string, wantCode int, id string, extra ...string) commandResult {
+	t.Helper()
+	args := []string{
+		"transactions", "lock", "clear",
+		"--state-dir", stateDir,
+		"--transaction", id,
+		"--confirm", id,
+	}
+	args = append(args, extra...)
+	result := runArcpub(t, args...)
+	assertExitCode(t, result, wantCode)
+	return result
+}
+
+func writeE2ELockFile(t *testing.T, stateDir string, id string) {
+	t.Helper()
+	writeE2ERawLockFile(t, stateDir, "transaction="+id+"\npid=1\nstartedAt=2026-01-01T00:00:00Z\ncommand=publish\n")
+}
+
+func writeE2ERawLockFile(t *testing.T, stateDir string, data string) {
+	t.Helper()
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(transactionLockPath(stateDir), []byte(data), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+}
+
+func transactionLockPath(stateDir string) string {
+	return filepath.Join(stateDir, "publish.lock")
+}

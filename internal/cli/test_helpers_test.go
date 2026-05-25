@@ -51,6 +51,8 @@ type fakeApplication struct {
 	showCalled            bool
 	rollbackCalled        bool
 	pruneCalled           bool
+	lockShowCalled        bool
+	lockClearCalled       bool
 	buildPlanManifest     string
 	buildPlanVersion      versioning.Version
 	prepareTargetsRequest app.Request
@@ -60,6 +62,9 @@ type fakeApplication struct {
 	transactionRequest    app.TransactionRequest
 	transactionPruneReq   app.TransactionPruneRequest
 	transactionPruneRes   app.TransactionPruneResult
+	transactionLockReq    app.TransactionLockRequest
+	transactionLockRes    app.TransactionLockResult
+	transactionLockClear  app.TransactionLockClearResult
 	buildPlanError        error
 	prepareTargetsError   error
 	preflightError        error
@@ -133,6 +138,18 @@ func (f *fakeApplication) PruneTransactions(_ context.Context, req app.Transacti
 	f.pruneCalled = true
 	f.transactionPruneReq = req
 	return f.transactionPruneRes, f.transactionError
+}
+
+func (f *fakeApplication) ShowTransactionLock(_ context.Context, req app.TransactionLockRequest) (app.TransactionLockResult, error) {
+	f.lockShowCalled = true
+	f.transactionLockReq = req
+	return f.transactionLockRes, f.transactionError
+}
+
+func (f *fakeApplication) ClearTransactionLock(_ context.Context, req app.TransactionLockRequest) (app.TransactionLockClearResult, error) {
+	f.lockClearCalled = true
+	f.transactionLockReq = req
+	return f.transactionLockClear, f.transactionError
 }
 
 type realApplicationOptions struct {

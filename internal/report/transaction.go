@@ -77,6 +77,57 @@ type TransactionPruneEntry struct {
 	Reason         string `json:"reason,omitempty"`
 }
 
+// TransactionLockReport is the stable DTO for publish lock inspection.
+type TransactionLockReport struct {
+	Kind     string                   `json:"kind"`
+	Status   string                   `json:"status"`
+	Lock     *TransactionLockInfo     `json:"lock"`
+	Journal  *TransactionLockJournal  `json:"journal"`
+	Warnings []TransactionLockWarning `json:"warnings"`
+}
+
+// TransactionLockClearReport is the stable DTO for guarded lock clearing.
+type TransactionLockClearReport struct {
+	Kind          string                   `json:"kind"`
+	Status        string                   `json:"status"`
+	TransactionID string                   `json:"transactionId,omitempty"`
+	Reason        string                   `json:"reason,omitempty"`
+	Lock          TransactionLockClearInfo `json:"lock"`
+	Journal       *TransactionLockJournal  `json:"journal"`
+	Warnings      []TransactionLockWarning `json:"warnings"`
+}
+
+// TransactionLockInfo describes publish.lock metadata.
+type TransactionLockInfo struct {
+	TransactionID string `json:"transactionId,omitempty"`
+	PID           string `json:"pid,omitempty"`
+	Command       string `json:"command,omitempty"`
+	StartedAt     string `json:"startedAt,omitempty"`
+	Path          string `json:"path,omitempty"`
+}
+
+// TransactionLockJournal describes the journal referenced by publish.lock.
+type TransactionLockJournal struct {
+	Present        bool   `json:"present"`
+	Status         string `json:"status,omitempty"`
+	RollbackStatus string `json:"rollbackStatus,omitempty"`
+	Version        string `json:"version,omitempty"`
+	StartedAt      string `json:"startedAt,omitempty"`
+	UpdatedAt      string `json:"updatedAt,omitempty"`
+}
+
+// TransactionLockClearInfo describes the lock file outcome.
+type TransactionLockClearInfo struct {
+	Cleared bool   `json:"cleared"`
+	Path    string `json:"path,omitempty"`
+}
+
+// TransactionLockWarning describes lock inspection warnings.
+type TransactionLockWarning struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
 // TransactionModuleReport describes one module's transaction refs and state.
 type TransactionModuleReport struct {
 	Module              string `json:"module"`
@@ -200,6 +251,72 @@ func buildTransactionPruneEntries(entries []publish.PruneEntry, opts Options) []
 	return out
 }
 
+// BuildTransactionLockReport converts lock inspection to a path-safe DTO.
+func BuildTransactionLockReport(result publish.LockShowResult, opts Options) TransactionLockReport {
+	var journal *TransactionLockJournal
+	if result.Status != publish.LockShowStatusAbsent {
+		journal = buildTransactionLockJournal(result.Journal)
+	}
+	return TransactionLockReport{
+		Kind:     "transactions-lock",
+		Status:   string(result.Status),
+		Lock:     buildTransactionLockInfo(result.Lock, opts),
+		Journal:  journal,
+		Warnings: buildTransactionLockWarnings(result.Warnings),
+	}
+}
+
+// BuildTransactionLockClearReport converts lock clear results to a path-safe DTO.
+func BuildTransactionLockClearReport(result publish.LockClearResult, opts Options) TransactionLockClearReport {
+	return TransactionLockClearReport{
+		Kind:          "transactions-lock-clear",
+		Status:        string(result.Status),
+		TransactionID: result.TransactionID.String(),
+		Reason:        result.Reason,
+		Lock: TransactionLockClearInfo{
+			Cleared: result.LockCleared,
+			Path:    includePath(result.Lock.Path, opts),
+		},
+		Journal:  buildTransactionLockJournal(result.Journal),
+		Warnings: buildTransactionLockWarnings(result.Warnings),
+	}
+}
+
+func buildTransactionLockInfo(info publish.TransactionLockInfo, opts Options) *TransactionLockInfo {
+	if info.ID == "" {
+		return nil
+	}
+	return &TransactionLockInfo{
+		TransactionID: info.ID.String(),
+		PID:           info.PID,
+		Command:       info.Command,
+		StartedAt:     info.StartedAt,
+		Path:          includePath(info.Path, opts),
+	}
+}
+
+func buildTransactionLockJournal(journal publish.LockJournalState) *TransactionLockJournal {
+	if !journal.Present && journal.Status == "" {
+		return &TransactionLockJournal{Present: false}
+	}
+	return &TransactionLockJournal{
+		Present:        journal.Present,
+		Status:         string(journal.Status),
+		RollbackStatus: string(journal.Rollback),
+		Version:        journal.Version,
+		StartedAt:      journal.StartedAt.Format(timeFormat),
+		UpdatedAt:      journal.UpdatedAt.Format(timeFormat),
+	}
+}
+
+func buildTransactionLockWarnings(warnings []publish.LockWarning) []TransactionLockWarning {
+	out := make([]TransactionLockWarning, 0, len(warnings))
+	for _, warning := range warnings {
+		out = append(out, TransactionLockWarning{Code: warning.Code, Message: warning.Message})
+	}
+	return out
+}
+
 func writeTransactionListText(w io.Writer, report TransactionListReport) error {
 	if err := writeLine(w, "Transactions"); err != nil {
 		return err
@@ -253,6 +370,89 @@ func writeTransactionPruneText(w io.Writer, report TransactionPruneReport) error
 			if err := writeLine(w, "    %s: %s %s", entry.ID, entry.Status, entry.Reason); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+func writeTransactionLockText(w io.Writer, report TransactionLockReport) error {
+	if err := writeLine(w, "Transaction lock"); err != nil {
+		return err
+	}
+	if err := writeLine(w, "  Status: %s", report.Status); err != nil {
+		return err
+	}
+	if report.Lock != nil {
+		if err := writeLine(w, "  Transaction: %s", report.Lock.TransactionID); err != nil {
+			return err
+		}
+		if report.Lock.Command != "" {
+			if err := writeLine(w, "  Command: %s", report.Lock.Command); err != nil {
+				return err
+			}
+		}
+		if report.Lock.PID != "" {
+			if err := writeLine(w, "  PID: %s", report.Lock.PID); err != nil {
+				return err
+			}
+		}
+		if report.Lock.StartedAt != "" {
+			if err := writeLine(w, "  Started: %s", report.Lock.StartedAt); err != nil {
+				return err
+			}
+		}
+	}
+	if report.Journal != nil && report.Journal.Present {
+		if err := writeLine(w, "  Journal:"); err != nil {
+			return err
+		}
+		if err := writeLine(w, "    Status: %s", report.Journal.Status); err != nil {
+			return err
+		}
+		if report.Journal.RollbackStatus != "" {
+			if err := writeLine(w, "    Rollback: %s", report.Journal.RollbackStatus); err != nil {
+				return err
+			}
+		}
+	}
+	return writeTransactionLockWarnings(w, report.Warnings)
+}
+
+func writeTransactionLockClearText(w io.Writer, report TransactionLockClearReport) error {
+	if err := writeLine(w, "Transaction lock clear"); err != nil {
+		return err
+	}
+	if err := writeLine(w, "  Status: %s", report.Status); err != nil {
+		return err
+	}
+	if report.TransactionID != "" {
+		if err := writeLine(w, "  Transaction: %s", report.TransactionID); err != nil {
+			return err
+		}
+	}
+	if report.Reason != "" {
+		if err := writeLine(w, "  Reason: %s", report.Reason); err != nil {
+			return err
+		}
+	}
+	if report.Journal != nil && report.Journal.Present {
+		if err := writeLine(w, "  Journal: %s", report.Journal.Status); err != nil {
+			return err
+		}
+	}
+	return writeTransactionLockWarnings(w, report.Warnings)
+}
+
+func writeTransactionLockWarnings(w io.Writer, warnings []TransactionLockWarning) error {
+	if len(warnings) == 0 {
+		return nil
+	}
+	if err := writeLine(w, "  Warnings:"); err != nil {
+		return err
+	}
+	for _, warning := range warnings {
+		if err := writeLine(w, "    %s: %s", warning.Code, warning.Message); err != nil {
+			return err
 		}
 	}
 	return nil

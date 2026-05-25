@@ -167,6 +167,115 @@ func TestRunTransactionsPruneFailureIsUseCaseError(t *testing.T) {
 	}
 }
 
+func TestRunTransactionsLockShowPassesStateDir(t *testing.T) {
+	t.Parallel()
+
+	app := newFakeApplication(t)
+	cli := New(Dependencies{App: app}, Options{})
+	var stdout, stderr bytes.Buffer
+
+	code := cli.Run(context.Background(), []string{
+		"transactions", "lock", "show",
+		"--state-dir", "/state",
+		"--output", "json",
+	}, &stdout, &stderr)
+
+	if code != ExitOK {
+		t.Fatalf("Run(transactions lock show) code = %d stderr = %s", code, stderr.String())
+	}
+	if !app.lockShowCalled || app.transactionLockReq.StateDir != "/state" {
+		t.Fatalf("lock request = %+v called=%v", app.transactionLockReq, app.lockShowCalled)
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte(`"kind": "transactions-lock"`)) {
+		t.Fatalf("lock show JSON = %s", stdout.String())
+	}
+}
+
+func TestRunTransactionsLockClearPassesGuardedRequest(t *testing.T) {
+	t.Parallel()
+
+	app := newFakeApplication(t)
+	cli := New(Dependencies{App: app}, Options{})
+	var stdout, stderr bytes.Buffer
+
+	code := cli.Run(context.Background(), []string{
+		"transactions", "lock", "clear",
+		"--state-dir", "/state",
+		"--transaction", "tx-one",
+		"--confirm", "tx-one",
+		"--output", "json",
+	}, &stdout, &stderr)
+
+	if code != ExitOK {
+		t.Fatalf("Run(transactions lock clear) code = %d stderr = %s", code, stderr.String())
+	}
+	if !app.lockClearCalled ||
+		app.transactionLockReq.StateDir != "/state" ||
+		app.transactionLockReq.TransactionID != "tx-one" ||
+		app.transactionLockReq.Confirm != "tx-one" {
+		t.Fatalf("lock clear request = %+v called=%v", app.transactionLockReq, app.lockClearCalled)
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte(`"kind": "transactions-lock-clear"`)) {
+		t.Fatalf("lock clear JSON = %s", stdout.String())
+	}
+}
+
+func TestRunTransactionsLockClearUsageErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "missing transaction", args: []string{"transactions", "lock", "clear", "--confirm", "tx-one"}},
+		{name: "missing confirm", args: []string{"transactions", "lock", "clear", "--transaction", "tx-one"}},
+		{name: "confirm mismatch", args: []string{"transactions", "lock", "clear", "--transaction", "tx-one", "--confirm", "tx-two"}},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			app := newFakeApplication(t)
+			cli := New(Dependencies{App: app}, Options{})
+			var stdout, stderr bytes.Buffer
+
+			code := cli.Run(context.Background(), tt.args, &stdout, &stderr)
+
+			if code != ExitUsage {
+				t.Fatalf("Run(%v) code = %d stderr = %s", tt.args, code, stderr.String())
+			}
+			if app.lockClearCalled {
+				t.Fatalf("ClearTransactionLock called for %s", tt.name)
+			}
+		})
+	}
+}
+
+func TestRunTransactionsLockFailuresRenderReport(t *testing.T) {
+	t.Parallel()
+
+	app := newFakeApplication(t)
+	app.transactionError = errors.New("lock failed")
+	cli := New(Dependencies{App: app}, Options{})
+	var stdout, stderr bytes.Buffer
+
+	code := cli.Run(context.Background(), []string{
+		"transactions", "lock", "clear",
+		"--transaction", "tx-one",
+		"--confirm", "tx-one",
+	}, &stdout, &stderr)
+
+	if code != ExitError {
+		t.Fatalf("Run(transactions lock clear) code = %d stderr = %s", code, stderr.String())
+	}
+	if !app.lockClearCalled {
+		t.Fatal("ClearTransactionLock not called")
+	}
+	if stdout.Len() == 0 {
+		t.Fatal("expected lock clear report on stdout")
+	}
+}
+
 func TestRunRollbackRequiresTransaction(t *testing.T) {
 	t.Parallel()
 

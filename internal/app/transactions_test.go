@@ -16,6 +16,8 @@ package app
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -46,5 +48,43 @@ func TestPruneTransactionsReturnsWorkflowResult(t *testing.T) {
 	}
 	if got := result.Result(); got.Status != publish.PruneStatusDryRun || len(got.Matched) != 1 {
 		t.Fatalf("prune result = %#v", got)
+	}
+}
+
+func TestTransactionLockUseCasesReturnWorkflowResults(t *testing.T) {
+	app, _ := appFixture(t)
+	stateDir := t.TempDir()
+	store := publish.NewFileJournalStore(stateDir)
+	if err := store.Create(context.Background(), publish.TransactionJournal{
+		SchemaVersion: 1,
+		ID:            "tx-committed",
+		Status:        publish.TransactionStatusCommitted,
+		StartedAt:     time.Unix(1, 0).UTC(),
+		UpdatedAt:     time.Unix(1, 0).UTC(),
+	}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "publish.lock"), []byte("transaction=tx-committed\npid=1\nstartedAt=2026-01-01T00:00:00Z\ncommand=publish\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	show, err := app.ShowTransactionLock(context.Background(), TransactionLockRequest{StateDir: stateDir})
+	if err != nil {
+		t.Fatalf("ShowTransactionLock() error = %v", err)
+	}
+	if got := show.Result(); got.Status != publish.LockShowStatusPresent || got.Journal.Status != publish.TransactionStatusCommitted {
+		t.Fatalf("show result = %#v", got)
+	}
+
+	clear, err := app.ClearTransactionLock(context.Background(), TransactionLockRequest{
+		StateDir:      stateDir,
+		TransactionID: "tx-committed",
+		Confirm:       "tx-committed",
+	})
+	if err != nil {
+		t.Fatalf("ClearTransactionLock() error = %v", err)
+	}
+	if got := clear.Result(); got.Status != publish.LockClearStatusCleared || !got.LockCleared {
+		t.Fatalf("clear result = %#v", got)
 	}
 }

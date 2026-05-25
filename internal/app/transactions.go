@@ -61,6 +61,13 @@ type TransactionPruneRequest struct {
 	DryRun    bool
 }
 
+// TransactionLockRequest selects publish lock lifecycle operations.
+type TransactionLockRequest struct {
+	StateDir      string
+	TransactionID publish.TransactionID
+	Confirm       publish.TransactionID
+}
+
 // TransactionListResult contains durable publish transaction summaries.
 type TransactionListResult struct{ summaries []publish.TransactionSummary }
 
@@ -82,6 +89,18 @@ type TransactionPruneResult struct{ result publish.PruneResult }
 
 // Result returns the workflow prune result.
 func (r TransactionPruneResult) Result() publish.PruneResult { return r.result }
+
+// TransactionLockResult contains publish lock inspection details.
+type TransactionLockResult struct{ result publish.LockShowResult }
+
+// Result returns the workflow lock show result.
+func (r TransactionLockResult) Result() publish.LockShowResult { return r.result }
+
+// TransactionLockClearResult contains guarded publish lock clear details.
+type TransactionLockClearResult struct{ result publish.LockClearResult }
+
+// Result returns the workflow lock clear result.
+func (r TransactionLockClearResult) Result() publish.LockClearResult { return r.result }
 
 // ListTransactions lists durable publish transactions.
 func (a App) ListTransactions(ctx context.Context, req TransactionRequest) (TransactionListResult, error) {
@@ -125,4 +144,27 @@ func (a App) PruneTransactions(ctx context.Context, req TransactionPruneRequest)
 		return TransactionPruneResult{result: result}, err
 	}
 	return TransactionPruneResult{result: result}, nil
+}
+
+// ShowTransactionLock inspects the current publish transaction lock.
+func (a App) ShowTransactionLock(ctx context.Context, req TransactionLockRequest) (TransactionLockResult, error) {
+	result, err := publish.New(a.workflowDeps.Publish, a.workflowOptions.Publish).
+		ShowTransactionLock(ctx, req.StateDir)
+	if err != nil {
+		return TransactionLockResult{result: result}, err
+	}
+	return TransactionLockResult{result: result}, nil
+}
+
+// ClearTransactionLock clears a guarded stale publish transaction lock.
+func (a App) ClearTransactionLock(ctx context.Context, req TransactionLockRequest) (TransactionLockClearResult, error) {
+	result, err := publish.New(a.workflowDeps.Publish, a.workflowOptions.Publish).
+		ClearTransactionLock(ctx, req.StateDir, publish.LockClearOptions{
+			TransactionID: req.TransactionID,
+			Confirm:       req.Confirm,
+		})
+	if err != nil {
+		return TransactionLockClearResult{result: result}, err
+	}
+	return TransactionLockClearResult{result: result}, nil
 }

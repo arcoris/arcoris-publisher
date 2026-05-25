@@ -37,6 +37,11 @@ type transactionPruneFlags struct {
 	dryRun    bool
 }
 
+type transactionLockClearFlags struct {
+	transaction string
+	confirm     string
+}
+
 func (c CLI) newTransactionsCommand(output *outputFlags) *cobra.Command {
 	var flags transactionFlags
 	cmd := &cobra.Command{
@@ -45,6 +50,7 @@ func (c CLI) newTransactionsCommand(output *outputFlags) *cobra.Command {
 	}
 	cmd.AddCommand(c.newTransactionsListCommand(&flags, output))
 	cmd.AddCommand(c.newTransactionsShowCommand(&flags, output))
+	cmd.AddCommand(c.newTransactionsLockCommand(&flags, output))
 	cmd.AddCommand(c.newTransactionsPruneCommand(&flags, output))
 	addTransactionFlags(cmd.PersistentFlags(), &flags, c.opts)
 	return cmd
@@ -75,6 +81,54 @@ func (c CLI) newTransactionsShowCommand(flags *transactionFlags, output *outputF
 			return c.executeTransactionsShow(cmd.Context(), *flags, outputForCommand(cmd, *output), args[0], cmd.OutOrStdout())
 		},
 	}
+}
+
+func (c CLI) newTransactionsLockCommand(flags *transactionFlags, output *outputFlags) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "lock",
+		Short: "Inspect and clear publish transaction locks",
+	}
+	cmd.AddCommand(c.newTransactionsLockShowCommand(flags, output))
+	cmd.AddCommand(c.newTransactionsLockClearCommand(flags, output))
+	return cmd
+}
+
+func (c CLI) newTransactionsLockShowCommand(flags *transactionFlags, output *outputFlags) *cobra.Command {
+	return &cobra.Command{
+		Use:   "show",
+		Short: "Show the current publish transaction lock",
+		Long:  "Show inspects publish.lock and its referenced transaction journal without modifying either file.",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return c.executeTransactionsLockShow(cmd.Context(), *flags, outputForCommand(cmd, *output), cmd.OutOrStdout())
+		},
+	}
+}
+
+func (c CLI) newTransactionsLockClearCommand(flags *transactionFlags, output *outputFlags) *cobra.Command {
+	var clearFlags transactionLockClearFlags
+	cmd := &cobra.Command{
+		Use:   "clear --transaction <id> --confirm <id>",
+		Short: "Clear a guarded stale publish transaction lock",
+		Long: "Clear deletes only publish.lock after explicit transaction confirmation. " +
+			"It never deletes transaction journals, refs, tags, branches, remotes, or worktree files.",
+		Args: noArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if strings.TrimSpace(clearFlags.transaction) == "" {
+				return usageError("--transaction is required")
+			}
+			if strings.TrimSpace(clearFlags.confirm) == "" {
+				return usageError("--confirm is required")
+			}
+			if clearFlags.confirm != clearFlags.transaction {
+				return usageError("--confirm must exactly match --transaction")
+			}
+			return c.executeTransactionsLockClear(cmd.Context(), *flags, clearFlags, outputForCommand(cmd, *output), cmd.OutOrStdout())
+		},
+	}
+	cmd.Flags().StringVar(&clearFlags.transaction, "transaction", "", "publish transaction id referenced by the lock")
+	cmd.Flags().StringVar(&clearFlags.confirm, "confirm", "", "repeat the transaction id to confirm lock clearing")
+	return cmd
 }
 
 func (c CLI) newTransactionsPruneCommand(flags *transactionFlags, output *outputFlags) *cobra.Command {
@@ -219,6 +273,54 @@ func (c CLI) executeTransactionsPrune(
 	}
 	if err != nil {
 		return &Error{Code: CodeUseCaseFailed, Message: "prune transactions failed", Cause: err}
+	}
+	return nil
+}
+
+func (c CLI) executeTransactionsLockShow(ctx context.Context, flags transactionFlags, output outputFlags, stdout io.Writer) error {
+	reportOptions, err := parseReportOptions(output)
+	if err != nil {
+		return err
+	}
+	application, err := c.deps.application(c.opts.App)
+	if err != nil {
+		return err
+	}
+	result, err := application.ShowTransactionLock(ctx, app.TransactionLockRequest{StateDir: transactionStateDir(flags)})
+	if renderErr := newRenderer(reportOptions).TransactionLock(stdout, result.Result()); renderErr != nil {
+		return &Error{Code: CodeReportFailed, Message: "render transaction lock report failed", Cause: renderErr}
+	}
+	if err != nil {
+		return &Error{Code: CodeUseCaseFailed, Message: "show transaction lock failed", Cause: err}
+	}
+	return nil
+}
+
+func (c CLI) executeTransactionsLockClear(
+	ctx context.Context,
+	flags transactionFlags,
+	clearFlags transactionLockClearFlags,
+	output outputFlags,
+	stdout io.Writer,
+) error {
+	reportOptions, err := parseReportOptions(output)
+	if err != nil {
+		return err
+	}
+	application, err := c.deps.application(c.opts.App)
+	if err != nil {
+		return err
+	}
+	result, err := application.ClearTransactionLock(ctx, app.TransactionLockRequest{
+		StateDir:      transactionStateDir(flags),
+		TransactionID: app.TransactionID(clearFlags.transaction),
+		Confirm:       app.TransactionID(clearFlags.confirm),
+	})
+	if renderErr := newRenderer(reportOptions).TransactionLockClear(stdout, result.Result()); renderErr != nil {
+		return &Error{Code: CodeReportFailed, Message: "render transaction lock clear report failed", Cause: renderErr}
+	}
+	if err != nil {
+		return &Error{Code: CodeUseCaseFailed, Message: "clear transaction lock failed", Cause: err}
 	}
 	return nil
 }
