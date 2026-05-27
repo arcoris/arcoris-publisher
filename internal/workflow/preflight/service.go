@@ -220,7 +220,10 @@ func firstLockBlocker(diagnostics publish.TransactionStateDiagnostics) (publish.
 		case publish.TransactionBlockerPublishLock,
 			publish.TransactionBlockerMissingLockJournal,
 			publish.TransactionBlockerCorruptLock,
-			publish.TransactionBlockerLockReadFailed:
+			publish.TransactionBlockerLockReadFailed,
+			publish.TransactionBlockerOperationLock,
+			publish.TransactionBlockerCorruptOperationLock,
+			publish.TransactionBlockerOperationLockReadFailed:
 			return blocker, true
 		case publish.TransactionBlockerCorruptJournal,
 			publish.TransactionBlockerJournalFileReadFailed:
@@ -249,6 +252,12 @@ func lockBlockerCheck(blocker publish.TransactionStateBlocker) CheckResult {
 		return failed("publish-lock", "publish_lock_corrupt", "publish lock is not parseable")
 	case publish.TransactionBlockerLockReadFailed:
 		return failed("publish-lock", "publish_lock_read_failed", "publish lock lookup failed")
+	case publish.TransactionBlockerOperationLock:
+		return failed("publish-lock", "transaction_operation_lock_exists", "transaction state operation lock exists")
+	case publish.TransactionBlockerCorruptOperationLock:
+		return failed("publish-lock", "transaction_operation_lock_corrupt", "transaction state operation lock is corrupt")
+	case publish.TransactionBlockerOperationLockReadFailed:
+		return failed("publish-lock", "transaction_operation_lock_read_failed", "transaction state operation lock lookup failed")
 	case publish.TransactionBlockerCorruptJournal:
 		return failed("publish-lock", "publish_lock_journal_corrupt", fmt.Sprintf("publish lock references corrupt transaction journal %s", blocker.TransactionID))
 	case publish.TransactionBlockerJournalFileReadFailed:

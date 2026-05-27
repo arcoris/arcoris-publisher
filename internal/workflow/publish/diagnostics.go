@@ -33,6 +33,7 @@ type TransactionStateDiagnostics struct {
 	PublishBlocked bool
 	Blockers       []TransactionStateBlocker
 	Lock           LockShowResult
+	OperationLock  OperationLockDiagnostic
 	Journals       []JournalDiagnostic
 	Warnings       []TransactionDiagnosticWarning
 }
@@ -61,6 +62,9 @@ const (
 	TransactionBlockerJournalFileReadFailed      TransactionStateBlockerKind = "journal_file_read_failed"
 	TransactionBlockerJournalDirectoryReadFailed TransactionStateBlockerKind = "journal_directory_read_failed"
 	TransactionBlockerStateDirUnavailable        TransactionStateBlockerKind = "state_dir_unavailable"
+	TransactionBlockerOperationLock              TransactionStateBlockerKind = "operation_lock"
+	TransactionBlockerCorruptOperationLock       TransactionStateBlockerKind = "corrupt_operation_lock"
+	TransactionBlockerOperationLockReadFailed    TransactionStateBlockerKind = "operation_lock_read_failed"
 )
 
 // TransactionStateBlockerReason is a stable machine-readable blocker reason.
@@ -79,6 +83,9 @@ const (
 	TransactionBlockerReasonJournalFileReadFailed      TransactionStateBlockerReason = "journal_file_read_failed"
 	TransactionBlockerReasonJournalDirectoryReadFailed TransactionStateBlockerReason = "journal_directory_read_failed"
 	TransactionBlockerReasonStateDirMissing            TransactionStateBlockerReason = "state_dir_missing"
+	TransactionBlockerReasonOperationLockExists        TransactionStateBlockerReason = "operation_lock_exists"
+	TransactionBlockerReasonOperationLockCorrupt       TransactionStateBlockerReason = "operation_lock_corrupt"
+	TransactionBlockerReasonOperationLockReadFailed    TransactionStateBlockerReason = "operation_lock_read_failed"
 )
 
 // JournalDiagnostic describes one transaction journal without mutating it.
@@ -97,6 +104,18 @@ type JournalDiagnostic struct {
 	Corrupt          bool
 	ReadFailed       bool
 	Message          string
+}
+
+// OperationLockDiagnostic reports operation.lock without exposing its token.
+type OperationLockDiagnostic struct {
+	Present    bool
+	Operation  string
+	PID        string
+	StartedAt  string
+	Path       string
+	Corrupt    bool
+	ReadFailed bool
+	Message    string
 }
 
 // TransactionDiagnosticWarning is non-fatal read-only diagnostic context.
@@ -127,6 +146,9 @@ func InspectTransactionState(ctx context.Context, stateDir string) (TransactionS
 	diagnostics.Lock = lockResult
 	diagnostics.addLockBlockers(lockResult)
 	diagnostics.addLockWarnings(lockResult.Warnings)
+	diagnostics.OperationLock = inspectOperationLock(stateDir)
+	diagnostics.addOperationLockBlocker(diagnostics.OperationLock)
+	diagnostics.addOperationLockWarning(diagnostics.OperationLock)
 
 	journals, err := inspectJournalDiagnostics(ctx, stateDir)
 	if err != nil {
@@ -212,6 +234,27 @@ func (d *TransactionStateDiagnostics) addLockFailureBlocker(result LockShowResul
 	}
 }
 
+func (d *TransactionStateDiagnostics) addOperationLockBlocker(lock OperationLockDiagnostic) {
+	switch {
+	case lock.Corrupt:
+		d.addBlocker(TransactionStateBlocker{
+			Kind:   TransactionBlockerCorruptOperationLock,
+			Reason: TransactionBlockerReasonOperationLockCorrupt,
+		})
+	case lock.ReadFailed:
+		d.addBlocker(TransactionStateBlocker{
+			Kind:   TransactionBlockerOperationLockReadFailed,
+			Reason: TransactionBlockerReasonOperationLockReadFailed,
+		})
+	case lock.Present:
+		d.addBlocker(TransactionStateBlocker{
+			Kind:   TransactionBlockerOperationLock,
+			Reason: TransactionBlockerReasonOperationLockExists,
+			Name:   lock.Operation,
+		})
+	}
+}
+
 func (d *TransactionStateDiagnostics) addJournalBlocker(journal JournalDiagnostic) {
 	switch {
 	case journal.Corrupt:
@@ -290,6 +333,21 @@ func journalBlockerReason(status TransactionStatus) TransactionStateBlockerReaso
 		return TransactionBlockerReasonRollbackFailed
 	default:
 		return TransactionBlockerReasonActiveJournal
+	}
+}
+
+func (d *TransactionStateDiagnostics) addOperationLockWarning(lock OperationLockDiagnostic) {
+	switch {
+	case lock.Corrupt:
+		d.addWarning(TransactionDiagnosticWarning{
+			Code:    string(TransactionBlockerReasonOperationLockCorrupt),
+			Message: lock.Message,
+		})
+	case lock.ReadFailed:
+		d.addWarning(TransactionDiagnosticWarning{
+			Code:    string(TransactionBlockerReasonOperationLockReadFailed),
+			Message: lock.Message,
+		})
 	}
 }
 
@@ -385,4 +443,33 @@ func diagnosticJournalID(name string) TransactionID {
 		return ""
 	}
 	return id
+}
+
+func inspectOperationLock(stateDir string) OperationLockDiagnostic {
+	path := operationLockPath(stateDir)
+	info, err := readOperationLock(path)
+	if err == nil {
+		return OperationLockDiagnostic{
+			Present:   true,
+			Operation: string(info.Operation),
+			PID:       info.PID,
+			StartedAt: info.StartedAt,
+			Path:      path,
+		}
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return OperationLockDiagnostic{}
+	}
+	out := OperationLockDiagnostic{Path: path, Message: "read transaction operation lock failed"}
+	if _, statErr := os.Stat(path); statErr == nil {
+		out.Present = true
+	}
+	if errors.Is(err, errOperationLockCorrupt) {
+		out.Present = true
+		out.Corrupt = true
+		out.Message = err.Error()
+		return out
+	}
+	out.ReadFailed = true
+	return out
 }

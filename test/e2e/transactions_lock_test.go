@@ -17,6 +17,7 @@ package e2e_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -227,7 +228,13 @@ func TestTransactionsLockDiagnoseReportsBlockersReadOnly(t *testing.T) {
 	assertExitCode(t, result, 0)
 	assertContains(t, result.Stdout, `"kind": "transactions-diagnostics"`)
 	assertContains(t, result.Stdout, `"publishBlocked": true`)
+	assertContains(t, result.Stdout, `"operationLock":`)
+	assertContains(t, result.Stdout, `"operation": "publish"`)
 	assertContains(t, result.Stdout, `"kind": "failed_journal"`)
+	assertContains(t, result.Stdout, `"kind": "operation_lock"`)
+	if strings.Contains(result.Stdout, "token-one") {
+		t.Fatalf("diagnostics leaked operation lock token: %s", result.Stdout)
+	}
 	assertNoLocalPathLeak(t, result.Stdout, stateDir)
 	assertFileExists(t, transactionJournalPath(stateDir, "tx-failed"))
 	assertFileExists(t, transactionOperationLockPath(stateDir))

@@ -41,7 +41,7 @@ func TestCheckPassesWithoutMutatingGit(t *testing.T) {
 	}
 }
 
-func TestCheckIgnoresOperationLock(t *testing.T) {
+func TestCheckReportsOperationLock(t *testing.T) {
 	deps, req, opts := preflightFixture(t)
 	if err := os.MkdirAll(opts.StateDir, 0o700); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
@@ -55,9 +55,7 @@ func TestCheckIgnoresOperationLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Check() error = %v", err)
 	}
-	if result.Status() != StatusPassed {
-		t.Fatalf("status = %q, want passed: %#v", result.Status(), result)
-	}
+	assertGlobalCheckCode(t, result, "publish-lock", StatusFailed, "transaction_operation_lock_exists")
 	if _, err := os.Stat(filepath.Join(opts.StateDir, "operation.lock")); err != nil {
 		t.Fatalf("operation lock missing: %v", err)
 	}

@@ -18,6 +18,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -47,9 +48,12 @@ func TestInspectTransactionStateNoLockNoJournals(t *testing.T) {
 	if diagnostics.Lock.Status != LockShowStatusAbsent || diagnostics.Lock.Reason != LockShowReasonLockAbsent {
 		t.Fatalf("lock = %#v", diagnostics.Lock)
 	}
+	if diagnostics.OperationLock.Present {
+		t.Fatalf("operation lock = %#v, want absent", diagnostics.OperationLock)
+	}
 }
 
-func TestInspectTransactionStateIgnoresOperationLock(t *testing.T) {
+func TestInspectTransactionStateReportsOperationLock(t *testing.T) {
 	stateDir := t.TempDir()
 	writeOperationLockFile(t, stateDir, operationLockPublish, "other-token")
 
@@ -57,12 +61,53 @@ func TestInspectTransactionStateIgnoresOperationLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InspectTransactionState() error = %v", err)
 	}
-	if diagnostics.PublishBlocked || len(diagnostics.Blockers) != 0 {
+	if !diagnostics.PublishBlocked {
+		t.Fatalf("PublishBlocked = false diagnostics=%#v", diagnostics)
+	}
+	if !diagnostics.OperationLock.Present || diagnostics.OperationLock.Operation != "publish" || diagnostics.OperationLock.PID == "" || diagnostics.OperationLock.StartedAt == "" {
 		t.Fatalf("diagnostics = %#v", diagnostics)
 	}
+	assertDiagnosticBlockerReason(t, diagnostics, TransactionBlockerOperationLock, "", "", TransactionBlockerReasonOperationLockExists)
 	if _, err := os.Stat(operationLockPath(stateDir)); err != nil {
 		t.Fatalf("operation lock missing: %v", err)
 	}
+}
+
+func TestInspectTransactionStateOperationLockFailures(t *testing.T) {
+	t.Run("corrupt operation lock", func(t *testing.T) {
+		stateDir := t.TempDir()
+		if err := os.WriteFile(operationLockPath(stateDir), []byte("operation=publish\n"), 0o600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		diagnostics, err := InspectTransactionState(context.Background(), stateDir)
+		if err != nil {
+			t.Fatalf("InspectTransactionState() error = %v", err)
+		}
+		if !diagnostics.OperationLock.Present || !diagnostics.OperationLock.Corrupt || diagnostics.OperationLock.Message == "" {
+			t.Fatalf("operation lock = %#v", diagnostics.OperationLock)
+		}
+		assertDiagnosticBlockerReason(t, diagnostics, TransactionBlockerCorruptOperationLock, "", "", TransactionBlockerReasonOperationLockCorrupt)
+	})
+
+	t.Run("operation lock read failed", func(t *testing.T) {
+		stateDir := t.TempDir()
+		if err := os.MkdirAll(operationLockPath(stateDir), 0o700); err != nil {
+			t.Fatalf("MkdirAll() error = %v", err)
+		}
+
+		diagnostics, err := InspectTransactionState(context.Background(), stateDir)
+		if err != nil {
+			t.Fatalf("InspectTransactionState() error = %v", err)
+		}
+		if !diagnostics.OperationLock.Present || !diagnostics.OperationLock.ReadFailed || diagnostics.OperationLock.Message == "" {
+			t.Fatalf("operation lock = %#v", diagnostics.OperationLock)
+		}
+		if strings.Contains(diagnostics.OperationLock.Message, stateDir) {
+			t.Fatalf("operation lock message leaked path: %q", diagnostics.OperationLock.Message)
+		}
+		assertDiagnosticBlockerReason(t, diagnostics, TransactionBlockerOperationLockReadFailed, "", "", TransactionBlockerReasonOperationLockReadFailed)
+	})
 }
 
 func TestInspectTransactionStateJournalPolicyMatrix(t *testing.T) {

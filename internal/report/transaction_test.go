@@ -259,6 +259,8 @@ func TestTransactionDiagnosticsReportJSONAndText(t *testing.T) {
 	for _, want := range []string{
 		`"kind": "transactions-diagnostics"`,
 		`"publishBlocked": true`,
+		`"operationLock": {`,
+		`"operation": "publish"`,
 		`"kind": "corrupt_journal"`,
 		`"name": "bad.lock.json"`,
 	} {
@@ -269,6 +271,9 @@ func TestTransactionDiagnosticsReportJSONAndText(t *testing.T) {
 	if strings.Contains(jsonBuf.String(), "/state") {
 		t.Fatalf("diagnostics JSON leaked local path: %s", jsonBuf.String())
 	}
+	if strings.Contains(jsonBuf.String(), "token") {
+		t.Fatalf("diagnostics JSON leaked operation lock token: %s", jsonBuf.String())
+	}
 
 	var textBuf bytes.Buffer
 	if err := New(Options{Format: FormatText}).TransactionDiagnostics(&textBuf, transactionDiagnosticsFixture()); err != nil {
@@ -277,6 +282,7 @@ func TestTransactionDiagnosticsReportJSONAndText(t *testing.T) {
 	for _, want := range []string{
 		"Transaction diagnostics",
 		"Publish blocked: true",
+		"Operation lock: publish",
 		"publish_lock: tx-test recovery_transaction",
 		"corrupt_journal: bad.lock.json corrupt_journal",
 		"tx-test: rollback_failed",
@@ -304,6 +310,9 @@ func TestTransactionDiagnosticsReportIncludesLocalPathsWhenRequested(t *testing.
 	}
 	if report.Lock.Lock == nil || report.Lock.Lock.Path != "/state/publish.lock" {
 		t.Fatalf("lock = %#v", report.Lock.Lock)
+	}
+	if report.OperationLock.Path != "/state/operation.lock" {
+		t.Fatalf("operation lock path = %q", report.OperationLock.Path)
 	}
 }
 
@@ -431,6 +440,13 @@ func transactionDiagnosticsFixture() publish.TransactionStateDiagnostics {
 			},
 		},
 		Lock: lock,
+		OperationLock: publish.OperationLockDiagnostic{
+			Present:   true,
+			Operation: "publish",
+			PID:       "123",
+			StartedAt: "2026-01-01T00:00:00Z",
+			Path:      "/state/operation.lock",
+		},
 		Journals: []publish.JournalDiagnostic{
 			{
 				ID:               "tx-test",

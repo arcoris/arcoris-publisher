@@ -108,6 +108,7 @@ type TransactionDiagnosticsReport struct {
 	PublishBlocked bool                                  `json:"publishBlocked"`
 	Blockers       []TransactionDiagnosticsBlockerReport `json:"blockers"`
 	Lock           TransactionDiagnosticsLockReport      `json:"lock"`
+	OperationLock  TransactionOperationLockReport        `json:"operationLock"`
 	Journals       []TransactionJournalDiagnosticReport  `json:"journals"`
 	Warnings       []TransactionDiagnosticWarningReport  `json:"warnings"`
 }
@@ -129,6 +130,18 @@ type TransactionDiagnosticsLockReport struct {
 	Lock     *TransactionLockInfo     `json:"lock"`
 	Journal  *TransactionLockJournal  `json:"journal"`
 	Warnings []TransactionLockWarning `json:"warnings"`
+}
+
+// TransactionOperationLockReport describes operation.lock in diagnostics.
+type TransactionOperationLockReport struct {
+	Present    bool   `json:"present"`
+	Operation  string `json:"operation,omitempty"`
+	PID        string `json:"pid,omitempty"`
+	StartedAt  string `json:"startedAt,omitempty"`
+	Corrupt    bool   `json:"corrupt,omitempty"`
+	ReadFailed bool   `json:"readFailed,omitempty"`
+	Message    string `json:"message,omitempty"`
+	Path       string `json:"path,omitempty"`
 }
 
 // TransactionJournalDiagnosticReport describes one journal diagnostic item.
@@ -351,6 +364,7 @@ func BuildTransactionDiagnosticsReport(result publish.TransactionStateDiagnostic
 		PublishBlocked: result.PublishBlocked,
 		Blockers:       buildTransactionDiagnosticBlockers(result.Blockers),
 		Lock:           buildTransactionDiagnosticsLock(result.Lock, opts),
+		OperationLock:  buildTransactionOperationLock(result.OperationLock, opts),
 		Journals:       buildTransactionJournalDiagnostics(result.Journals, opts),
 		Warnings:       buildTransactionDiagnosticWarnings(result.Warnings),
 	}
@@ -395,6 +409,19 @@ func buildTransactionDiagnosticsLock(result publish.LockShowResult, opts Options
 		Lock:     buildTransactionLockInfo(result.Lock, opts),
 		Journal:  journal,
 		Warnings: buildTransactionLockWarnings(result.Warnings),
+	}
+}
+
+func buildTransactionOperationLock(lock publish.OperationLockDiagnostic, opts Options) TransactionOperationLockReport {
+	return TransactionOperationLockReport{
+		Present:    lock.Present,
+		Operation:  lock.Operation,
+		PID:        lock.PID,
+		StartedAt:  lock.StartedAt,
+		Corrupt:    lock.Corrupt,
+		ReadFailed: lock.ReadFailed,
+		Message:    lock.Message,
+		Path:       includePath(lock.Path, opts),
 	}
 }
 
@@ -622,6 +649,9 @@ func writeTransactionDiagnosticsText(w io.Writer, report TransactionDiagnosticsR
 			return err
 		}
 	}
+	if err := writeLine(w, "  Operation lock: %s", operationLockState(report.OperationLock)); err != nil {
+		return err
+	}
 	if len(report.Blockers) > 0 {
 		if err := writeLine(w, "  Blockers:"); err != nil {
 			return err
@@ -654,6 +684,19 @@ func writeTransactionDiagnosticsText(w io.Writer, report TransactionDiagnosticsR
 		}
 	}
 	return nil
+}
+
+func operationLockState(lock TransactionOperationLockReport) string {
+	switch {
+	case lock.Corrupt:
+		return formatDiagnosticsState("corrupt", lock.Message)
+	case lock.ReadFailed:
+		return formatDiagnosticsState("read_failed", lock.Message)
+	case lock.Present:
+		return lock.Operation
+	default:
+		return "absent"
+	}
 }
 
 func blockerLabel(blocker TransactionDiagnosticsBlockerReport) string {
