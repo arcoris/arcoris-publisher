@@ -102,6 +102,14 @@ type TransactionLockClearResult struct{ result publish.LockClearResult }
 // Result returns the workflow lock clear result.
 func (r TransactionLockClearResult) Result() publish.LockClearResult { return r.result }
 
+// TransactionDiagnosticsResult contains read-only transaction state diagnostics.
+type TransactionDiagnosticsResult struct {
+	result publish.TransactionStateDiagnostics
+}
+
+// Result returns the workflow diagnostics result.
+func (r TransactionDiagnosticsResult) Result() publish.TransactionStateDiagnostics { return r.result }
+
 // ListTransactions lists durable publish transactions.
 func (a App) ListTransactions(ctx context.Context, req TransactionRequest) (TransactionListResult, error) {
 	summaries, err := publish.New(a.workflowDeps.Publish, a.workflowOptions.Publish).
@@ -167,4 +175,13 @@ func (a App) ClearTransactionLock(ctx context.Context, req TransactionLockReques
 		return TransactionLockClearResult{result: result}, err
 	}
 	return TransactionLockClearResult{result: result}, nil
+}
+
+// DiagnoseTransactions inspects transaction state without mutating it.
+func (a App) DiagnoseTransactions(ctx context.Context, req TransactionRequest) (TransactionDiagnosticsResult, error) {
+	result, err := publish.InspectTransactionState(ctx, req.StateDir)
+	if err != nil {
+		return TransactionDiagnosticsResult{result: result}, err
+	}
+	return TransactionDiagnosticsResult{result: result}, nil
 }

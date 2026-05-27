@@ -251,6 +251,30 @@ func TestRunTransactionsLockClearUsageErrors(t *testing.T) {
 	}
 }
 
+func TestRunTransactionsDiagnosePassesStateDir(t *testing.T) {
+	t.Parallel()
+
+	app := newFakeApplication(t)
+	cli := New(Dependencies{App: app}, Options{})
+	var stdout, stderr bytes.Buffer
+
+	code := cli.Run(context.Background(), []string{
+		"transactions", "diagnose",
+		"--state-dir", "/state",
+		"--output", "json",
+	}, &stdout, &stderr)
+
+	if code != ExitOK {
+		t.Fatalf("Run(transactions diagnose) code = %d stderr = %s", code, stderr.String())
+	}
+	if !app.diagnoseCalled || app.transactionRequest.StateDir != "/state" {
+		t.Fatalf("diagnose request = %+v called=%v", app.transactionRequest, app.diagnoseCalled)
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte(`"kind": "transactions-diagnostics"`)) {
+		t.Fatalf("diagnostics JSON = %s", stdout.String())
+	}
+}
+
 func TestRunTransactionsLockFailuresRenderReport(t *testing.T) {
 	t.Parallel()
 

@@ -53,6 +53,7 @@ type fakeApplication struct {
 	pruneCalled           bool
 	lockShowCalled        bool
 	lockClearCalled       bool
+	diagnoseCalled        bool
 	buildPlanManifest     string
 	buildPlanVersion      versioning.Version
 	prepareTargetsRequest app.Request
@@ -65,6 +66,7 @@ type fakeApplication struct {
 	transactionLockReq    app.TransactionLockRequest
 	transactionLockRes    app.TransactionLockResult
 	transactionLockClear  app.TransactionLockClearResult
+	transactionDiagRes    app.TransactionDiagnosticsResult
 	buildPlanError        error
 	prepareTargetsError   error
 	preflightError        error
@@ -150,6 +152,12 @@ func (f *fakeApplication) ClearTransactionLock(_ context.Context, req app.Transa
 	f.lockClearCalled = true
 	f.transactionLockReq = req
 	return f.transactionLockClear, f.transactionError
+}
+
+func (f *fakeApplication) DiagnoseTransactions(_ context.Context, req app.TransactionRequest) (app.TransactionDiagnosticsResult, error) {
+	f.diagnoseCalled = true
+	f.transactionRequest = req
+	return f.transactionDiagRes, f.transactionError
 }
 
 type realApplicationOptions struct {

@@ -97,6 +97,12 @@ func (r Renderer) TransactionLockClear(w io.Writer, result publish.LockClearResu
 	return renderFormatted(w, report, r.opts, writeTransactionLockClearText)
 }
 
+// TransactionDiagnostics renders read-only transaction state diagnostics.
+func (r Renderer) TransactionDiagnostics(w io.Writer, result publish.TransactionStateDiagnostics) error {
+	report := BuildTransactionDiagnosticsReport(result, r.opts)
+	return renderFormatted(w, report, r.opts, writeTransactionDiagnosticsText)
+}
+
 func renderFormatted[T any](
 	w io.Writer,
 	value T,

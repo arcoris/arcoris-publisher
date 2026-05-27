@@ -90,3 +90,26 @@ func TestTransactionLockUseCasesReturnWorkflowResults(t *testing.T) {
 		t.Fatalf("clear result contract = %#v", got)
 	}
 }
+
+func TestDiagnoseTransactionsReturnsWorkflowDiagnostics(t *testing.T) {
+	app, _ := appFixture(t)
+	stateDir := t.TempDir()
+	store := publish.NewFileJournalStore(stateDir)
+	if err := store.Create(context.Background(), publish.TransactionJournal{
+		SchemaVersion: 1,
+		ID:            "tx-failed",
+		Status:        publish.TransactionStatusFailed,
+		StartedAt:     time.Unix(1, 0).UTC(),
+		UpdatedAt:     time.Unix(1, 0).UTC(),
+	}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	result, err := app.DiagnoseTransactions(context.Background(), TransactionRequest{StateDir: stateDir})
+	if err != nil {
+		t.Fatalf("DiagnoseTransactions() error = %v", err)
+	}
+	if got := result.Result(); !got.PublishBlocked || len(got.Blockers) != 1 || got.Blockers[0].Kind != publish.TransactionBlockerFailedJournal {
+		t.Fatalf("diagnostics = %#v", got)
+	}
+}

@@ -52,6 +52,7 @@ func (c CLI) newTransactionsCommand(output *outputFlags) *cobra.Command {
 	cmd.AddCommand(c.newTransactionsShowCommand(&flags, output))
 	cmd.AddCommand(c.newTransactionsLockCommand(&flags, output))
 	cmd.AddCommand(c.newTransactionsPruneCommand(&flags, output))
+	cmd.AddCommand(c.newTransactionsDiagnoseCommand(&flags, output))
 	addTransactionFlags(cmd.PersistentFlags(), &flags, c.opts)
 	return cmd
 }
@@ -149,6 +150,18 @@ func (c CLI) newTransactionsPruneCommand(flags *transactionFlags, output *output
 	cmd.Flags().StringVar(&pruneFlags.olderThan, "older-than", "", "only prune journals older than this age, for example 720h or 30d")
 	cmd.Flags().BoolVar(&pruneFlags.dryRun, "dry-run", false, "preview matching terminal journals without deleting them")
 	return cmd
+}
+
+func (c CLI) newTransactionsDiagnoseCommand(flags *transactionFlags, output *outputFlags) *cobra.Command {
+	return &cobra.Command{
+		Use:   "diagnose",
+		Short: "Diagnose publish transaction state",
+		Long:  "Diagnose inspects transaction journals and publish locks without modifying transaction state.",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return c.executeTransactionsDiagnose(cmd.Context(), *flags, outputForCommand(cmd, *output), cmd.OutOrStdout())
+		},
+	}
 }
 
 func (c CLI) newRollbackCommand(output *outputFlags) *cobra.Command {
@@ -323,6 +336,25 @@ func (c CLI) executeTransactionsLockClear(
 	}
 	if err != nil {
 		return &Error{Code: CodeUseCaseFailed, Message: "clear transaction lock failed", Cause: err}
+	}
+	return nil
+}
+
+func (c CLI) executeTransactionsDiagnose(ctx context.Context, flags transactionFlags, output outputFlags, stdout io.Writer) error {
+	reportOptions, err := parseReportOptions(output)
+	if err != nil {
+		return err
+	}
+	application, err := c.deps.application(c.opts.App)
+	if err != nil {
+		return err
+	}
+	result, err := application.DiagnoseTransactions(ctx, app.TransactionRequest{StateDir: transactionStateDir(flags)})
+	if renderErr := newRenderer(reportOptions).TransactionDiagnostics(stdout, result.Result()); renderErr != nil {
+		return &Error{Code: CodeReportFailed, Message: "render transaction diagnostics report failed", Cause: renderErr}
+	}
+	if err != nil {
+		return &Error{Code: CodeUseCaseFailed, Message: "diagnose transactions failed", Cause: err}
 	}
 	return nil
 }

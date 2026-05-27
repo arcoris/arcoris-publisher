@@ -202,6 +202,19 @@ func TestTransactionsLockNoPathLeaksByDefault(t *testing.T) {
 	assertNoLocalPathLeak(t, result.Stdout, stateDir)
 }
 
+func TestTransactionsLockDiagnoseReportsBlockersReadOnly(t *testing.T) {
+	stateDir := t.TempDir()
+	writeE2ETransactionJournal(t, stateDir, "tx-failed", "failed", time.Now())
+
+	result := runArcpub(t, "transactions", "diagnose", "--state-dir", stateDir, "--output", "json")
+	assertExitCode(t, result, 0)
+	assertContains(t, result.Stdout, `"kind": "transactions-diagnostics"`)
+	assertContains(t, result.Stdout, `"publishBlocked": true`)
+	assertContains(t, result.Stdout, `"kind": "failed_journal"`)
+	assertNoLocalPathLeak(t, result.Stdout, stateDir)
+	assertFileExists(t, transactionJournalPath(stateDir, "tx-failed"))
+}
+
 func runTransactionsLockShowJSON(t *testing.T, stateDir string, wantCode int) (commandResult, map[string]any) {
 	t.Helper()
 	result := runArcpub(t, "transactions", "lock", "show", "--state-dir", stateDir, "--output", "json")

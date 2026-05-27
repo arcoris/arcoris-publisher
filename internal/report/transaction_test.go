@@ -249,6 +249,59 @@ func TestTransactionLockReportsIncludeLocalPathsWhenRequested(t *testing.T) {
 	}
 }
 
+func TestTransactionDiagnosticsReportJSONAndText(t *testing.T) {
+	t.Parallel()
+
+	var jsonBuf bytes.Buffer
+	if err := New(Options{Format: FormatJSON, Pretty: true}).TransactionDiagnostics(&jsonBuf, transactionDiagnosticsFixture()); err != nil {
+		t.Fatalf("TransactionDiagnostics(JSON) error = %v", err)
+	}
+	for _, want := range []string{
+		`"kind": "transactions-diagnostics"`,
+		`"publishBlocked": true`,
+		`"kind": "corrupt_journal"`,
+		`"name": "bad.lock.json"`,
+	} {
+		if !strings.Contains(jsonBuf.String(), want) {
+			t.Fatalf("diagnostics JSON missing %q:\n%s", want, jsonBuf.String())
+		}
+	}
+	if strings.Contains(jsonBuf.String(), "/state") {
+		t.Fatalf("diagnostics JSON leaked local path: %s", jsonBuf.String())
+	}
+
+	var textBuf bytes.Buffer
+	if err := New(Options{Format: FormatText}).TransactionDiagnostics(&textBuf, transactionDiagnosticsFixture()); err != nil {
+		t.Fatalf("TransactionDiagnostics(text) error = %v", err)
+	}
+	for _, want := range []string{
+		"Transaction diagnostics",
+		"Publish blocked: true",
+		"corrupt_journal",
+		"bad.lock.json",
+	} {
+		if !strings.Contains(textBuf.String(), want) {
+			t.Fatalf("diagnostics text missing %q:\n%s", want, textBuf.String())
+		}
+	}
+}
+
+func TestTransactionDiagnosticsReportIncludesLocalPathsWhenRequested(t *testing.T) {
+	t.Parallel()
+
+	report := BuildTransactionDiagnosticsReport(transactionDiagnosticsFixture(), Options{IncludeLocalPaths: true})
+
+	if len(report.Journals) != 2 {
+		t.Fatalf("journals = %#v", report.Journals)
+	}
+	if report.Journals[0].Path != "/state/transactions/tx-test.json" {
+		t.Fatalf("journal path = %q", report.Journals[0].Path)
+	}
+	if report.Lock.Lock == nil || report.Lock.Lock.Path != "/state/publish.lock" {
+		t.Fatalf("lock = %#v", report.Lock.Lock)
+	}
+}
+
 func transactionFixture() publish.TransactionJournal {
 	now := time.Unix(1, 2).UTC()
 	return publish.TransactionJournal{
@@ -310,6 +363,51 @@ func transactionLockClearFixture() publish.LockClearResult {
 		Reason:         publish.LockClearReasonCleared,
 		Message:        "publish lock cleared",
 		PostClearState: publish.LockPostClearReadyForPublish,
+	}
+}
+
+func transactionDiagnosticsFixture() publish.TransactionStateDiagnostics {
+	lock := transactionLockFixture()
+	return publish.TransactionStateDiagnostics{
+		PublishBlocked: true,
+		Blockers: []publish.TransactionStateBlocker{
+			{
+				Kind:          publish.TransactionBlockerPublishLock,
+				TransactionID: "tx-test",
+				Status:        publish.TransactionStatusRollbackFailed,
+				Reason:        publish.TransactionBlockerReasonRecoveryLock,
+				Name:          "tx-test.json",
+			},
+			{
+				Kind:   publish.TransactionBlockerCorruptJournal,
+				Reason: "corrupt_journal",
+				Name:   "bad.lock.json",
+			},
+		},
+		Lock: lock,
+		Journals: []publish.JournalDiagnostic{
+			{
+				ID:               "tx-test",
+				Name:             "tx-test.json",
+				Status:           publish.TransactionStatusRollbackFailed,
+				Rollback:         publish.RollbackStatusFailed,
+				Version:          "v0.1.0",
+				StartedAt:        time.Unix(1, 2).UTC(),
+				UpdatedAt:        time.Unix(1, 2).UTC(),
+				BlocksNewPublish: true,
+				AllowsLockClear:  true,
+				Path:             "/state/transactions/tx-test.json",
+			},
+			{
+				Name:    "bad.lock.json",
+				Corrupt: true,
+				Message: "transaction journal bad.lock.json contains unsafe transaction id",
+				Path:    "/state/transactions/bad.lock.json",
+			},
+		},
+		Warnings: []publish.TransactionDiagnosticWarning{
+			{Code: "journal_corrupt", Message: "transaction journal bad.lock.json is corrupt"},
+		},
 	}
 }
 
