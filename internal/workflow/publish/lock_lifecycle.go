@@ -54,6 +54,7 @@ const (
 	LockShowReasonJournalCorrupt    LockShowReason = "journal_corrupt"
 	LockShowReasonJournalReadFailed LockShowReason = "journal_read_failed"
 	LockShowReasonContextCanceled   LockShowReason = "context_canceled"
+	LockShowReasonContextDeadline   LockShowReason = "context_deadline_exceeded"
 )
 
 // LockClearStatus describes a guarded publish lock clear attempt.
@@ -159,7 +160,8 @@ type LockClearResult struct {
 // without mutating transaction state.
 func InspectTransactionLock(ctx context.Context, stateDir string) (LockShowResult, error) {
 	if err := ctx.Err(); err != nil {
-		return lockShowFailed(LockShowReasonContextCanceled, "transaction lock inspection canceled"), err
+		reason, message := lockShowContextReason(err)
+		return lockShowFailed(reason, message), err
 	}
 	if strings.TrimSpace(stateDir) == "" {
 		result := lockShowFailed(LockShowReasonStateDirMissing, "transaction state directory is unavailable")
@@ -198,8 +200,7 @@ func InspectTransactionLock(ctx context.Context, stateDir string) (LockShowResul
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			result.Status = LockShowStatusFailed
-			result.Reason = LockShowReasonContextCanceled
-			result.Message = "transaction lock inspection canceled"
+			result.Reason, result.Message = lockShowContextReason(err)
 			return result, &Error{Code: CodeLockFailed, Message: result.Message, Cause: err}
 		}
 		if errors.Is(err, errTransactionJournalCorrupt) {
@@ -223,6 +224,13 @@ func InspectTransactionLock(ctx context.Context, stateDir string) (LockShowResul
 
 func lockShowFailed(reason LockShowReason, message string) LockShowResult {
 	return LockShowResult{Status: LockShowStatusFailed, Reason: reason, Message: message}
+}
+
+func lockShowContextReason(err error) (LockShowReason, string) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return LockShowReasonContextDeadline, "transaction lock inspection deadline exceeded"
+	}
+	return LockShowReasonContextCanceled, "transaction lock inspection canceled"
 }
 
 // ShowTransactionLock inspects publish.lock and its referenced journal.

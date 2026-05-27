@@ -67,7 +67,29 @@ func TestCheckFailsPendingTransaction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Check() error = %v", err)
 	}
-	assertGlobalCheck(t, result, "pending-transactions", StatusFailed)
+	assertGlobalCheckCode(t, result, "pending-transactions", StatusFailed, "pending_transaction")
+}
+
+func TestCheckFailsRecoveryTransaction(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		status string
+	}{
+		{name: "failed", status: "failed"},
+		{name: "rollback failed", status: "rollback_failed"},
+	} {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			deps, req, opts := preflightFixture(t)
+			writePreflightJournalWithID(t, opts.StateDir, "tx-recovery", tt.status)
+
+			result, err := New(deps, opts).Check(context.Background(), req)
+			if err != nil {
+				t.Fatalf("Check() error = %v", err)
+			}
+			assertGlobalCheckCode(t, result, "pending-transactions", StatusFailed, "transaction_recovery_required")
+		})
+	}
 }
 
 func TestCheckFailsCorruptedJournal(t *testing.T) {
@@ -84,7 +106,7 @@ func TestCheckFailsCorruptedJournal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Check() error = %v", err)
 	}
-	assertGlobalCheck(t, result, "pending-transactions", StatusFailed)
+	assertGlobalCheckCode(t, result, "pending-transactions", StatusFailed, "transaction_journal_corrupt")
 }
 
 func TestCheckFailsPublishLock(t *testing.T) {

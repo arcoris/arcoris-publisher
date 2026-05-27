@@ -100,37 +100,86 @@ func TestPublishTransactionLockReleaseUsesServiceLockOps(t *testing.T) {
 	}
 }
 
-func TestPublishReportsTransactionLockReleaseFailure(t *testing.T) {
-	req, fakeGit, worktree := publishRequest(t, nil)
-	fakeGit.Statuses[worktree] = dirtyStatus()
-	opts := publishOptions(t, Options{})
-	service := New(Dependencies{Git: fakeGit}, opts)
-	service.lockOps = transactionLockOps{
-		syncParent: func(string) error {
-			return errors.New("sync refused")
+func TestPublishReportsTransactionLockReleaseFailures(t *testing.T) {
+	tests := []struct {
+		name            string
+		lockOps         func(stateDir string) transactionLockOps
+		wantWarningPart string
+		wantLockMissing bool
+	}{
+		{
+			name: "delete failed",
+			lockOps: func(string) transactionLockOps {
+				return transactionLockOps{remove: func(string) error { return errors.New("delete refused") }}
+			},
+			wantWarningPart: "cleanup delete failed",
+		},
+		{
+			name: "sync failed after removal",
+			lockOps: func(string) transactionLockOps {
+				return transactionLockOps{syncParent: func(string) error { return errors.New("sync refused") }}
+			},
+			wantWarningPart: "cleanup sync failed after lock removal",
+			wantLockMissing: true,
+		},
+		{
+			name: "lock changed",
+			lockOps: func(stateDir string) transactionLockOps {
+				return transactionLockOps{beforeRemove: func() {
+					writeLockFile(t, stateDir, "tx-other")
+				}}
+			},
+			wantWarningPart: "cleanup refused changed lock",
+		},
+		{
+			name: "lock corrupt",
+			lockOps: func(stateDir string) transactionLockOps {
+				return transactionLockOps{beforeRemove: func() {
+					writeRawLockFile(t, stateDir, "pid=1\n")
+				}}
+			},
+			wantWarningPart: "cleanup refused corrupt lock",
 		},
 	}
 
-	result, err := service.Publish(context.Background(), req)
-	if err == nil {
-		t.Fatal("Publish() error = nil")
-	}
-	got, ok := err.(*Error)
-	if !ok {
-		t.Fatalf("error type = %T", err)
-	}
-	if got.Code != CodeLockFailed {
-		t.Fatalf("Code = %q", got.Code)
-	}
-	if !result.Published() || !result.HasTransaction() {
-		t.Fatalf("partial result = %#v", result)
-	}
-	warnings := result.Transaction().Warnings
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "publish transaction lock cleanup failed") {
-		t.Fatalf("warnings = %#v", warnings)
-	}
-	if _, err := os.Stat(filepath.Join(opts.StateDir, "publish.lock")); !os.IsNotExist(err) {
-		t.Fatalf("publish lock exists or stat failed after release sync failure: %v", err)
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			req, fakeGit, worktree := publishRequest(t, nil)
+			fakeGit.Statuses[worktree] = dirtyStatus()
+			opts := publishOptions(t, Options{})
+			service := New(Dependencies{Git: fakeGit}, opts)
+			service.lockOps = tt.lockOps(opts.StateDir)
+
+			result, err := service.Publish(context.Background(), req)
+			if err == nil {
+				t.Fatal("Publish() error = nil")
+			}
+			got, ok := err.(*Error)
+			if !ok {
+				t.Fatalf("error type = %T", err)
+			}
+			if got.Code != CodeLockFailed {
+				t.Fatalf("Code = %q", got.Code)
+			}
+			if !result.Published() || !result.HasTransaction() {
+				t.Fatalf("partial result = %#v", result)
+			}
+			warnings := result.Transaction().Warnings
+			if len(warnings) != 1 || !strings.Contains(warnings[0], tt.wantWarningPart) {
+				t.Fatalf("warnings = %#v, want %q", warnings, tt.wantWarningPart)
+			}
+			_, statErr := os.Stat(filepath.Join(opts.StateDir, "publish.lock"))
+			if tt.wantLockMissing {
+				if !os.IsNotExist(statErr) {
+					t.Fatalf("publish lock exists or stat failed after release failure: %v", statErr)
+				}
+				return
+			}
+			if statErr != nil {
+				t.Fatalf("publish lock missing after release failure: %v", statErr)
+			}
+		})
 	}
 }
 

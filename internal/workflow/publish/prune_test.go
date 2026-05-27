@@ -160,7 +160,7 @@ func TestPruneServiceLockPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("acquireTransactionLock() error = %v", err)
 	}
-	defer lock.Release()
+	defer func() { _, _ = lock.Release() }()
 
 	service := New(Dependencies{Git: porttest.NewGit()}, Options{})
 	if _, err := service.PruneTransactions(ctx, stateDir, PruneOptions{Statuses: []TransactionStatus{TransactionStatusCommitted}}); err == nil {

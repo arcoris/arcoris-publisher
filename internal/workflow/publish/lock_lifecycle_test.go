@@ -146,6 +146,16 @@ func TestShowTransactionLockFailedForInspectionErrors(t *testing.T) {
 		t.Fatalf("canceled result = %#v", result)
 	}
 
+	deadlineCtx, cancelDeadline := context.WithDeadline(context.Background(), time.Unix(1, 0))
+	defer cancelDeadline()
+	result, err = InspectTransactionLock(deadlineCtx, t.TempDir())
+	if err == nil {
+		t.Fatal("InspectTransactionLock(deadline) error = nil")
+	}
+	if result.Status != LockShowStatusFailed || result.Reason != LockShowReasonContextDeadline {
+		t.Fatalf("deadline result = %#v", result)
+	}
+
 	result, err = InspectTransactionLock(context.Background(), "")
 	if err == nil {
 		t.Fatal("InspectTransactionLock(empty state dir) error = nil")

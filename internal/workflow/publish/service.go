@@ -16,6 +16,7 @@ package publish
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -137,16 +138,16 @@ func (s Service) publishTransaction(
 	}
 
 	if err := store.Create(ctx, journal); err != nil {
-		_ = lock.Release()
+		_, _ = lock.Release()
 		return Result{}, &Error{Code: CodeJournalFailed, Message: "create transaction journal failed", Cause: err}
 	}
 
 	tx := transactionRunner{service: s, request: req, store: store, journal: journal}
 	result, err := tx.run(ctx, preflight)
-	if releaseErr := lock.Release(); releaseErr != nil {
+	if releaseOutcome, releaseErr := lock.Release(); releaseErr != nil {
 		if result.HasTransaction() {
 			journal := result.Transaction()
-			journal.Warnings = append(journal.Warnings, "publish transaction lock cleanup failed: "+releaseErr.Error())
+			journal.Warnings = append(journal.Warnings, lockReleaseWarning(releaseOutcome, releaseErr))
 			result = Result{modules: result.Modules(), transaction: journal}
 		}
 		if err == nil {
@@ -154,6 +155,21 @@ func (s Service) publishTransaction(
 		}
 	}
 	return result, err
+}
+
+func lockReleaseWarning(outcome lockReleaseOutcome, err error) string {
+	switch {
+	case errors.Is(err, errTransactionLockSyncFailed) && outcome.Removed:
+		return "publish transaction lock cleanup sync failed after lock removal: " + err.Error()
+	case errors.Is(err, errTransactionLockDeleteFailed):
+		return "publish transaction lock cleanup delete failed: " + err.Error()
+	case errors.Is(err, errTransactionLockChanged):
+		return "publish transaction lock cleanup refused changed lock: " + err.Error()
+	case errors.Is(err, errTransactionLockCorrupt):
+		return "publish transaction lock cleanup refused corrupt lock: " + err.Error()
+	default:
+		return "publish transaction lock cleanup failed: " + err.Error()
+	}
 }
 
 type modulePreflight struct {

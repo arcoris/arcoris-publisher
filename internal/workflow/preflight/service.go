@@ -142,25 +142,60 @@ func (s Service) checkTransactions(ctx context.Context, stateDir string, builder
 		return
 	}
 
-	store := publish.NewFileJournalStore(stateDir)
-	pending, ok, err := store.HasPending(ctx)
-	if err != nil {
-		builder.addGlobal(failed("pending-transactions", "journal_lookup_failed", "transaction journal lookup failed"))
-	} else if ok {
-		builder.addGlobal(failed(
-			"pending-transactions",
-			"pending_transaction",
-			fmt.Sprintf("pending publish transaction %s has status %s", pending.ID, pending.Status),
-		))
-	} else {
-		builder.addGlobal(passed("pending-transactions", "no pending transactions"))
-	}
-
-	s.checkPublishLock(ctx, stateDir, builder)
+	diagnostics, err := publish.InspectTransactionState(ctx, stateDir)
+	s.checkPendingTransactions(diagnostics, err, builder)
+	s.checkPublishLock(diagnostics, err, builder)
 }
 
-func (s Service) checkPublishLock(ctx context.Context, stateDir string, builder *resultBuilder) {
-	lockResult, err := publish.InspectTransactionLock(ctx, stateDir)
+func (s Service) checkPendingTransactions(diagnostics publish.TransactionStateDiagnostics, err error, builder *resultBuilder) {
+	if blocker, ok := firstTransactionJournalBlocker(diagnostics.Blockers); ok {
+		builder.addGlobal(pendingTransactionCheck(blocker))
+		return
+	}
+	if err != nil && diagnostics.Lock.Status != publish.LockShowStatusFailed {
+		builder.addGlobal(failed("pending-transactions", "journal_lookup_failed", "transaction journal lookup failed"))
+		return
+	}
+	builder.addGlobal(passed("pending-transactions", "no pending transactions"))
+}
+
+func firstTransactionJournalBlocker(blockers []publish.TransactionStateBlocker) (publish.TransactionStateBlocker, bool) {
+	for _, blocker := range blockers {
+		switch blocker.Kind {
+		case publish.TransactionBlockerActiveJournal,
+			publish.TransactionBlockerFailedJournal,
+			publish.TransactionBlockerRollbackFailed,
+			publish.TransactionBlockerCorruptJournal,
+			publish.TransactionBlockerJournalReadFailed:
+			return blocker, true
+		}
+	}
+	return publish.TransactionStateBlocker{}, false
+}
+
+func pendingTransactionCheck(blocker publish.TransactionStateBlocker) CheckResult {
+	switch blocker.Kind {
+	case publish.TransactionBlockerCorruptJournal:
+		return failed("pending-transactions", "transaction_journal_corrupt", "transaction journal is corrupt")
+	case publish.TransactionBlockerJournalReadFailed:
+		return failed("pending-transactions", "transaction_journal_read_failed", "transaction journal lookup failed")
+	case publish.TransactionBlockerFailedJournal, publish.TransactionBlockerRollbackFailed:
+		return failed(
+			"pending-transactions",
+			"transaction_recovery_required",
+			fmt.Sprintf("publish transaction %s has recovery status %s", blocker.TransactionID, blocker.Status),
+		)
+	default:
+		return failed(
+			"pending-transactions",
+			"pending_transaction",
+			fmt.Sprintf("pending publish transaction %s has status %s", blocker.TransactionID, blocker.Status),
+		)
+	}
+}
+
+func (s Service) checkPublishLock(diagnostics publish.TransactionStateDiagnostics, err error, builder *resultBuilder) {
+	lockResult := diagnostics.Lock
 	switch lockResult.Status {
 	case publish.LockShowStatusAbsent:
 		builder.addGlobal(passed("publish-lock", "publish lock absent"))

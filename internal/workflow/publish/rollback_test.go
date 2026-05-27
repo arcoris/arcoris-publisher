@@ -161,7 +161,7 @@ func TestRollbackTransactionRefusesExistingLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("acquireTransactionLock() error = %v", err)
 	}
-	defer func() { _ = lock.Release() }()
+	defer func() { _, _ = lock.Release() }()
 
 	_, err = New(Dependencies{Git: porttest.NewGit()}, Options{}).RollbackTransaction(ctx, stateDir, "tx-test")
 	if err == nil {

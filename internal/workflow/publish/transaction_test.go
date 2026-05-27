@@ -221,13 +221,29 @@ func TestTransactionLockConflict(t *testing.T) {
 	if _, err := acquireTransactionLock(ctx, dir, "tx-two", time.Unix(2, 0).UTC(), transactionLockOps{}); err == nil {
 		t.Fatal("second lock error = nil")
 	}
-	if err := first.Release(); err != nil {
+	if _, err := first.Release(); err != nil {
 		t.Fatalf("Release() error = %v", err)
 	}
 	if second, err := acquireTransactionLock(ctx, dir, "tx-two", time.Unix(2, 0).UTC(), transactionLockOps{}); err != nil {
 		t.Fatalf("lock after release error = %v", err)
 	} else {
-		_ = second.Release()
+		_, _ = second.Release()
+	}
+}
+
+func TestTransactionLockAcquireWritesSchemaVersion(t *testing.T) {
+	lock, err := acquireTransactionLock(context.Background(), t.TempDir(), "tx-one", time.Unix(1, 0).UTC(), transactionLockOps{})
+	if err != nil {
+		t.Fatalf("acquireTransactionLock() error = %v", err)
+	}
+	defer func() { _, _ = lock.Release() }()
+
+	data, err := os.ReadFile(lock.path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !strings.HasPrefix(string(data), "schemaVersion=1\n") {
+		t.Fatalf("lock content = %q", string(data))
 	}
 }
 
@@ -245,8 +261,12 @@ func TestTransactionLockReleaseSyncsParentAfterRemove(t *testing.T) {
 		t.Fatalf("lock error = %v", err)
 	}
 
-	if err := lock.Release(); err != nil {
+	outcome, err := lock.Release()
+	if err != nil {
 		t.Fatalf("Release() error = %v", err)
+	}
+	if !outcome.Removed || !outcome.Synced {
+		t.Fatalf("release outcome = %#v", outcome)
 	}
 	if !synced {
 		t.Fatal("Release() did not sync parent directory")
@@ -270,8 +290,12 @@ func TestTransactionLockReleaseReportsRemoveFailures(t *testing.T) {
 			t.Fatalf("lock error = %v", err)
 		}
 
-		if err := lock.Release(); err == nil {
+		outcome, err := lock.Release()
+		if err == nil {
 			t.Fatal("Release() error = nil")
+		}
+		if outcome.Removed || outcome.Synced {
+			t.Fatalf("release outcome = %#v", outcome)
 		}
 		if _, err := os.Stat(lock.path); err != nil {
 			t.Fatalf("lock missing after failed delete: %v", err)
@@ -289,8 +313,12 @@ func TestTransactionLockReleaseReportsRemoveFailures(t *testing.T) {
 			t.Fatalf("lock error = %v", err)
 		}
 
-		if err := lock.Release(); err == nil {
+		outcome, err := lock.Release()
+		if err == nil {
 			t.Fatal("Release() error = nil")
+		}
+		if !outcome.Removed || outcome.Synced {
+			t.Fatalf("release outcome = %#v", outcome)
 		}
 		if _, err := os.Stat(lock.path); !os.IsNotExist(err) {
 			t.Fatalf("lock exists or stat failed after sync failure: %v", err)
@@ -300,8 +328,12 @@ func TestTransactionLockReleaseReportsRemoveFailures(t *testing.T) {
 
 func TestTransactionLockReleaseMissingIsNoop(t *testing.T) {
 	lock := transactionLock{path: filepath.Join(t.TempDir(), "publish.lock"), id: "tx-missing"}
-	if err := lock.Release(); err != nil {
+	outcome, err := lock.Release()
+	if err != nil {
 		t.Fatalf("Release() error = %v", err)
+	}
+	if outcome.Removed || outcome.Synced {
+		t.Fatalf("release outcome = %#v", outcome)
 	}
 }
 
@@ -316,8 +348,12 @@ func TestTransactionLockReleaseRefusesMismatchedLock(t *testing.T) {
 	if err := os.WriteFile(path, []byte("transaction=tx-two\npid=1\nstartedAt=2026-01-01T00:00:00Z\ncommand=publish\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
-	if err := first.Release(); err == nil {
+	outcome, err := first.Release()
+	if err == nil {
 		t.Fatal("Release() error = nil")
+	}
+	if outcome.Removed || outcome.Synced {
+		t.Fatalf("release outcome = %#v", outcome)
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("mismatched lock was removed: %v", err)
@@ -335,8 +371,12 @@ func TestTransactionLockReleasePreservesCorruptLock(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	if err := lock.Release(); err == nil {
+	outcome, err := lock.Release()
+	if err == nil {
 		t.Fatal("Release() error = nil")
+	}
+	if outcome.Removed || outcome.Synced {
+		t.Fatalf("release outcome = %#v", outcome)
 	}
 	if _, err := os.Stat(lock.path); err != nil {
 		t.Fatalf("corrupt lock was removed: %v", err)
@@ -350,12 +390,16 @@ func TestReadTransactionLockStrictParser(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:    "valid current format",
+			name:    "valid legacy format",
 			content: "transaction=tx-one\npid=123\nstartedAt=2026-01-01T00:00:00Z\ncommand=publish\n",
 		},
 		{
+			name:    "valid schema version format",
+			content: "schemaVersion=1\ntransaction=tx-one\npid=123\nstartedAt=2026-01-01T00:00:00Z\ncommand=publish\n",
+		},
+		{
 			name:    "valid CRLF format",
-			content: "transaction=tx-one\r\npid=123\r\nstartedAt=2026-01-01T00:00:00Z\r\ncommand=publish\r\n",
+			content: "schemaVersion=1\r\ntransaction=tx-one\r\npid=123\r\nstartedAt=2026-01-01T00:00:00Z\r\ncommand=publish\r\n",
 		},
 		{
 			name:    "valid trailing empty lines",
@@ -372,6 +416,8 @@ func TestReadTransactionLockStrictParser(t *testing.T) {
 		{name: "duplicate pid", content: "transaction=tx-one\npid=1\npid=2\nstartedAt=2026-01-01T00:00:00Z\ncommand=publish\n", wantErr: true},
 		{name: "duplicate startedAt", content: "transaction=tx-one\npid=1\nstartedAt=2026-01-01T00:00:00Z\nstartedAt=2026-01-01T00:00:01Z\ncommand=publish\n", wantErr: true},
 		{name: "duplicate command", content: "transaction=tx-one\npid=1\nstartedAt=2026-01-01T00:00:00Z\ncommand=publish\ncommand=publish\n", wantErr: true},
+		{name: "duplicate schemaVersion", content: "schemaVersion=1\nschemaVersion=1\ntransaction=tx-one\npid=1\nstartedAt=2026-01-01T00:00:00Z\ncommand=publish\n", wantErr: true},
+		{name: "unsupported schemaVersion", content: "schemaVersion=2\ntransaction=tx-one\npid=1\nstartedAt=2026-01-01T00:00:00Z\ncommand=publish\n", wantErr: true},
 		{name: "invalid pid", content: "transaction=tx-one\npid=-1\nstartedAt=2026-01-01T00:00:00Z\ncommand=publish\n", wantErr: true},
 		{name: "invalid startedAt", content: "transaction=tx-one\npid=1\nstartedAt=now\ncommand=publish\n", wantErr: true},
 		{name: "empty command", content: "transaction=tx-one\npid=1\nstartedAt=2026-01-01T00:00:00Z\ncommand=\n", wantErr: true},

@@ -46,6 +46,12 @@ type transactionLockOps struct {
 
 type lockRemoveOutcome struct {
 	Removed bool
+	Synced  bool
+}
+
+type lockReleaseOutcome struct {
+	Removed bool
+	Synced  bool
 }
 
 func defaultTransactionLockOps() transactionLockOps {
@@ -95,6 +101,7 @@ func removeTransactionLockIfCurrent(path string, expected TransactionID, ops tra
 	if err := ops.syncParent(path); err != nil {
 		return outcome, fmt.Errorf("%w: %v", errTransactionLockSyncFailed, err)
 	}
+	outcome.Synced = true
 	return outcome, nil
 }
 
@@ -107,6 +114,8 @@ type TransactionLockInfo struct {
 	Command   string
 	Path      string
 }
+
+const transactionLockSchemaVersion = "1"
 
 func acquireTransactionLock(ctx context.Context, stateDir string, id TransactionID, now time.Time, ops transactionLockOps) (transactionLock, error) {
 	ops = ops.withDefaults()
@@ -130,7 +139,7 @@ func acquireTransactionLock(ctx context.Context, stateDir string, id Transaction
 		}
 		return transactionLock{}, err
 	}
-	content := fmt.Sprintf("transaction=%s\npid=%d\nstartedAt=%s\ncommand=publish\n", id, os.Getpid(), now.UTC().Format(time.RFC3339Nano))
+	content := fmt.Sprintf("schemaVersion=%s\ntransaction=%s\npid=%d\nstartedAt=%s\ncommand=publish\n", transactionLockSchemaVersion, id, os.Getpid(), now.UTC().Format(time.RFC3339Nano))
 	if _, err := file.WriteString(content); err != nil {
 		_ = file.Close()
 		_ = os.Remove(path)
@@ -152,17 +161,19 @@ func acquireTransactionLock(ctx context.Context, stateDir string, id Transaction
 	return transactionLock{path: path, id: id, ops: ops}, nil
 }
 
-func (l transactionLock) Release() error {
+func (l transactionLock) Release() (lockReleaseOutcome, error) {
 	if l.path == "" {
-		return nil
+		return lockReleaseOutcome{}, nil
 	}
-	if _, err := removeTransactionLockIfCurrent(l.path, l.id, l.ops); err != nil {
+	outcome, err := removeTransactionLockIfCurrent(l.path, l.id, l.ops)
+	release := lockReleaseOutcome{Removed: outcome.Removed, Synced: outcome.Synced}
+	if err != nil {
 		if errors.Is(err, errTransactionLockDisappeared) {
-			return nil
+			return lockReleaseOutcome{}, nil
 		}
-		return err
+		return release, err
 	}
-	return nil
+	return release, nil
 }
 
 func currentTransactionLock(stateDir string) (TransactionLockInfo, bool, error) {
@@ -213,6 +224,13 @@ func readTransactionLock(path string) (TransactionLockInfo, error) {
 		}
 		seen[key] = true
 		switch key {
+		case "schemaVersion":
+			if strings.TrimSpace(value) == "" {
+				return TransactionLockInfo{}, lockCorruptf("publish lock schemaVersion is empty")
+			}
+			if value != transactionLockSchemaVersion {
+				return TransactionLockInfo{}, lockCorruptf("unsupported publish lock schemaVersion %q", value)
+			}
 		case "transaction":
 			info.ID = TransactionID(value)
 		case "pid":
