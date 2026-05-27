@@ -166,7 +166,8 @@ func firstTransactionJournalBlocker(blockers []publish.TransactionStateBlocker) 
 			publish.TransactionBlockerFailedJournal,
 			publish.TransactionBlockerRollbackFailed,
 			publish.TransactionBlockerCorruptJournal,
-			publish.TransactionBlockerJournalReadFailed:
+			publish.TransactionBlockerJournalFileReadFailed,
+			publish.TransactionBlockerJournalDirectoryReadFailed:
 			return blocker, true
 		}
 	}
@@ -177,8 +178,10 @@ func pendingTransactionCheck(blocker publish.TransactionStateBlocker) CheckResul
 	switch blocker.Kind {
 	case publish.TransactionBlockerCorruptJournal:
 		return failed("pending-transactions", "transaction_journal_corrupt", "transaction journal is corrupt")
-	case publish.TransactionBlockerJournalReadFailed:
-		return failed("pending-transactions", "transaction_journal_read_failed", "transaction journal lookup failed")
+	case publish.TransactionBlockerJournalDirectoryReadFailed:
+		return failed("pending-transactions", "transaction_journal_directory_read_failed", "transaction journal directory lookup failed")
+	case publish.TransactionBlockerJournalFileReadFailed:
+		return failed("pending-transactions", "transaction_journal_file_read_failed", "transaction journal file lookup failed")
 	case publish.TransactionBlockerFailedJournal, publish.TransactionBlockerRollbackFailed:
 		return failed(
 			"pending-transactions",
@@ -195,37 +198,64 @@ func pendingTransactionCheck(blocker publish.TransactionStateBlocker) CheckResul
 }
 
 func (s Service) checkPublishLock(diagnostics publish.TransactionStateDiagnostics, err error, builder *resultBuilder) {
-	lockResult := diagnostics.Lock
-	switch lockResult.Status {
-	case publish.LockShowStatusAbsent:
-		builder.addGlobal(passed("publish-lock", "publish lock absent"))
-	case publish.LockShowStatusPresent:
-		builder.addGlobal(lockPresentCheck(lockResult))
-	case publish.LockShowStatusJournalMissing:
-		builder.addGlobal(failed("publish-lock", "stale_publish_lock_journal_missing", fmt.Sprintf("publish lock references missing transaction journal %s", lockResult.Lock.ID)))
-	case publish.LockShowStatusCorrupt:
-		builder.addGlobal(failed("publish-lock", "publish_lock_corrupt", "publish lock is not parseable"))
-	case publish.LockShowStatusJournalCorrupt:
-		builder.addGlobal(failed("publish-lock", "publish_lock_journal_corrupt", fmt.Sprintf("publish lock references corrupt transaction journal %s", lockResult.Lock.ID)))
-	default:
-		if err != nil {
-			builder.addGlobal(failed("publish-lock", "lock_lookup_failed", "publish lock lookup failed"))
-		} else {
-			builder.addGlobal(failed("publish-lock", "lock_lookup_failed", "publish lock state is unavailable"))
-		}
+	if blocker, ok := firstLockBlocker(diagnostics); ok {
+		builder.addGlobal(lockBlockerCheck(blocker))
+		return
 	}
+	if diagnostics.Lock.Status == publish.LockShowStatusAbsent {
+		builder.addGlobal(passed("publish-lock", "publish lock absent"))
+		return
+	}
+	if err != nil {
+		builder.addGlobal(failed("publish-lock", "lock_lookup_failed", "publish lock lookup failed"))
+		return
+	}
+	builder.addGlobal(failed("publish-lock", "lock_lookup_failed", "publish lock state is unavailable"))
 }
 
-func lockPresentCheck(lockResult publish.LockShowResult) CheckResult {
-	id := lockResult.Lock.ID
-	status := lockResult.Journal.Status
-	if !status.BlocksNewPublish() {
-		return failed("publish-lock", "stale_publish_lock_terminal_transaction", fmt.Sprintf("publish lock references terminal transaction %s with status %s", id, status))
+func firstLockBlocker(diagnostics publish.TransactionStateDiagnostics) (publish.TransactionStateBlocker, bool) {
+	lockID := diagnostics.Lock.Lock.ID
+	for _, blocker := range diagnostics.Blockers {
+		switch blocker.Kind {
+		case publish.TransactionBlockerPublishLock,
+			publish.TransactionBlockerMissingLockJournal,
+			publish.TransactionBlockerCorruptLock,
+			publish.TransactionBlockerLockReadFailed:
+			return blocker, true
+		case publish.TransactionBlockerCorruptJournal,
+			publish.TransactionBlockerJournalFileReadFailed:
+			if lockID != "" && blocker.TransactionID == lockID {
+				return blocker, true
+			}
+		}
 	}
-	if status.AllowsLockClear() {
-		return failed("publish-lock", "publish_lock_recovery_required", fmt.Sprintf("publish lock references recovery transaction %s with status %s", id, status))
+	return publish.TransactionStateBlocker{}, false
+}
+
+func lockBlockerCheck(blocker publish.TransactionStateBlocker) CheckResult {
+	switch blocker.Kind {
+	case publish.TransactionBlockerPublishLock:
+		switch blocker.Reason {
+		case publish.TransactionBlockerReasonStaleTerminalLock:
+			return failed("publish-lock", "stale_publish_lock_terminal_transaction", fmt.Sprintf("publish lock references terminal transaction %s with status %s", blocker.TransactionID, blocker.Status))
+		case publish.TransactionBlockerReasonRecoveryLock:
+			return failed("publish-lock", "publish_lock_recovery_required", fmt.Sprintf("publish lock references recovery transaction %s with status %s", blocker.TransactionID, blocker.Status))
+		default:
+			return failed("publish-lock", "publish_lock_exists", fmt.Sprintf("publish lock exists for active transaction %s with status %s", blocker.TransactionID, blocker.Status))
+		}
+	case publish.TransactionBlockerMissingLockJournal:
+		return failed("publish-lock", "stale_publish_lock_journal_missing", fmt.Sprintf("publish lock references missing transaction journal %s", blocker.TransactionID))
+	case publish.TransactionBlockerCorruptLock:
+		return failed("publish-lock", "publish_lock_corrupt", "publish lock is not parseable")
+	case publish.TransactionBlockerLockReadFailed:
+		return failed("publish-lock", "publish_lock_read_failed", "publish lock lookup failed")
+	case publish.TransactionBlockerCorruptJournal:
+		return failed("publish-lock", "publish_lock_journal_corrupt", fmt.Sprintf("publish lock references corrupt transaction journal %s", blocker.TransactionID))
+	case publish.TransactionBlockerJournalFileReadFailed:
+		return failed("publish-lock", "publish_lock_journal_read_failed", fmt.Sprintf("publish lock references unreadable transaction journal %s", blocker.TransactionID))
+	default:
+		return failed("publish-lock", "lock_lookup_failed", "publish lock state is unavailable")
 	}
-	return failed("publish-lock", "publish_lock_exists", fmt.Sprintf("publish lock exists for active transaction %s with status %s", id, status))
 }
 
 func (s Service) checkModule(ctx context.Context, root string, p plan.Plan, mod plan.ModulePlan) ModuleResult {

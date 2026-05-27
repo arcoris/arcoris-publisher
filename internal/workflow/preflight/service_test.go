@@ -109,6 +109,34 @@ func TestCheckFailsCorruptedJournal(t *testing.T) {
 	assertGlobalCheckCode(t, result, "pending-transactions", StatusFailed, "transaction_journal_corrupt")
 }
 
+func TestCheckFailsJournalReadFailures(t *testing.T) {
+	t.Run("directory read failure", func(t *testing.T) {
+		deps, req, opts := preflightFixture(t)
+		if err := os.WriteFile(filepath.Join(opts.StateDir, "transactions"), []byte("not a directory"), 0o600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		result, err := New(deps, opts).Check(context.Background(), req)
+		if err != nil {
+			t.Fatalf("Check() error = %v", err)
+		}
+		assertGlobalCheckCode(t, result, "pending-transactions", StatusFailed, "transaction_journal_directory_read_failed")
+	})
+
+	t.Run("file read failure", func(t *testing.T) {
+		deps, req, opts := preflightFixture(t)
+		if err := os.MkdirAll(filepath.Join(opts.StateDir, "transactions", "tx-bad.json"), 0o700); err != nil {
+			t.Fatalf("MkdirAll() error = %v", err)
+		}
+
+		result, err := New(deps, opts).Check(context.Background(), req)
+		if err != nil {
+			t.Fatalf("Check() error = %v", err)
+		}
+		assertGlobalCheckCode(t, result, "pending-transactions", StatusFailed, "transaction_journal_file_read_failed")
+	})
+}
+
 func TestCheckFailsPublishLock(t *testing.T) {
 	deps, req, opts := preflightFixture(t)
 	if err := os.MkdirAll(opts.StateDir, 0o700); err != nil {
@@ -211,6 +239,27 @@ func TestCheckPublishLockDiagnostics(t *testing.T) {
 			},
 			wantStatus: StatusFailed,
 			wantCode:   "publish_lock_journal_corrupt",
+		},
+		{
+			name: "lock read failed",
+			setup: func(t *testing.T, stateDir string) {
+				if err := os.MkdirAll(filepath.Join(stateDir, "publish.lock"), 0o700); err != nil {
+					t.Fatalf("MkdirAll() error = %v", err)
+				}
+			},
+			wantStatus: StatusFailed,
+			wantCode:   "publish_lock_read_failed",
+		},
+		{
+			name: "lock journal read failed",
+			setup: func(t *testing.T, stateDir string) {
+				writePreflightLock(t, stateDir, "tx-unreadable")
+				if err := os.MkdirAll(filepath.Join(stateDir, "transactions", "tx-unreadable.json"), 0o700); err != nil {
+					t.Fatalf("MkdirAll() error = %v", err)
+				}
+			},
+			wantStatus: StatusFailed,
+			wantCode:   "publish_lock_journal_read_failed",
 		},
 	}
 

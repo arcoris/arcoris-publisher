@@ -43,41 +43,53 @@ type TransactionStateBlocker struct {
 	TransactionID TransactionID
 	Status        TransactionStatus
 	Reason        string
+	Name          string
 }
 
 // TransactionStateBlockerKind is a stable machine-readable blocker class.
 type TransactionStateBlockerKind string
 
 const (
-	TransactionBlockerActiveJournal       TransactionStateBlockerKind = "active_journal"
-	TransactionBlockerFailedJournal       TransactionStateBlockerKind = "failed_journal"
-	TransactionBlockerRollbackFailed      TransactionStateBlockerKind = "rollback_failed_journal"
-	TransactionBlockerPublishLock         TransactionStateBlockerKind = "publish_lock"
-	TransactionBlockerCorruptLock         TransactionStateBlockerKind = "corrupt_lock"
-	TransactionBlockerLockReadFailed      TransactionStateBlockerKind = "lock_read_failed"
-	TransactionBlockerCorruptJournal      TransactionStateBlockerKind = "corrupt_journal"
-	TransactionBlockerMissingLockJournal  TransactionStateBlockerKind = "missing_lock_journal"
-	TransactionBlockerJournalReadFailed   TransactionStateBlockerKind = "journal_read_failed"
-	TransactionBlockerStateDirUnavailable TransactionStateBlockerKind = "state_dir_unavailable"
+	TransactionBlockerActiveJournal              TransactionStateBlockerKind = "active_journal"
+	TransactionBlockerFailedJournal              TransactionStateBlockerKind = "failed_journal"
+	TransactionBlockerRollbackFailed             TransactionStateBlockerKind = "rollback_failed_journal"
+	TransactionBlockerPublishLock                TransactionStateBlockerKind = "publish_lock"
+	TransactionBlockerCorruptLock                TransactionStateBlockerKind = "corrupt_lock"
+	TransactionBlockerLockReadFailed             TransactionStateBlockerKind = "lock_read_failed"
+	TransactionBlockerCorruptJournal             TransactionStateBlockerKind = "corrupt_journal"
+	TransactionBlockerMissingLockJournal         TransactionStateBlockerKind = "missing_lock_journal"
+	TransactionBlockerJournalReadFailed          TransactionStateBlockerKind = "journal_file_read_failed"
+	TransactionBlockerJournalFileReadFailed      TransactionStateBlockerKind = "journal_file_read_failed"
+	TransactionBlockerJournalDirectoryReadFailed TransactionStateBlockerKind = "journal_directory_read_failed"
+	TransactionBlockerStateDirUnavailable        TransactionStateBlockerKind = "state_dir_unavailable"
 )
 
 const (
-	transactionDiagnosticReasonActiveJournal      = "active_transaction"
-	transactionDiagnosticReasonFailedJournal      = "failed_transaction"
-	transactionDiagnosticReasonRollbackFailed     = "rollback_failed_transaction"
-	transactionDiagnosticReasonStaleTerminalLock  = "stale_terminal_transaction"
-	transactionDiagnosticReasonRecoveryLock       = "recovery_transaction"
-	transactionDiagnosticReasonMissingLockJournal = "missing_lock_journal"
-	transactionDiagnosticReasonCorruptLock        = "corrupt_lock"
-	transactionDiagnosticReasonLockReadFailed     = "lock_read_failed"
-	transactionDiagnosticReasonCorruptJournal     = "corrupt_journal"
-	transactionDiagnosticReasonJournalReadFailed  = "journal_read_failed"
-	transactionDiagnosticReasonStateDirMissing    = "state_dir_missing"
+	transactionDiagnosticReasonActiveJournal              = "active_transaction"
+	transactionDiagnosticReasonFailedJournal              = "failed_transaction"
+	transactionDiagnosticReasonRollbackFailed             = "rollback_failed_transaction"
+	transactionDiagnosticReasonStaleTerminalLock          = "stale_terminal_transaction"
+	transactionDiagnosticReasonRecoveryLock               = "recovery_transaction"
+	transactionDiagnosticReasonMissingLockJournal         = "missing_lock_journal"
+	transactionDiagnosticReasonCorruptLock                = "corrupt_lock"
+	transactionDiagnosticReasonLockReadFailed             = "lock_read_failed"
+	transactionDiagnosticReasonCorruptJournal             = "corrupt_journal"
+	transactionDiagnosticReasonJournalReadFailed          = "journal_file_read_failed"
+	transactionDiagnosticReasonJournalFileReadFailed      = "journal_file_read_failed"
+	transactionDiagnosticReasonJournalDirectoryReadFailed = "journal_directory_read_failed"
+	transactionDiagnosticReasonStateDirMissing            = "state_dir_missing"
+)
+
+const (
+	TransactionBlockerReasonActiveJournal     = transactionDiagnosticReasonActiveJournal
+	TransactionBlockerReasonStaleTerminalLock = transactionDiagnosticReasonStaleTerminalLock
+	TransactionBlockerReasonRecoveryLock      = transactionDiagnosticReasonRecoveryLock
 )
 
 // JournalDiagnostic describes one transaction journal without mutating it.
 type JournalDiagnostic struct {
 	ID               TransactionID
+	Name             string
 	Status           TransactionStatus
 	Rollback         RollbackStatus
 	Version          string
@@ -123,8 +135,12 @@ func InspectTransactionState(ctx context.Context, stateDir string) (TransactionS
 	journals, err := inspectJournalDiagnostics(ctx, stateDir)
 	if err != nil {
 		diagnostics.addBlocker(TransactionStateBlocker{
-			Kind:   TransactionBlockerJournalReadFailed,
-			Reason: transactionDiagnosticReasonJournalReadFailed,
+			Kind:   TransactionBlockerJournalDirectoryReadFailed,
+			Reason: transactionDiagnosticReasonJournalDirectoryReadFailed,
+		})
+		diagnostics.addWarning(TransactionDiagnosticWarning{
+			Code:    transactionDiagnosticReasonJournalDirectoryReadFailed,
+			Message: "read transaction journals directory failed",
 		})
 		diagnostics.PublishBlocked = len(diagnostics.Blockers) > 0
 		return diagnostics, err
@@ -183,9 +199,9 @@ func (d *TransactionStateDiagnostics) addLockFailureBlocker(result LockShowResul
 	switch result.Reason {
 	case LockShowReasonJournalReadFailed:
 		d.addBlocker(TransactionStateBlocker{
-			Kind:          TransactionBlockerJournalReadFailed,
+			Kind:          TransactionBlockerJournalFileReadFailed,
 			TransactionID: result.Lock.ID,
-			Reason:        transactionDiagnosticReasonJournalReadFailed,
+			Reason:        transactionDiagnosticReasonJournalFileReadFailed,
 		})
 	case LockShowReasonStateDirMissing:
 		d.addBlocker(TransactionStateBlocker{
@@ -207,12 +223,14 @@ func (d *TransactionStateDiagnostics) addJournalBlocker(journal JournalDiagnosti
 			Kind:          TransactionBlockerCorruptJournal,
 			TransactionID: journal.ID,
 			Reason:        transactionDiagnosticReasonCorruptJournal,
+			Name:          journal.Name,
 		})
 	case journal.ReadFailed:
 		d.addBlocker(TransactionStateBlocker{
-			Kind:          TransactionBlockerJournalReadFailed,
+			Kind:          TransactionBlockerJournalFileReadFailed,
 			TransactionID: journal.ID,
-			Reason:        transactionDiagnosticReasonJournalReadFailed,
+			Reason:        transactionDiagnosticReasonJournalFileReadFailed,
+			Name:          journal.Name,
 		})
 	case journal.Status.BlocksNewPublish():
 		d.addBlocker(TransactionStateBlocker{
@@ -220,6 +238,7 @@ func (d *TransactionStateDiagnostics) addJournalBlocker(journal JournalDiagnosti
 			TransactionID: journal.ID,
 			Status:        journal.Status,
 			Reason:        journalBlockerReason(journal.Status),
+			Name:          journal.Name,
 		})
 	}
 }
@@ -233,7 +252,7 @@ func (d *TransactionStateDiagnostics) addJournalWarning(journal JournalDiagnosti
 		})
 	case journal.ReadFailed:
 		d.addWarning(TransactionDiagnosticWarning{
-			Code:    "journal_read_failed",
+			Code:    transactionDiagnosticReasonJournalFileReadFailed,
 			Message: journal.Message,
 		})
 	}
@@ -244,7 +263,8 @@ func (d *TransactionStateDiagnostics) addBlocker(blocker TransactionStateBlocker
 		if existing.Kind == blocker.Kind &&
 			existing.TransactionID == blocker.TransactionID &&
 			existing.Status == blocker.Status &&
-			existing.Reason == blocker.Reason {
+			existing.Reason == blocker.Reason &&
+			existing.Name == blocker.Name {
 			return
 		}
 	}
@@ -322,7 +342,7 @@ func inspectJournalDiagnostics(ctx context.Context, stateDir string) ([]JournalD
 func readJournalDiagnostic(ctx context.Context, store FileJournalStore, name string) JournalDiagnostic {
 	id := diagnosticJournalID(name)
 	path := filepath.Join(store.transactionsDir(), name)
-	out := JournalDiagnostic{ID: id, Path: path}
+	out := JournalDiagnostic{ID: id, Name: name, Path: path}
 	if err := ctx.Err(); err != nil {
 		out.ReadFailed = true
 		out.Message = err.Error()
@@ -347,6 +367,7 @@ func readJournalDiagnostic(ctx context.Context, store FileJournalStore, name str
 	}
 	return JournalDiagnostic{
 		ID:               journal.ID,
+		Name:             name,
 		Status:           journal.Status,
 		Rollback:         journal.Rollback,
 		Version:          journal.Version,

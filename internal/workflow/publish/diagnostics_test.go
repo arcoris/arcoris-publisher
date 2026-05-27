@@ -90,6 +90,9 @@ func TestInspectTransactionStateJournalPolicyMatrix(t *testing.T) {
 				t.Fatalf("journals = %#v", diagnostics.Journals)
 			}
 			journal := diagnostics.Journals[0]
+			if journal.Name != tt.id.String()+".json" {
+				t.Fatalf("journal name = %q", journal.Name)
+			}
 			if journal.Prunable != tt.status.Prunable() || journal.BlocksNewPublish != tt.status.BlocksNewPublish() || journal.AllowsLockClear != tt.status.AllowsLockClear() {
 				t.Fatalf("journal policies = %#v", journal)
 			}
@@ -231,7 +234,23 @@ func TestInspectTransactionStateReadFailures(t *testing.T) {
 		assertDiagnosticBlocker(t, diagnostics, TransactionBlockerLockReadFailed, "", "")
 	})
 
-	t.Run("journal read failed", func(t *testing.T) {
+	t.Run("journal directory read failed", func(t *testing.T) {
+		stateDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(stateDir, "transactions"), []byte("not a dir"), 0o600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		diagnostics, err := InspectTransactionState(context.Background(), stateDir)
+		if err == nil {
+			t.Fatal("InspectTransactionState() error = nil")
+		}
+		assertDiagnosticBlocker(t, diagnostics, TransactionBlockerJournalDirectoryReadFailed, "", "")
+		if len(diagnostics.Journals) != 0 {
+			t.Fatalf("journals = %#v", diagnostics.Journals)
+		}
+	})
+
+	t.Run("journal file read failed", func(t *testing.T) {
 		stateDir := t.TempDir()
 		txDir := filepath.Join(stateDir, "transactions")
 		if err := os.MkdirAll(filepath.Join(txDir, "tx-bad.json"), 0o700); err != nil {
@@ -242,11 +261,73 @@ func TestInspectTransactionStateReadFailures(t *testing.T) {
 		if err != nil {
 			t.Fatalf("InspectTransactionState() error = %v", err)
 		}
-		assertDiagnosticBlocker(t, diagnostics, TransactionBlockerJournalReadFailed, "tx-bad", "")
-		if len(diagnostics.Journals) != 1 || !diagnostics.Journals[0].ReadFailed {
+		assertDiagnosticBlocker(t, diagnostics, TransactionBlockerJournalFileReadFailed, "tx-bad", "")
+		if len(diagnostics.Journals) != 1 || !diagnostics.Journals[0].ReadFailed || diagnostics.Journals[0].Name != "tx-bad.json" {
 			t.Fatalf("journals = %#v", diagnostics.Journals)
 		}
 	})
+}
+
+func TestInspectTransactionStateCorruptJournalNames(t *testing.T) {
+	tests := []struct {
+		name        string
+		filename    string
+		content     string
+		wantID      TransactionID
+		wantName    string
+		wantCorrupt bool
+	}{
+		{
+			name:        "corrupt json derives id from filename",
+			filename:    "tx-bad.json",
+			content:     "{",
+			wantID:      "tx-bad",
+			wantName:    "tx-bad.json",
+			wantCorrupt: true,
+		},
+		{
+			name:        "unsafe filename keeps safe name",
+			filename:    "bad.lock.json",
+			content:     `{"schemaVersion":1,"id":"tx-good","status":"committed","startedAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","modules":[]}`,
+			wantName:    "bad.lock.json",
+			wantCorrupt: true,
+		},
+		{
+			name:        "identity mismatch keeps filename id",
+			filename:    "tx-one.json",
+			content:     `{"schemaVersion":1,"id":"tx-two","status":"committed","startedAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","modules":[]}`,
+			wantID:      "tx-one",
+			wantName:    "tx-one.json",
+			wantCorrupt: true,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			stateDir := t.TempDir()
+			txDir := filepath.Join(stateDir, "transactions")
+			if err := os.MkdirAll(txDir, 0o700); err != nil {
+				t.Fatalf("MkdirAll() error = %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(txDir, tt.filename), []byte(tt.content), 0o600); err != nil {
+				t.Fatalf("WriteFile() error = %v", err)
+			}
+
+			diagnostics, err := InspectTransactionState(context.Background(), stateDir)
+			if err != nil {
+				t.Fatalf("InspectTransactionState() error = %v", err)
+			}
+			if len(diagnostics.Journals) != 1 {
+				t.Fatalf("journals = %#v", diagnostics.Journals)
+			}
+			journal := diagnostics.Journals[0]
+			if journal.ID != tt.wantID || journal.Name != tt.wantName || journal.Corrupt != tt.wantCorrupt {
+				t.Fatalf("journal = %#v", journal)
+			}
+			assertDiagnosticBlockerReason(t, diagnostics, TransactionBlockerCorruptJournal, tt.wantID, "", transactionDiagnosticReasonCorruptJournal)
+		})
+	}
 }
 
 func assertDiagnosticBlocker(t *testing.T, diagnostics TransactionStateDiagnostics, kind TransactionStateBlockerKind, id TransactionID, status TransactionStatus) {
