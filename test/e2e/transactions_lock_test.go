@@ -29,6 +29,9 @@ func TestTransactionsLockShowAbsent(t *testing.T) {
 	if got := stringField(t, decoded, "status"); got != "absent" {
 		t.Fatalf("status = %q", got)
 	}
+	if got := stringField(t, decoded, "reason"); got != "lock_absent" {
+		t.Fatalf("reason = %q", got)
+	}
 }
 
 func TestTransactionsLockShowPresentWithJournal(t *testing.T) {
@@ -40,6 +43,9 @@ func TestTransactionsLockShowPresentWithJournal(t *testing.T) {
 
 	if got := stringField(t, decoded, "status"); got != "present" {
 		t.Fatalf("status = %q", got)
+	}
+	if got := stringField(t, decoded, "reason"); got != "lock_present" {
+		t.Fatalf("reason = %q", got)
 	}
 	journal := objectField(t, decoded, "journal")
 	if got := stringField(t, journal, "status"); got != "committed" {
@@ -56,6 +62,9 @@ func TestTransactionsLockShowJournalMissing(t *testing.T) {
 	if got := stringField(t, decoded, "status"); got != "journal_missing" {
 		t.Fatalf("status = %q", got)
 	}
+	if got := stringField(t, decoded, "reason"); got != "journal_missing" {
+		t.Fatalf("reason = %q", got)
+	}
 }
 
 func TestTransactionsLockShowCorruptLock(t *testing.T) {
@@ -66,6 +75,9 @@ func TestTransactionsLockShowCorruptLock(t *testing.T) {
 
 	if got := stringField(t, decoded, "status"); got != "corrupt" {
 		t.Fatalf("status = %q\nstdout=%s\nstderr=%s", got, result.Stdout, result.Stderr)
+	}
+	if got := stringField(t, decoded, "reason"); got != "lock_corrupt" {
+		t.Fatalf("reason = %q\nstdout=%s\nstderr=%s", got, result.Stdout, result.Stderr)
 	}
 }
 
@@ -84,6 +96,9 @@ func TestTransactionsLockShowCorruptJournal(t *testing.T) {
 
 	if got := stringField(t, decoded, "status"); got != "journal_corrupt" {
 		t.Fatalf("status = %q\nstdout=%s\nstderr=%s", got, result.Stdout, result.Stderr)
+	}
+	if got := stringField(t, decoded, "reason"); got != "journal_corrupt" {
+		t.Fatalf("reason = %q\nstdout=%s\nstderr=%s", got, result.Stdout, result.Stderr)
 	}
 }
 

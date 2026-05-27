@@ -116,6 +116,7 @@ func TestTransactionLockReportJSONAndText(t *testing.T) {
 	}
 	if !strings.Contains(jsonBuf.String(), `"kind": "transactions-lock"`) ||
 		!strings.Contains(jsonBuf.String(), `"status": "present"`) ||
+		!strings.Contains(jsonBuf.String(), `"reason": "lock_present"`) ||
 		strings.Contains(jsonBuf.String(), "/state") {
 		t.Fatalf("transaction lock JSON = %s", jsonBuf.String())
 	}
@@ -125,6 +126,7 @@ func TestTransactionLockReportJSONAndText(t *testing.T) {
 		t.Fatalf("TransactionLock(text) error = %v", err)
 	}
 	if !strings.Contains(textBuf.String(), "Transaction lock") ||
+		!strings.Contains(textBuf.String(), "Reason: lock_present") ||
 		!strings.Contains(textBuf.String(), "Transaction: tx-test") {
 		t.Fatalf("transaction lock text = %s", textBuf.String())
 	}
@@ -276,7 +278,9 @@ func transactionFixture() publish.TransactionJournal {
 func transactionLockFixture() publish.LockShowResult {
 	now := time.Unix(1, 2).UTC()
 	return publish.LockShowResult{
-		Status: publish.LockShowStatusPresent,
+		Status:  publish.LockShowStatusPresent,
+		Reason:  publish.LockShowReasonLockPresent,
+		Message: "publish lock is present",
 		Lock: publish.TransactionLockInfo{
 			ID:        "tx-test",
 			PID:       "123",

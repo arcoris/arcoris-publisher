@@ -157,7 +157,7 @@ func TestRollbackTransactionRefusesExistingLock(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
-	lock, err := acquireTransactionLock(ctx, stateDir, "tx-test", time.Unix(1, 0).UTC())
+	lock, err := acquireTransactionLock(ctx, stateDir, "tx-test", time.Unix(1, 0).UTC(), transactionLockOps{})
 	if err != nil {
 		t.Fatalf("acquireTransactionLock() error = %v", err)
 	}

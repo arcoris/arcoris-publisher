@@ -64,7 +64,9 @@ type PruneEntry struct {
 	Reason    string
 }
 
-// PruneTransactions deletes only selected terminal transaction journals.
+// PruneTransactions deletes only selected terminal transaction journals. A
+// live publish lock blocks non-dry-run prune because prune mutates transaction
+// state and must not race an owner that still holds publish.lock.
 func (s Service) PruneTransactions(ctx context.Context, stateDir string, opts PruneOptions) (PruneResult, error) {
 	if !opts.DryRun {
 		if lock, ok, err := currentTransactionLock(stateDir); err != nil {

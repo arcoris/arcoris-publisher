@@ -72,6 +72,68 @@ func TestPublishPushesBranchBeforeTag(t *testing.T) {
 	assertCallOrder(t, fakeGit.Calls, "add", "commit", "push", "push", "tag", "push-tag")
 }
 
+func TestPublishTransactionLockReleaseUsesServiceLockOps(t *testing.T) {
+	req, fakeGit, worktree := publishRequest(t, nil)
+	fakeGit.Statuses[worktree] = dirtyStatus()
+	opts := publishOptions(t, Options{})
+	service := New(Dependencies{Git: fakeGit}, opts)
+	var releaseSynced bool
+	service.lockOps = transactionLockOps{
+		syncParent: func(path string) error {
+			releaseSynced = filepath.Base(path) == "publish.lock"
+			return nil
+		},
+	}
+
+	result, err := service.Publish(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Publish() error = %v", err)
+	}
+	if !result.Published() {
+		t.Fatal("Published() = false")
+	}
+	if !releaseSynced {
+		t.Fatal("publish lock release did not use service lock ops")
+	}
+	if _, err := os.Stat(filepath.Join(opts.StateDir, "publish.lock")); !os.IsNotExist(err) {
+		t.Fatalf("publish lock exists or stat failed after publish: %v", err)
+	}
+}
+
+func TestPublishReportsTransactionLockReleaseFailure(t *testing.T) {
+	req, fakeGit, worktree := publishRequest(t, nil)
+	fakeGit.Statuses[worktree] = dirtyStatus()
+	opts := publishOptions(t, Options{})
+	service := New(Dependencies{Git: fakeGit}, opts)
+	service.lockOps = transactionLockOps{
+		syncParent: func(string) error {
+			return errors.New("sync refused")
+		},
+	}
+
+	result, err := service.Publish(context.Background(), req)
+	if err == nil {
+		t.Fatal("Publish() error = nil")
+	}
+	got, ok := err.(*Error)
+	if !ok {
+		t.Fatalf("error type = %T", err)
+	}
+	if got.Code != CodeLockFailed {
+		t.Fatalf("Code = %q", got.Code)
+	}
+	if !result.Published() || !result.HasTransaction() {
+		t.Fatalf("partial result = %#v", result)
+	}
+	warnings := result.Transaction().Warnings
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "publish transaction lock cleanup failed") {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	if _, err := os.Stat(filepath.Join(opts.StateDir, "publish.lock")); !os.IsNotExist(err) {
+		t.Fatalf("publish lock exists or stat failed after release sync failure: %v", err)
+	}
+}
+
 func TestPublishDoesNotPushTagWhenBranchPushFails(t *testing.T) {
 	req, fakeGit, worktree := publishRequest(t, nil)
 	fakeGit.Statuses[worktree] = dirtyStatus()

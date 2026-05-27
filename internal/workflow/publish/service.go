@@ -131,7 +131,7 @@ func (s Service) publishTransaction(
 		Version: transactionVersion(req),
 	}), req, s.opts.RemoteName, preflight, now)
 
-	lock, err := acquireTransactionLock(ctx, stateDir, journal.ID, now)
+	lock, err := acquireTransactionLock(ctx, stateDir, journal.ID, now, s.lockOps)
 	if err != nil {
 		return Result{}, &Error{Code: CodeLockFailed, Message: "publish transaction lock failed", Cause: err}
 	}

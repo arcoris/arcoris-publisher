@@ -87,7 +87,8 @@ func (s TransactionStatus) Prunable() bool {
 }
 
 // AllowsLockClear reports whether an explicit operator confirmation may remove
-// only publish.lock while preserving any referenced transaction journal.
+// only publish.lock while preserving any referenced transaction journal. Failed
+// journals remain publish blockers even after their stale lock is cleared.
 func (s TransactionStatus) AllowsLockClear() bool {
 	switch s {
 	case TransactionStatusCommitted,

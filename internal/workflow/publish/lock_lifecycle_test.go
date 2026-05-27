@@ -36,6 +36,9 @@ func TestShowTransactionLockStates(t *testing.T) {
 		if result.Status != LockShowStatusAbsent {
 			t.Fatalf("status = %q", result.Status)
 		}
+		if result.Reason != LockShowReasonLockAbsent {
+			t.Fatalf("reason = %q", result.Reason)
+		}
 	})
 
 	t.Run("present with journal", func(t *testing.T) {
@@ -48,7 +51,7 @@ func TestShowTransactionLockStates(t *testing.T) {
 		if err != nil {
 			t.Fatalf("InspectTransactionLock() error = %v", err)
 		}
-		if result.Status != LockShowStatusPresent || !result.Journal.Present || result.Journal.Status != TransactionStatusCommitted {
+		if result.Status != LockShowStatusPresent || result.Reason != LockShowReasonLockPresent || !result.Journal.Present || result.Journal.Status != TransactionStatusCommitted {
 			t.Fatalf("result = %#v", result)
 		}
 	})
@@ -61,7 +64,7 @@ func TestShowTransactionLockStates(t *testing.T) {
 		if err != nil {
 			t.Fatalf("InspectTransactionLock() error = %v", err)
 		}
-		if result.Status != LockShowStatusJournalMissing || result.Journal.Present {
+		if result.Status != LockShowStatusJournalMissing || result.Reason != LockShowReasonJournalMissing || result.Journal.Present {
 			t.Fatalf("result = %#v", result)
 		}
 	})
@@ -74,7 +77,7 @@ func TestShowTransactionLockStates(t *testing.T) {
 		if err == nil {
 			t.Fatal("InspectTransactionLock() error = nil")
 		}
-		if result.Status != LockShowStatusCorrupt {
+		if result.Status != LockShowStatusCorrupt || result.Reason != LockShowReasonLockCorrupt {
 			t.Fatalf("result = %#v", result)
 		}
 	})
@@ -89,7 +92,7 @@ func TestShowTransactionLockStates(t *testing.T) {
 		if err == nil {
 			t.Fatal("InspectTransactionLock() error = nil")
 		}
-		if result.Status != LockShowStatusFailed {
+		if result.Status != LockShowStatusFailed || result.Reason != LockShowReasonLockReadFailed {
 			t.Fatalf("result = %#v", result)
 		}
 	})
@@ -109,7 +112,7 @@ func TestShowTransactionLockStates(t *testing.T) {
 		if err == nil {
 			t.Fatal("InspectTransactionLock() error = nil")
 		}
-		if result.Status != LockShowStatusJournalCorrupt {
+		if result.Status != LockShowStatusJournalCorrupt || result.Reason != LockShowReasonJournalCorrupt {
 			t.Fatalf("result = %#v", result)
 		}
 	})
@@ -126,7 +129,7 @@ func TestShowTransactionLockStates(t *testing.T) {
 		if err == nil {
 			t.Fatal("InspectTransactionLock() error = nil")
 		}
-		if result.Status != LockShowStatusFailed {
+		if result.Status != LockShowStatusFailed || result.Reason != LockShowReasonJournalReadFailed {
 			t.Fatalf("result = %#v", result)
 		}
 	})
@@ -139,7 +142,7 @@ func TestShowTransactionLockFailedForInspectionErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("InspectTransactionLock(canceled) error = nil")
 	}
-	if result.Status != LockShowStatusFailed {
+	if result.Status != LockShowStatusFailed || result.Reason != LockShowReasonContextCanceled {
 		t.Fatalf("canceled result = %#v", result)
 	}
 
@@ -147,7 +150,7 @@ func TestShowTransactionLockFailedForInspectionErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("InspectTransactionLock(empty state dir) error = nil")
 	}
-	if result.Status != LockShowStatusFailed {
+	if result.Status != LockShowStatusFailed || result.Reason != LockShowReasonStateDirMissing {
 		t.Fatalf("empty state dir result = %#v", result)
 	}
 }

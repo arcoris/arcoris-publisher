@@ -16,6 +16,7 @@ package publish
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -213,17 +214,17 @@ func TestFileJournalStoreMismatchedJournalIDFailsClosed(t *testing.T) {
 func TestTransactionLockConflict(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	first, err := acquireTransactionLock(ctx, dir, "tx-one", time.Unix(1, 0).UTC())
+	first, err := acquireTransactionLock(ctx, dir, "tx-one", time.Unix(1, 0).UTC(), transactionLockOps{})
 	if err != nil {
 		t.Fatalf("first lock error = %v", err)
 	}
-	if _, err := acquireTransactionLock(ctx, dir, "tx-two", time.Unix(2, 0).UTC()); err == nil {
+	if _, err := acquireTransactionLock(ctx, dir, "tx-two", time.Unix(2, 0).UTC(), transactionLockOps{}); err == nil {
 		t.Fatal("second lock error = nil")
 	}
 	if err := first.Release(); err != nil {
 		t.Fatalf("Release() error = %v", err)
 	}
-	if second, err := acquireTransactionLock(ctx, dir, "tx-two", time.Unix(2, 0).UTC()); err != nil {
+	if second, err := acquireTransactionLock(ctx, dir, "tx-two", time.Unix(2, 0).UTC(), transactionLockOps{}); err != nil {
 		t.Fatalf("lock after release error = %v", err)
 	} else {
 		_ = second.Release()
@@ -233,16 +234,15 @@ func TestTransactionLockConflict(t *testing.T) {
 func TestTransactionLockReleaseSyncsParentAfterRemove(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	lock, err := acquireTransactionLock(ctx, dir, "tx-one", time.Unix(1, 0).UTC())
-	if err != nil {
-		t.Fatalf("lock error = %v", err)
-	}
 	var synced bool
-	lock.ops = transactionLockOps{
+	lock, err := acquireTransactionLock(ctx, dir, "tx-one", time.Unix(1, 0).UTC(), transactionLockOps{
 		syncParent: func(path string) error {
-			synced = path == lock.path
+			synced = filepath.Base(path) == "publish.lock"
 			return nil
 		},
+	})
+	if err != nil {
+		t.Fatalf("lock error = %v", err)
 	}
 
 	if err := lock.Release(); err != nil {
@@ -256,6 +256,48 @@ func TestTransactionLockReleaseSyncsParentAfterRemove(t *testing.T) {
 	}
 }
 
+func TestTransactionLockReleaseReportsRemoveFailures(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("delete failed preserves lock", func(t *testing.T) {
+		dir := t.TempDir()
+		lock, err := acquireTransactionLock(ctx, dir, "tx-one", time.Unix(1, 0).UTC(), transactionLockOps{
+			remove: func(string) error {
+				return errors.New("delete refused")
+			},
+		})
+		if err != nil {
+			t.Fatalf("lock error = %v", err)
+		}
+
+		if err := lock.Release(); err == nil {
+			t.Fatal("Release() error = nil")
+		}
+		if _, err := os.Stat(lock.path); err != nil {
+			t.Fatalf("lock missing after failed delete: %v", err)
+		}
+	})
+
+	t.Run("sync failed after delete removes lock", func(t *testing.T) {
+		dir := t.TempDir()
+		lock, err := acquireTransactionLock(ctx, dir, "tx-one", time.Unix(1, 0).UTC(), transactionLockOps{
+			syncParent: func(string) error {
+				return errors.New("sync refused")
+			},
+		})
+		if err != nil {
+			t.Fatalf("lock error = %v", err)
+		}
+
+		if err := lock.Release(); err == nil {
+			t.Fatal("Release() error = nil")
+		}
+		if _, err := os.Stat(lock.path); !os.IsNotExist(err) {
+			t.Fatalf("lock exists or stat failed after sync failure: %v", err)
+		}
+	})
+}
+
 func TestTransactionLockReleaseMissingIsNoop(t *testing.T) {
 	lock := transactionLock{path: filepath.Join(t.TempDir(), "publish.lock"), id: "tx-missing"}
 	if err := lock.Release(); err != nil {
@@ -266,7 +308,7 @@ func TestTransactionLockReleaseMissingIsNoop(t *testing.T) {
 func TestTransactionLockReleaseRefusesMismatchedLock(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	first, err := acquireTransactionLock(ctx, dir, "tx-one", time.Unix(1, 0).UTC())
+	first, err := acquireTransactionLock(ctx, dir, "tx-one", time.Unix(1, 0).UTC(), transactionLockOps{})
 	if err != nil {
 		t.Fatalf("first lock error = %v", err)
 	}
@@ -285,7 +327,7 @@ func TestTransactionLockReleaseRefusesMismatchedLock(t *testing.T) {
 func TestTransactionLockReleasePreservesCorruptLock(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	lock, err := acquireTransactionLock(ctx, dir, "tx-one", time.Unix(1, 0).UTC())
+	lock, err := acquireTransactionLock(ctx, dir, "tx-one", time.Unix(1, 0).UTC(), transactionLockOps{})
 	if err != nil {
 		t.Fatalf("lock error = %v", err)
 	}

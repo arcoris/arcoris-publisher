@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -38,6 +39,21 @@ const (
 	LockShowStatusJournalCorrupt LockShowStatus = "journal_corrupt"
 	// LockShowStatusFailed means inspection failed for reasons other than lock corruption.
 	LockShowStatusFailed LockShowStatus = "failed"
+)
+
+// LockShowReason is a stable machine-readable lock inspection outcome code.
+type LockShowReason string
+
+const (
+	LockShowReasonLockAbsent        LockShowReason = "lock_absent"
+	LockShowReasonLockPresent       LockShowReason = "lock_present"
+	LockShowReasonLockCorrupt       LockShowReason = "lock_corrupt"
+	LockShowReasonLockReadFailed    LockShowReason = "lock_read_failed"
+	LockShowReasonStateDirMissing   LockShowReason = "state_dir_missing"
+	LockShowReasonJournalMissing    LockShowReason = "journal_missing"
+	LockShowReasonJournalCorrupt    LockShowReason = "journal_corrupt"
+	LockShowReasonJournalReadFailed LockShowReason = "journal_read_failed"
+	LockShowReasonContextCanceled   LockShowReason = "context_canceled"
 )
 
 // LockClearStatus describes a guarded publish lock clear attempt.
@@ -113,6 +129,8 @@ type LockJournalState struct {
 // LockShowResult reports publish lock state without mutating it.
 type LockShowResult struct {
 	Status   LockShowStatus
+	Reason   LockShowReason
+	Message  string
 	Lock     TransactionLockInfo
 	Journal  LockJournalState
 	Warnings []LockWarning
@@ -141,39 +159,70 @@ type LockClearResult struct {
 // without mutating transaction state.
 func InspectTransactionLock(ctx context.Context, stateDir string) (LockShowResult, error) {
 	if err := ctx.Err(); err != nil {
-		return LockShowResult{Status: LockShowStatusFailed}, err
+		return lockShowFailed(LockShowReasonContextCanceled, "transaction lock inspection canceled"), err
+	}
+	if strings.TrimSpace(stateDir) == "" {
+		result := lockShowFailed(LockShowReasonStateDirMissing, "transaction state directory is unavailable")
+		return result, &Error{Code: CodeLockFailed, Message: result.Message}
 	}
 	lock, ok, err := currentTransactionLock(stateDir)
 	if err != nil {
-		status := LockShowStatusFailed
-		warnings := []LockWarning{}
+		result := lockShowFailed(LockShowReasonLockReadFailed, "read publish transaction lock failed")
 		if errors.Is(err, errTransactionLockCorrupt) {
-			status = LockShowStatusCorrupt
-			warnings = append(warnings, LockWarning{Code: LockWarningLockCorrupt, Message: "publish lock is not parseable"})
+			result.Status = LockShowStatusCorrupt
+			result.Reason = LockShowReasonLockCorrupt
+			result.Message = "publish lock is not parseable"
+			result.Warnings = append(result.Warnings, LockWarning{Code: LockWarningLockCorrupt, Message: result.Message})
 		}
-		return LockShowResult{Status: status, Warnings: warnings}, &Error{Code: CodeLockFailed, Message: "read publish transaction lock failed", Cause: err}
+		return result, &Error{Code: CodeLockFailed, Message: result.Message, Cause: err}
 	}
 	if !ok {
-		return LockShowResult{Status: LockShowStatusAbsent}, nil
+		return LockShowResult{
+			Status:  LockShowStatusAbsent,
+			Reason:  LockShowReasonLockAbsent,
+			Message: "publish lock is absent",
+		}, nil
 	}
 
 	journal, warning, err := loadLockJournal(ctx, stateDir, lock.ID)
-	result := LockShowResult{Status: LockShowStatusPresent, Lock: lock, Journal: journal}
+	result := LockShowResult{
+		Status:  LockShowStatusPresent,
+		Reason:  LockShowReasonLockPresent,
+		Message: "publish lock is present",
+		Lock:    lock,
+		Journal: journal,
+	}
 	if warning.Code != "" {
 		result.Warnings = append(result.Warnings, warning)
 	}
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			result.Status = LockShowStatusFailed
+			result.Reason = LockShowReasonContextCanceled
+			result.Message = "transaction lock inspection canceled"
+			return result, &Error{Code: CodeLockFailed, Message: result.Message, Cause: err}
+		}
 		if errors.Is(err, errTransactionJournalCorrupt) {
 			result.Status = LockShowStatusJournalCorrupt
-			return result, &Error{Code: CodeRecoveryFailed, Message: "load publish transaction journal failed", Cause: err}
+			result.Reason = LockShowReasonJournalCorrupt
+			result.Message = "referenced transaction journal is corrupt"
+			return result, &Error{Code: CodeRecoveryFailed, Message: result.Message, Cause: err}
 		}
 		result.Status = LockShowStatusFailed
-		return result, &Error{Code: CodeLockFailed, Message: "inspect publish transaction lock failed", Cause: err}
+		result.Reason = LockShowReasonJournalReadFailed
+		result.Message = "read referenced transaction journal failed"
+		return result, &Error{Code: CodeLockFailed, Message: result.Message, Cause: err}
 	}
 	if !journal.Present {
 		result.Status = LockShowStatusJournalMissing
+		result.Reason = LockShowReasonJournalMissing
+		result.Message = "publish lock references missing transaction journal"
 	}
 	return result, nil
+}
+
+func lockShowFailed(reason LockShowReason, message string) LockShowResult {
+	return LockShowResult{Status: LockShowStatusFailed, Reason: reason, Message: message}
 }
 
 // ShowTransactionLock inspects publish.lock and its referenced journal.

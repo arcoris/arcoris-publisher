@@ -156,7 +156,7 @@ func TestPruneServiceLockPolicy(t *testing.T) {
 	stateDir := t.TempDir()
 	store := NewFileJournalStore(stateDir)
 	writePruneJournal(t, store, "tx-committed", TransactionStatusCommitted, time.Unix(1, 0).UTC())
-	lock, err := acquireTransactionLock(ctx, stateDir, "tx-active", time.Unix(2, 0).UTC())
+	lock, err := acquireTransactionLock(ctx, stateDir, "tx-active", time.Unix(2, 0).UTC(), transactionLockOps{})
 	if err != nil {
 		t.Fatalf("acquireTransactionLock() error = %v", err)
 	}

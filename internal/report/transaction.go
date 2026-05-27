@@ -81,6 +81,8 @@ type TransactionPruneEntry struct {
 type TransactionLockReport struct {
 	Kind     string                   `json:"kind"`
 	Status   string                   `json:"status"`
+	Reason   string                   `json:"reason,omitempty"`
+	Message  string                   `json:"message,omitempty"`
 	Lock     *TransactionLockInfo     `json:"lock"`
 	Journal  *TransactionLockJournal  `json:"journal"`
 	Warnings []TransactionLockWarning `json:"warnings"`
@@ -262,6 +264,8 @@ func BuildTransactionLockReport(result publish.LockShowResult, opts Options) Tra
 	return TransactionLockReport{
 		Kind:     "transactions-lock",
 		Status:   string(result.Status),
+		Reason:   string(result.Reason),
+		Message:  result.Message,
 		Lock:     buildTransactionLockInfo(result.Lock, opts),
 		Journal:  journal,
 		Warnings: buildTransactionLockWarnings(result.Warnings),
@@ -385,6 +389,16 @@ func writeTransactionLockText(w io.Writer, report TransactionLockReport) error {
 	}
 	if err := writeLine(w, "  Status: %s", report.Status); err != nil {
 		return err
+	}
+	if report.Reason != "" {
+		if err := writeLine(w, "  Reason: %s", report.Reason); err != nil {
+			return err
+		}
+	}
+	if report.Message != "" {
+		if err := writeLine(w, "  Message: %s", report.Message); err != nil {
+			return err
+		}
 	}
 	if report.Lock != nil {
 		if err := writeLine(w, "  Transaction: %s", report.Lock.TransactionID); err != nil {

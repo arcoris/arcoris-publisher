@@ -70,6 +70,9 @@ func lockCorruptf(format string, args ...any) error {
 	return fmt.Errorf("%w: "+format, append([]any{errTransactionLockCorrupt}, args...)...)
 }
 
+// removeTransactionLockIfCurrent performs the final identity check immediately
+// before deletion. A sync failure is reported after Removed=true because the
+// unlink already happened even though durability could not be confirmed.
 func removeTransactionLockIfCurrent(path string, expected TransactionID, ops transactionLockOps) (lockRemoveOutcome, error) {
 	ops = ops.withDefaults()
 	if ops.beforeRemove != nil {
@@ -105,7 +108,8 @@ type TransactionLockInfo struct {
 	Path      string
 }
 
-func acquireTransactionLock(ctx context.Context, stateDir string, id TransactionID, now time.Time) (transactionLock, error) {
+func acquireTransactionLock(ctx context.Context, stateDir string, id TransactionID, now time.Time, ops transactionLockOps) (transactionLock, error) {
+	ops = ops.withDefaults()
 	if err := ctx.Err(); err != nil {
 		return transactionLock{}, err
 	}
@@ -145,7 +149,7 @@ func acquireTransactionLock(ctx context.Context, stateDir string, id Transaction
 		_ = os.Remove(path)
 		return transactionLock{}, err
 	}
-	return transactionLock{path: path, id: id, ops: defaultTransactionLockOps()}, nil
+	return transactionLock{path: path, id: id, ops: ops}, nil
 }
 
 func (l transactionLock) Release() error {
