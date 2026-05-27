@@ -63,6 +63,7 @@ const (
 	LockClearReasonInvalidTransactionID LockClearReason = "invalid_transaction_id"
 	LockClearReasonStateDirMissing      LockClearReason = "state_dir_missing"
 	LockClearReasonLockAbsent           LockClearReason = "lock_absent"
+	LockClearReasonLockDisappeared      LockClearReason = "lock_disappeared"
 	LockClearReasonLockCorrupt          LockClearReason = "lock_corrupt"
 	LockClearReasonLockReadFailed       LockClearReason = "lock_read_failed"
 	LockClearReasonTransactionMismatch  LockClearReason = "transaction_mismatch"
@@ -136,8 +137,9 @@ type LockClearResult struct {
 	Warnings       []LockWarning
 }
 
-// ShowTransactionLock inspects publish.lock and its referenced journal.
-func (s Service) ShowTransactionLock(ctx context.Context, stateDir string) (LockShowResult, error) {
+// InspectTransactionLock inspects publish.lock and its referenced journal
+// without mutating transaction state.
+func InspectTransactionLock(ctx context.Context, stateDir string) (LockShowResult, error) {
 	if err := ctx.Err(); err != nil {
 		return LockShowResult{Status: LockShowStatusFailed}, err
 	}
@@ -172,6 +174,11 @@ func (s Service) ShowTransactionLock(ctx context.Context, stateDir string) (Lock
 		result.Status = LockShowStatusJournalMissing
 	}
 	return result, nil
+}
+
+// ShowTransactionLock inspects publish.lock and its referenced journal.
+func (s Service) ShowTransactionLock(ctx context.Context, stateDir string) (LockShowResult, error) {
+	return InspectTransactionLock(ctx, stateDir)
 }
 
 // ClearTransactionLock removes only publish.lock after explicit confirmation.
@@ -257,15 +264,20 @@ func (s Service) ClearTransactionLock(ctx context.Context, stateDir string, opts
 		return result, &Error{Code: CodeLockFailed, Message: fmt.Sprintf("transaction %s is %s; refusing to clear active publish lock", lock.ID, journal.Status)}
 	}
 
-	if err := removeTransactionLockIfCurrent(path, lock.ID); err != nil {
+	outcome, err := removeTransactionLockIfCurrent(path, lock.ID, s.lockOps)
+	if err != nil {
 		result.Status = LockClearStatusFailed
 		result.Reason = lockClearRemoveReason(err)
 		result.Message = lockClearRemoveMessage(result.Reason)
+		result.LockCleared = outcome.Removed
+		if outcome.Removed {
+			result.PostClearState = postState
+		}
 		return result, &Error{Code: CodeLockFailed, Message: result.Message, Cause: err}
 	}
 
 	result.Status = LockClearStatusCleared
-	result.LockCleared = true
+	result.LockCleared = outcome.Removed
 	result.Reason = LockClearReasonCleared
 	result.Message = "publish lock cleared"
 	result.PostClearState = postState
@@ -311,8 +323,12 @@ func postClearState(journal LockJournalState) LockPostClearState {
 
 func lockClearRemoveReason(err error) LockClearReason {
 	switch {
-	case errors.Is(err, errTransactionLockChanged), errors.Is(err, os.ErrNotExist), errors.Is(err, errTransactionLockCorrupt):
+	case errors.Is(err, errTransactionLockChanged):
 		return LockClearReasonLockChanged
+	case errors.Is(err, errTransactionLockDisappeared):
+		return LockClearReasonLockDisappeared
+	case errors.Is(err, errTransactionLockCorrupt):
+		return LockClearReasonLockCorrupt
 	case errors.Is(err, errTransactionLockDeleteFailed):
 		return LockClearReasonDeleteFailed
 	case errors.Is(err, errTransactionLockSyncFailed):
@@ -326,6 +342,8 @@ func lockClearRemoveMessage(reason LockClearReason) string {
 	switch reason {
 	case LockClearReasonLockChanged:
 		return "publish lock changed before deletion"
+	case LockClearReasonLockDisappeared:
+		return "publish lock disappeared before deletion"
 	case LockClearReasonSyncFailed:
 		return "sync publish lock directory failed"
 	case LockClearReasonLockCorrupt:

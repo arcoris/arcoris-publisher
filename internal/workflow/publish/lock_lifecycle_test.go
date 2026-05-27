@@ -27,12 +27,11 @@ import (
 
 func TestShowTransactionLockStates(t *testing.T) {
 	ctx := context.Background()
-	service := New(Dependencies{Git: porttest.NewGit()}, Options{})
 
 	t.Run("absent", func(t *testing.T) {
-		result, err := service.ShowTransactionLock(ctx, t.TempDir())
+		result, err := InspectTransactionLock(ctx, t.TempDir())
 		if err != nil {
-			t.Fatalf("ShowTransactionLock() error = %v", err)
+			t.Fatalf("InspectTransactionLock() error = %v", err)
 		}
 		if result.Status != LockShowStatusAbsent {
 			t.Fatalf("status = %q", result.Status)
@@ -45,9 +44,9 @@ func TestShowTransactionLockStates(t *testing.T) {
 		writePruneJournal(t, store, "tx-committed", TransactionStatusCommitted, time.Unix(1, 0).UTC())
 		writeLockFile(t, stateDir, "tx-committed")
 
-		result, err := service.ShowTransactionLock(ctx, stateDir)
+		result, err := InspectTransactionLock(ctx, stateDir)
 		if err != nil {
-			t.Fatalf("ShowTransactionLock() error = %v", err)
+			t.Fatalf("InspectTransactionLock() error = %v", err)
 		}
 		if result.Status != LockShowStatusPresent || !result.Journal.Present || result.Journal.Status != TransactionStatusCommitted {
 			t.Fatalf("result = %#v", result)
@@ -58,9 +57,9 @@ func TestShowTransactionLockStates(t *testing.T) {
 		stateDir := t.TempDir()
 		writeLockFile(t, stateDir, "tx-missing")
 
-		result, err := service.ShowTransactionLock(ctx, stateDir)
+		result, err := InspectTransactionLock(ctx, stateDir)
 		if err != nil {
-			t.Fatalf("ShowTransactionLock() error = %v", err)
+			t.Fatalf("InspectTransactionLock() error = %v", err)
 		}
 		if result.Status != LockShowStatusJournalMissing || result.Journal.Present {
 			t.Fatalf("result = %#v", result)
@@ -71,11 +70,26 @@ func TestShowTransactionLockStates(t *testing.T) {
 		stateDir := t.TempDir()
 		writeRawLockFile(t, stateDir, "pid=1\n")
 
-		result, err := service.ShowTransactionLock(ctx, stateDir)
+		result, err := InspectTransactionLock(ctx, stateDir)
 		if err == nil {
-			t.Fatal("ShowTransactionLock() error = nil")
+			t.Fatal("InspectTransactionLock() error = nil")
 		}
 		if result.Status != LockShowStatusCorrupt {
+			t.Fatalf("result = %#v", result)
+		}
+	})
+
+	t.Run("lock read failure", func(t *testing.T) {
+		stateDir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(stateDir, "publish.lock"), 0o700); err != nil {
+			t.Fatalf("MkdirAll() error = %v", err)
+		}
+
+		result, err := InspectTransactionLock(ctx, stateDir)
+		if err == nil {
+			t.Fatal("InspectTransactionLock() error = nil")
+		}
+		if result.Status != LockShowStatusFailed {
 			t.Fatalf("result = %#v", result)
 		}
 	})
@@ -91,35 +105,60 @@ func TestShowTransactionLockStates(t *testing.T) {
 			t.Fatalf("WriteFile() error = %v", err)
 		}
 
-		result, err := service.ShowTransactionLock(ctx, stateDir)
+		result, err := InspectTransactionLock(ctx, stateDir)
 		if err == nil {
-			t.Fatal("ShowTransactionLock() error = nil")
+			t.Fatal("InspectTransactionLock() error = nil")
 		}
 		if result.Status != LockShowStatusJournalCorrupt {
+			t.Fatalf("result = %#v", result)
+		}
+	})
+
+	t.Run("journal read failure", func(t *testing.T) {
+		stateDir := t.TempDir()
+		writeLockFile(t, stateDir, "tx-bad")
+		txDir := filepath.Join(stateDir, "transactions")
+		if err := os.MkdirAll(filepath.Join(txDir, "tx-bad.json"), 0o700); err != nil {
+			t.Fatalf("MkdirAll() error = %v", err)
+		}
+
+		result, err := InspectTransactionLock(ctx, stateDir)
+		if err == nil {
+			t.Fatal("InspectTransactionLock() error = nil")
+		}
+		if result.Status != LockShowStatusFailed {
 			t.Fatalf("result = %#v", result)
 		}
 	})
 }
 
 func TestShowTransactionLockFailedForInspectionErrors(t *testing.T) {
-	service := New(Dependencies{Git: porttest.NewGit()}, Options{})
-
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	result, err := service.ShowTransactionLock(ctx, t.TempDir())
+	result, err := InspectTransactionLock(ctx, t.TempDir())
 	if err == nil {
-		t.Fatal("ShowTransactionLock(canceled) error = nil")
+		t.Fatal("InspectTransactionLock(canceled) error = nil")
 	}
 	if result.Status != LockShowStatusFailed {
 		t.Fatalf("canceled result = %#v", result)
 	}
 
-	result, err = service.ShowTransactionLock(context.Background(), "")
+	result, err = InspectTransactionLock(context.Background(), "")
 	if err == nil {
-		t.Fatal("ShowTransactionLock(empty state dir) error = nil")
+		t.Fatal("InspectTransactionLock(empty state dir) error = nil")
 	}
 	if result.Status != LockShowStatusFailed {
 		t.Fatalf("empty state dir result = %#v", result)
+	}
+}
+
+func TestServiceShowTransactionLockUsesReadOnlyInspection(t *testing.T) {
+	result, err := New(Dependencies{Git: porttest.NewGit()}, Options{}).ShowTransactionLock(context.Background(), t.TempDir())
+	if err != nil {
+		t.Fatalf("ShowTransactionLock() error = %v", err)
+	}
+	if result.Status != LockShowStatusAbsent {
+		t.Fatalf("status = %q", result.Status)
 	}
 }
 
@@ -295,6 +334,25 @@ func TestClearTransactionLockPolicy(t *testing.T) {
 		}
 		assertLockMissing(t, stateDir)
 		assertJournalExists(t, store, "tx-committed")
+		assertHasPending(t, store, false, "")
+	})
+
+	t.Run("rolled back journal", func(t *testing.T) {
+		stateDir := t.TempDir()
+		store := NewFileJournalStore(stateDir)
+		writePruneJournal(t, store, "tx-rolled-back", TransactionStatusRolledBack, time.Unix(1, 0).UTC())
+		writeLockFile(t, stateDir, "tx-rolled-back")
+
+		result, err := service.ClearTransactionLock(ctx, stateDir, LockClearOptions{TransactionID: "tx-rolled-back", Confirm: "tx-rolled-back"})
+		if err != nil {
+			t.Fatalf("ClearTransactionLock() error = %v", err)
+		}
+		if result.Status != LockClearStatusCleared || result.PostClearState != LockPostClearReadyForPublish {
+			t.Fatalf("result = %#v", result)
+		}
+		assertLockMissing(t, stateDir)
+		assertJournalExists(t, store, "tx-rolled-back")
+		assertHasPending(t, store, false, "")
 	})
 
 	t.Run("rollback failed journal", func(t *testing.T) {
@@ -315,6 +373,7 @@ func TestClearTransactionLockPolicy(t *testing.T) {
 		}
 		assertLockMissing(t, stateDir)
 		assertJournalExists(t, store, "tx-rollback-failed")
+		assertHasPending(t, store, true, "tx-rollback-failed")
 	})
 
 	t.Run("failed journal", func(t *testing.T) {
@@ -332,6 +391,7 @@ func TestClearTransactionLockPolicy(t *testing.T) {
 		}
 		assertLockMissing(t, stateDir)
 		assertJournalExists(t, store, "tx-failed")
+		assertHasPending(t, store, true, "tx-failed")
 	})
 
 	t.Run("missing journal", func(t *testing.T) {
@@ -477,10 +537,12 @@ func TestClearTransactionLockDeleteAndSyncFailures(t *testing.T) {
 		store := NewFileJournalStore(stateDir)
 		writePruneJournal(t, store, "tx-one", TransactionStatusCommitted, time.Unix(1, 0).UTC())
 		writeLockFile(t, stateDir, "tx-one")
-		removeTransactionLockFile = func(string) error {
-			return errors.New("delete refused")
+		service := service
+		service.lockOps = transactionLockOps{
+			remove: func(string) error {
+				return errors.New("delete refused")
+			},
 		}
-		t.Cleanup(func() { removeTransactionLockFile = os.Remove })
 
 		result, err := service.ClearTransactionLock(ctx, stateDir, LockClearOptions{TransactionID: "tx-one", Confirm: "tx-one"})
 		if err == nil {
@@ -501,10 +563,12 @@ func TestClearTransactionLockDeleteAndSyncFailures(t *testing.T) {
 		store := NewFileJournalStore(stateDir)
 		writePruneJournal(t, store, "tx-one", TransactionStatusCommitted, time.Unix(1, 0).UTC())
 		writeLockFile(t, stateDir, "tx-one")
-		syncTransactionLockParent = func(string) error {
-			return errors.New("sync refused")
+		service := service
+		service.lockOps = transactionLockOps{
+			syncParent: func(string) error {
+				return errors.New("sync refused")
+			},
 		}
-		t.Cleanup(func() { syncTransactionLockParent = syncParentDir })
 
 		result, err := service.ClearTransactionLock(ctx, stateDir, LockClearOptions{TransactionID: "tx-one", Confirm: "tx-one"})
 		if err == nil {
@@ -513,11 +577,22 @@ func TestClearTransactionLockDeleteAndSyncFailures(t *testing.T) {
 		if result.Status != LockClearStatusFailed || result.Reason != LockClearReasonSyncFailed {
 			t.Fatalf("result = %#v", result)
 		}
-		if result.PostClearState != "" {
-			t.Fatalf("post-clear state = %q, want empty for failed clear", result.PostClearState)
+		if !result.LockCleared {
+			t.Fatal("LockCleared = false, want true")
+		}
+		if result.PostClearState != LockPostClearReadyForPublish {
+			t.Fatalf("post-clear state = %q", result.PostClearState)
 		}
 		assertLockMissing(t, stateDir)
 		assertJournalExists(t, store, "tx-one")
+
+		retry, err := New(Dependencies{Git: porttest.NewGit()}, Options{}).ClearTransactionLock(ctx, stateDir, LockClearOptions{TransactionID: "tx-one", Confirm: "tx-one"})
+		if err == nil {
+			t.Fatal("retry ClearTransactionLock() error = nil")
+		}
+		if retry.Status != LockClearStatusRefused || retry.Reason != LockClearReasonLockAbsent {
+			t.Fatalf("retry result = %#v", retry)
+		}
 	})
 }
 
@@ -529,10 +604,11 @@ func TestClearTransactionLockRefusesChangedLockBeforeDelete(t *testing.T) {
 	writePruneJournal(t, store, "tx-one", TransactionStatusCommitted, time.Unix(1, 0).UTC())
 	writeLockFile(t, stateDir, "tx-one")
 
-	beforeRemoveTransactionLockForTest = func() {
-		writeLockFile(t, stateDir, "tx-two")
+	service.lockOps = transactionLockOps{
+		beforeRemove: func() {
+			writeLockFile(t, stateDir, "tx-two")
+		},
 	}
-	t.Cleanup(func() { beforeRemoveTransactionLockForTest = nil })
 
 	result, err := service.ClearTransactionLock(ctx, stateDir, LockClearOptions{TransactionID: "tx-one", Confirm: "tx-one"})
 	if err == nil {
@@ -548,6 +624,64 @@ func TestClearTransactionLockRefusesChangedLockBeforeDelete(t *testing.T) {
 	if info.ID != "tx-two" {
 		t.Fatalf("lock transaction = %q, want tx-two", info.ID)
 	}
+	assertJournalExists(t, store, "tx-one")
+}
+
+func TestClearTransactionLockRefusesDisappearedLockBeforeDelete(t *testing.T) {
+	ctx := context.Background()
+	service := New(Dependencies{Git: porttest.NewGit()}, Options{})
+	stateDir := t.TempDir()
+	store := NewFileJournalStore(stateDir)
+	writePruneJournal(t, store, "tx-one", TransactionStatusCommitted, time.Unix(1, 0).UTC())
+	writeLockFile(t, stateDir, "tx-one")
+
+	service.lockOps = transactionLockOps{
+		beforeRemove: func() {
+			if err := os.Remove(filepath.Join(stateDir, "publish.lock")); err != nil {
+				t.Fatalf("Remove() error = %v", err)
+			}
+		},
+	}
+
+	result, err := service.ClearTransactionLock(ctx, stateDir, LockClearOptions{TransactionID: "tx-one", Confirm: "tx-one"})
+	if err == nil {
+		t.Fatal("ClearTransactionLock() error = nil")
+	}
+	if result.Status != LockClearStatusFailed || result.Reason != LockClearReasonLockDisappeared {
+		t.Fatalf("result = %#v", result)
+	}
+	if result.LockCleared || result.PostClearState != "" {
+		t.Fatalf("partial result = %#v", result)
+	}
+	assertLockMissing(t, stateDir)
+	assertJournalExists(t, store, "tx-one")
+}
+
+func TestClearTransactionLockRefusesCorruptLockBeforeDelete(t *testing.T) {
+	ctx := context.Background()
+	service := New(Dependencies{Git: porttest.NewGit()}, Options{})
+	stateDir := t.TempDir()
+	store := NewFileJournalStore(stateDir)
+	writePruneJournal(t, store, "tx-one", TransactionStatusCommitted, time.Unix(1, 0).UTC())
+	writeLockFile(t, stateDir, "tx-one")
+
+	service.lockOps = transactionLockOps{
+		beforeRemove: func() {
+			writeRawLockFile(t, stateDir, "transaction=../bad\n")
+		},
+	}
+
+	result, err := service.ClearTransactionLock(ctx, stateDir, LockClearOptions{TransactionID: "tx-one", Confirm: "tx-one"})
+	if err == nil {
+		t.Fatal("ClearTransactionLock() error = nil")
+	}
+	if result.Status != LockClearStatusFailed || result.Reason != LockClearReasonLockCorrupt {
+		t.Fatalf("result = %#v", result)
+	}
+	if result.LockCleared || result.PostClearState != "" {
+		t.Fatalf("partial result = %#v", result)
+	}
+	assertLockExists(t, stateDir)
 	assertJournalExists(t, store, "tx-one")
 }
 
@@ -589,5 +723,19 @@ func assertLockMissing(t *testing.T, stateDir string) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("lock exists or stat failed: %v", err)
+	}
+}
+
+func assertHasPending(t *testing.T, store FileJournalStore, want bool, wantID TransactionID) {
+	t.Helper()
+	summary, ok, err := store.HasPending(context.Background())
+	if err != nil {
+		t.Fatalf("HasPending() error = %v", err)
+	}
+	if ok != want {
+		t.Fatalf("HasPending() ok = %v, want %v summary=%#v", ok, want, summary)
+	}
+	if want && summary.ID != wantID {
+		t.Fatalf("pending id = %q, want %q", summary.ID, wantID)
 	}
 }

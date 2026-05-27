@@ -439,6 +439,9 @@ func writeTransactionLockClearText(w io.Writer, report TransactionLockClearRepor
 			return err
 		}
 	}
+	if err := writeLine(w, "  Lock cleared: %t", report.Lock.Cleared); err != nil {
+		return err
+	}
 	if report.Message != "" {
 		if err := writeLine(w, "  Message: %s", report.Message); err != nil {
 			return err

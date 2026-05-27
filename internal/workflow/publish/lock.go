@@ -27,43 +27,72 @@ import (
 type transactionLock struct {
 	path string
 	id   TransactionID
+	ops  transactionLockOps
 }
 
 var (
 	errTransactionLockCorrupt      = errors.New("publish lock corrupt")
 	errTransactionLockChanged      = errors.New("publish lock changed")
+	errTransactionLockDisappeared  = errors.New("publish lock disappeared")
 	errTransactionLockDeleteFailed = errors.New("publish lock delete failed")
 	errTransactionLockSyncFailed   = errors.New("publish lock sync failed")
 )
 
-var (
-	beforeRemoveTransactionLockForTest func()
-	removeTransactionLockFile          = os.Remove
-	syncTransactionLockParent          = syncParentDir
-)
+type transactionLockOps struct {
+	remove       func(string) error
+	syncParent   func(string) error
+	beforeRemove func()
+}
+
+type lockRemoveOutcome struct {
+	Removed bool
+}
+
+func defaultTransactionLockOps() transactionLockOps {
+	return transactionLockOps{
+		remove:     os.Remove,
+		syncParent: syncParentDir,
+	}
+}
+
+func (ops transactionLockOps) withDefaults() transactionLockOps {
+	defaults := defaultTransactionLockOps()
+	if ops.remove == nil {
+		ops.remove = defaults.remove
+	}
+	if ops.syncParent == nil {
+		ops.syncParent = defaults.syncParent
+	}
+	return ops
+}
 
 func lockCorruptf(format string, args ...any) error {
 	return fmt.Errorf("%w: "+format, append([]any{errTransactionLockCorrupt}, args...)...)
 }
 
-func removeTransactionLockIfCurrent(path string, expected TransactionID) error {
-	if beforeRemoveTransactionLockForTest != nil {
-		beforeRemoveTransactionLockForTest()
+func removeTransactionLockIfCurrent(path string, expected TransactionID, ops transactionLockOps) (lockRemoveOutcome, error) {
+	ops = ops.withDefaults()
+	if ops.beforeRemove != nil {
+		ops.beforeRemove()
 	}
 	info, err := readTransactionLock(path)
 	if err != nil {
-		return err
+		if errors.Is(err, os.ErrNotExist) {
+			return lockRemoveOutcome{}, fmt.Errorf("%w: %v", errTransactionLockDisappeared, err)
+		}
+		return lockRemoveOutcome{}, err
 	}
 	if info.ID != expected {
-		return fmt.Errorf("%w: publish lock changed from %s to %s", errTransactionLockChanged, expected, info.ID)
+		return lockRemoveOutcome{}, fmt.Errorf("%w: publish lock changed from %s to %s", errTransactionLockChanged, expected, info.ID)
 	}
-	if err := removeTransactionLockFile(path); err != nil {
-		return fmt.Errorf("%w: %v", errTransactionLockDeleteFailed, err)
+	if err := ops.remove(path); err != nil {
+		return lockRemoveOutcome{}, fmt.Errorf("%w: %v", errTransactionLockDeleteFailed, err)
 	}
-	if err := syncTransactionLockParent(path); err != nil {
-		return fmt.Errorf("%w: %v", errTransactionLockSyncFailed, err)
+	outcome := lockRemoveOutcome{Removed: true}
+	if err := ops.syncParent(path); err != nil {
+		return outcome, fmt.Errorf("%w: %v", errTransactionLockSyncFailed, err)
 	}
-	return nil
+	return outcome, nil
 }
 
 // TransactionLockInfo describes an existing publish lock without exposing the
@@ -116,15 +145,15 @@ func acquireTransactionLock(ctx context.Context, stateDir string, id Transaction
 		_ = os.Remove(path)
 		return transactionLock{}, err
 	}
-	return transactionLock{path: path, id: id}, nil
+	return transactionLock{path: path, id: id, ops: defaultTransactionLockOps()}, nil
 }
 
 func (l transactionLock) Release() error {
 	if l.path == "" {
 		return nil
 	}
-	if err := removeTransactionLockIfCurrent(l.path, l.id); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+	if _, err := removeTransactionLockIfCurrent(l.path, l.id, l.ops); err != nil {
+		if errors.Is(err, errTransactionLockDisappeared) {
 			return nil
 		}
 		return err

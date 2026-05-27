@@ -160,7 +160,7 @@ func (s Service) checkTransactions(ctx context.Context, stateDir string, builder
 }
 
 func (s Service) checkPublishLock(ctx context.Context, stateDir string, builder *resultBuilder) {
-	lockResult, err := publish.New(publish.Dependencies{Git: s.deps.Git}, publish.Options{}).ShowTransactionLock(ctx, stateDir)
+	lockResult, err := publish.InspectTransactionLock(ctx, stateDir)
 	switch lockResult.Status {
 	case publish.LockShowStatusAbsent:
 		builder.addGlobal(passed("publish-lock", "publish lock absent"))

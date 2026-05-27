@@ -162,6 +162,42 @@ func TestTransactionLockClearReportJSONAndText(t *testing.T) {
 	if !strings.Contains(textBuf.String(), "Transaction lock clear") ||
 		!strings.Contains(textBuf.String(), "Status: cleared") ||
 		!strings.Contains(textBuf.String(), "Reason: cleared") ||
+		!strings.Contains(textBuf.String(), "Lock cleared: true") ||
+		!strings.Contains(textBuf.String(), "Post-clear: ready_for_publish") {
+		t.Fatalf("transaction lock clear text = %s", textBuf.String())
+	}
+}
+
+func TestTransactionLockClearPartialSyncFailureReport(t *testing.T) {
+	t.Parallel()
+
+	result := transactionLockClearFixture()
+	result.Status = publish.LockClearStatusFailed
+	result.Reason = publish.LockClearReasonSyncFailed
+	result.Message = "sync publish lock directory failed"
+	result.Journal.Status = publish.TransactionStatusCommitted
+	result.Journal.Rollback = ""
+
+	var jsonBuf bytes.Buffer
+	if err := New(Options{Format: FormatJSON, Pretty: true}).TransactionLockClear(&jsonBuf, result); err != nil {
+		t.Fatalf("TransactionLockClear(JSON) error = %v", err)
+	}
+	if !strings.Contains(jsonBuf.String(), `"status": "failed"`) ||
+		!strings.Contains(jsonBuf.String(), `"reason": "sync_failed"`) ||
+		!strings.Contains(jsonBuf.String(), `"cleared": true`) ||
+		!strings.Contains(jsonBuf.String(), `"postClearState": "ready_for_publish"`) ||
+		!strings.Contains(jsonBuf.String(), `"status": "committed"`) ||
+		strings.Contains(jsonBuf.String(), "/state") {
+		t.Fatalf("transaction lock clear JSON = %s", jsonBuf.String())
+	}
+
+	var textBuf bytes.Buffer
+	if err := New(Options{Format: FormatText}).TransactionLockClear(&textBuf, result); err != nil {
+		t.Fatalf("TransactionLockClear(text) error = %v", err)
+	}
+	if !strings.Contains(textBuf.String(), "Status: failed") ||
+		!strings.Contains(textBuf.String(), "Reason: sync_failed") ||
+		!strings.Contains(textBuf.String(), "Lock cleared: true") ||
 		!strings.Contains(textBuf.String(), "Post-clear: ready_for_publish") {
 		t.Fatalf("transaction lock clear text = %s", textBuf.String())
 	}

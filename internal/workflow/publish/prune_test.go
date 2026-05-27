@@ -173,6 +173,32 @@ func TestPruneServiceLockPolicy(t *testing.T) {
 	if result.Status != PruneStatusDryRun || len(result.Matched) != 1 {
 		t.Fatalf("dry-run result = %#v", result)
 	}
+	assertLockExists(t, stateDir)
+	assertJournalExists(t, store, "tx-committed")
+}
+
+func TestPruneServiceCorruptLockPolicy(t *testing.T) {
+	ctx := context.Background()
+	stateDir := t.TempDir()
+	store := NewFileJournalStore(stateDir)
+	writePruneJournal(t, store, "tx-committed", TransactionStatusCommitted, time.Unix(1, 0).UTC())
+	writeRawLockFile(t, stateDir, "pid=1\n")
+
+	service := New(Dependencies{Git: porttest.NewGit()}, Options{})
+	if _, err := service.PruneTransactions(ctx, stateDir, PruneOptions{Statuses: []TransactionStatus{TransactionStatusCommitted}}); err == nil {
+		t.Fatal("PruneTransactions() with corrupt lock error = nil")
+	}
+	assertLockExists(t, stateDir)
+	assertJournalExists(t, store, "tx-committed")
+
+	result, err := service.PruneTransactions(ctx, stateDir, PruneOptions{Statuses: []TransactionStatus{TransactionStatusCommitted}, DryRun: true})
+	if err != nil {
+		t.Fatalf("PruneTransactions() dry-run error = %v", err)
+	}
+	if result.Status != PruneStatusDryRun || len(result.Matched) != 1 {
+		t.Fatalf("dry-run result = %#v", result)
+	}
+	assertLockExists(t, stateDir)
 	assertJournalExists(t, store, "tx-committed")
 }
 

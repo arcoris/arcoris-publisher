@@ -33,6 +33,8 @@ type Service struct {
 
 	// opts contains normalized publication options.
 	opts Options
+
+	lockOps transactionLockOps
 }
 
 // New returns a publication service.
@@ -44,7 +46,7 @@ func New(deps Dependencies, opts Options) Service {
 	if opts.RollbackMode == "" {
 		opts.RollbackMode = defaults.RollbackMode
 	}
-	return Service{deps: deps, opts: opts}
+	return Service{deps: deps, opts: opts, lockOps: defaultTransactionLockOps()}
 }
 
 // Publish commits, tags, and pushes every changed verified module.

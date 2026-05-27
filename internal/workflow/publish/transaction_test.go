@@ -238,11 +238,12 @@ func TestTransactionLockReleaseSyncsParentAfterRemove(t *testing.T) {
 		t.Fatalf("lock error = %v", err)
 	}
 	var synced bool
-	syncTransactionLockParent = func(path string) error {
-		synced = path == lock.path
-		return nil
+	lock.ops = transactionLockOps{
+		syncParent: func(path string) error {
+			synced = path == lock.path
+			return nil
+		},
 	}
-	t.Cleanup(func() { syncTransactionLockParent = syncParentDir })
 
 	if err := lock.Release(); err != nil {
 		t.Fatalf("Release() error = %v", err)
@@ -311,6 +312,14 @@ func TestReadTransactionLockStrictParser(t *testing.T) {
 			content: "transaction=tx-one\npid=123\nstartedAt=2026-01-01T00:00:00Z\ncommand=publish\n",
 		},
 		{
+			name:    "valid CRLF format",
+			content: "transaction=tx-one\r\npid=123\r\nstartedAt=2026-01-01T00:00:00Z\r\ncommand=publish\r\n",
+		},
+		{
+			name:    "valid trailing empty lines",
+			content: "transaction=tx-one\npid=123\nstartedAt=2026-01-01T00:00:00Z\ncommand=publish\n\n  \n",
+		},
+		{
 			name:    "valid required transaction only",
 			content: "transaction=tx-one\n",
 		},
@@ -349,7 +358,7 @@ func TestReadTransactionLockStrictParser(t *testing.T) {
 			if info.ID != "tx-one" {
 				t.Fatalf("transaction id = %q", info.ID)
 			}
-			if tt.name == "valid current format" && (info.PID != "123" || info.Command != "publish" || info.StartedAt != "2026-01-01T00:00:00Z") {
+			if strings.HasPrefix(tt.name, "valid ") && tt.name != "valid required transaction only" && (info.PID != "123" || info.Command != "publish" || info.StartedAt != "2026-01-01T00:00:00Z") {
 				t.Fatalf("lock info = %#v", info)
 			}
 		})
