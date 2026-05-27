@@ -35,7 +35,8 @@ type Service struct {
 	// opts contains normalized publication options.
 	opts Options
 
-	lockOps transactionLockOps
+	lockOps          transactionLockOps
+	operationLockOps operationLockOps
 }
 
 // New returns a publication service.
@@ -47,7 +48,12 @@ func New(deps Dependencies, opts Options) Service {
 	if opts.RollbackMode == "" {
 		opts.RollbackMode = defaults.RollbackMode
 	}
-	return Service{deps: deps, opts: opts, lockOps: defaultTransactionLockOps()}
+	return Service{
+		deps:             deps,
+		opts:             opts,
+		lockOps:          defaultTransactionLockOps(),
+		operationLockOps: defaultOperationLockOps(),
+	}
 }
 
 // Publish commits, tags, and pushes every changed verified module.
@@ -108,11 +114,19 @@ func (s Service) publishTransaction(
 	ctx context.Context,
 	req Request,
 	preflight []modulePreflight,
-) (Result, error) {
+) (result Result, err error) {
 	stateDir := deriveStateDir(s.opts.StateDir, preflight)
 	if stateDir == "" {
 		return Result{}, &Error{Code: CodeJournalFailed, Message: "transaction state dir is unavailable"}
 	}
+	operationLock, err := acquireOperationLock(ctx, stateDir, operationLockPublish, s.operationLockOps)
+	if err != nil {
+		return Result{}, operationLockAcquireError(operationLockPublish, err)
+	}
+	defer func() {
+		result, err = releaseOperationLockForPublish(operationLock, result, err)
+	}()
+
 	store := NewFileJournalStore(stateDir)
 	if pending, ok, err := store.HasPending(ctx); err != nil {
 		return Result{}, &Error{Code: CodeJournalFailed, Message: "pending transaction lookup failed", Cause: err}
@@ -143,7 +157,7 @@ func (s Service) publishTransaction(
 	}
 
 	tx := transactionRunner{service: s, request: req, store: store, journal: journal}
-	result, err := tx.run(ctx, preflight)
+	result, err = tx.run(ctx, preflight)
 	if releaseOutcome, releaseErr := lock.Release(); releaseErr != nil {
 		if result.HasTransaction() {
 			journal := result.Transaction()
@@ -155,6 +169,23 @@ func (s Service) publishTransaction(
 		}
 	}
 	return result, err
+}
+
+func releaseOperationLockForPublish(lock operationLock, result Result, err error) (Result, error) {
+	releaseOutcome, releaseErr := lock.Release()
+	if releaseErr == nil {
+		return result, err
+	}
+	releaseFailure := operationLockReleaseError(releaseOutcome, releaseErr)
+	if result.HasTransaction() {
+		journal := result.Transaction()
+		journal.Warnings = append(journal.Warnings, operationLockReleaseWarning(releaseOutcome, releaseErr))
+		result = Result{modules: result.Modules(), transaction: journal}
+	}
+	if err != nil {
+		return result, errors.Join(err, releaseFailure)
+	}
+	return result, releaseFailure
 }
 
 func lockReleaseWarning(outcome lockReleaseOutcome, err error) string {

@@ -90,6 +90,9 @@ const (
 	LockClearReasonLockChanged          LockClearReason = "lock_changed"
 	LockClearReasonDeleteFailed         LockClearReason = "delete_failed"
 	LockClearReasonSyncFailed           LockClearReason = "sync_failed"
+	LockClearReasonOperationLockExists  LockClearReason = "operation_lock_exists"
+	LockClearReasonOperationLockFailed  LockClearReason = "operation_lock_failed"
+	LockClearReasonOperationLockRelease LockClearReason = "operation_lock_release_failed"
 )
 
 // LockWarningCode is a stable machine-readable lock warning code.
@@ -239,8 +242,8 @@ func (s Service) ShowTransactionLock(ctx context.Context, stateDir string) (Lock
 }
 
 // ClearTransactionLock removes only publish.lock after explicit confirmation.
-func (s Service) ClearTransactionLock(ctx context.Context, stateDir string, opts LockClearOptions) (LockClearResult, error) {
-	result := LockClearResult{Status: LockClearStatusRefused, TransactionID: opts.TransactionID}
+func (s Service) ClearTransactionLock(ctx context.Context, stateDir string, opts LockClearOptions) (result LockClearResult, err error) {
+	result = LockClearResult{Status: LockClearStatusRefused, TransactionID: opts.TransactionID}
 	if err := ctx.Err(); err != nil {
 		result.Status = LockClearStatusFailed
 		return result, err
@@ -321,6 +324,17 @@ func (s Service) ClearTransactionLock(ctx context.Context, stateDir string, opts
 		return result, &Error{Code: CodeLockFailed, Message: fmt.Sprintf("transaction %s is %s; refusing to clear active publish lock", lock.ID, journal.Status)}
 	}
 
+	operationLock, err := acquireOperationLock(ctx, stateDir, operationLockLockClear, s.operationLockOps)
+	if err != nil {
+		result.Status = LockClearStatusFailed
+		result.Reason = lockClearOperationLockReason(err)
+		result.Message = lockClearOperationLockMessage(result.Reason)
+		return result, &Error{Code: CodeLockFailed, Message: result.Message, Cause: err}
+	}
+	defer func() {
+		result, err = releaseOperationLockForClear(operationLock, result, err)
+	}()
+
 	outcome, err := removeTransactionLockIfCurrent(path, lock.ID, s.lockOps)
 	if err != nil {
 		result.Status = LockClearStatusFailed
@@ -339,6 +353,21 @@ func (s Service) ClearTransactionLock(ctx context.Context, stateDir string, opts
 	result.Message = "publish lock cleared"
 	result.PostClearState = postState
 	return result, nil
+}
+
+func releaseOperationLockForClear(lock operationLock, result LockClearResult, err error) (LockClearResult, error) {
+	outcome, releaseErr := lock.Release()
+	if releaseErr == nil {
+		return result, err
+	}
+	releaseFailure := operationLockReleaseError(outcome, releaseErr)
+	if err != nil {
+		return result, errors.Join(err, releaseFailure)
+	}
+	result.Status = LockClearStatusFailed
+	result.Reason = LockClearReasonOperationLockRelease
+	result.Message = operationLockReleaseMessage(outcome, releaseErr)
+	return result, releaseFailure
 }
 
 func loadLockJournal(ctx context.Context, stateDir string, id TransactionID) (LockJournalState, LockWarning, error) {
@@ -408,4 +437,18 @@ func lockClearRemoveMessage(reason LockClearReason) string {
 	default:
 		return "delete publish lock failed"
 	}
+}
+
+func lockClearOperationLockReason(err error) LockClearReason {
+	if errors.Is(err, errOperationLockExists) {
+		return LockClearReasonOperationLockExists
+	}
+	return LockClearReasonOperationLockFailed
+}
+
+func lockClearOperationLockMessage(reason LockClearReason) string {
+	if reason == LockClearReasonOperationLockExists {
+		return "transaction state operation lock exists"
+	}
+	return "transaction state operation lock failed"
 }

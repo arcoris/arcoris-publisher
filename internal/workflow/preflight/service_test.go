@@ -41,6 +41,28 @@ func TestCheckPassesWithoutMutatingGit(t *testing.T) {
 	}
 }
 
+func TestCheckIgnoresOperationLock(t *testing.T) {
+	deps, req, opts := preflightFixture(t)
+	if err := os.MkdirAll(opts.StateDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	content := "schemaVersion=1\noperation=publish\ntoken=token-one\npid=1\nstartedAt=2026-01-01T00:00:00Z\n"
+	if err := os.WriteFile(filepath.Join(opts.StateDir, "operation.lock"), []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	result, err := New(deps, opts).Check(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Check() error = %v", err)
+	}
+	if result.Status() != StatusPassed {
+		t.Fatalf("status = %q, want passed: %#v", result.Status(), result)
+	}
+	if _, err := os.Stat(filepath.Join(opts.StateDir, "operation.lock")); err != nil {
+		t.Fatalf("operation lock missing: %v", err)
+	}
+}
+
 func TestCheckFailsDirtyTarget(t *testing.T) {
 	deps, req, opts := preflightFixture(t)
 	worktree := target.RepositoryWorktree("/target", "arcoris/foundation")

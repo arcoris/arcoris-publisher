@@ -100,6 +100,66 @@ func TestPublishTransactionLockReleaseUsesServiceLockOps(t *testing.T) {
 	}
 }
 
+func TestPublishRefusesExistingOperationLock(t *testing.T) {
+	req, fakeGit, worktree := publishRequest(t, nil)
+	fakeGit.Statuses[worktree] = dirtyStatus()
+	opts := publishOptions(t, Options{})
+	writeOperationLockFile(t, opts.StateDir, operationLockPrune, "other-token")
+
+	_, err := New(Dependencies{Git: fakeGit}, opts).Publish(context.Background(), req)
+	if err == nil {
+		t.Fatal("Publish() error = nil")
+	}
+	if _, err := os.Stat(filepath.Join(opts.StateDir, "publish.lock")); !os.IsNotExist(err) {
+		t.Fatalf("publish lock exists or stat failed: %v", err)
+	}
+	if _, err := os.Stat(operationLockPath(opts.StateDir)); err != nil {
+		t.Fatalf("operation lock missing: %v", err)
+	}
+}
+
+func TestPublishReportsOperationLockReleaseFailure(t *testing.T) {
+	req, fakeGit, worktree := publishRequest(t, nil)
+	fakeGit.Statuses[worktree] = dirtyStatus()
+	opts := publishOptions(t, Options{})
+	service := New(Dependencies{Git: fakeGit}, opts)
+	ops := testOperationLockOps()
+	failSync := false
+	ops.beforeRemove = func() { failSync = true }
+	ops.syncParent = func(string) error {
+		if failSync {
+			return errors.New("operation sync refused")
+		}
+		return nil
+	}
+	service.operationLockOps = ops
+
+	result, err := service.Publish(context.Background(), req)
+	if err == nil {
+		t.Fatal("Publish() error = nil")
+	}
+	got, ok := err.(*Error)
+	if !ok {
+		t.Fatalf("error type = %T", err)
+	}
+	if got.Code != CodeLockFailed {
+		t.Fatalf("Code = %q", got.Code)
+	}
+	if !result.Published() || !result.HasTransaction() {
+		t.Fatalf("partial result = %#v", result)
+	}
+	warnings := result.Transaction().Warnings
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "operation lock cleanup sync failed after lock removal") {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	if _, err := os.Stat(filepath.Join(opts.StateDir, "publish.lock")); !os.IsNotExist(err) {
+		t.Fatalf("publish lock exists or stat failed: %v", err)
+	}
+	if _, err := os.Stat(operationLockPath(opts.StateDir)); !os.IsNotExist(err) {
+		t.Fatalf("operation lock exists or stat failed: %v", err)
+	}
+}
+
 func TestPublishReportsTransactionLockReleaseFailures(t *testing.T) {
 	tests := []struct {
 		name            string

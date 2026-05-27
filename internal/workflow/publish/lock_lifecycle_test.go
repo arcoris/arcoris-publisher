@@ -41,6 +41,22 @@ func TestShowTransactionLockStates(t *testing.T) {
 		}
 	})
 
+	t.Run("operation lock ignored", func(t *testing.T) {
+		stateDir := t.TempDir()
+		writeOperationLockFile(t, stateDir, operationLockPublish, "other-token")
+
+		result, err := InspectTransactionLock(ctx, stateDir)
+		if err != nil {
+			t.Fatalf("InspectTransactionLock() error = %v", err)
+		}
+		if result.Status != LockShowStatusAbsent || result.Reason != LockShowReasonLockAbsent {
+			t.Fatalf("result = %#v", result)
+		}
+		if _, err := os.Stat(operationLockPath(stateDir)); err != nil {
+			t.Fatalf("operation lock missing: %v", err)
+		}
+	})
+
 	t.Run("present with journal", func(t *testing.T) {
 		stateDir := t.TempDir()
 		store := NewFileJournalStore(stateDir)
@@ -605,6 +621,66 @@ func TestClearTransactionLockDeleteAndSyncFailures(t *testing.T) {
 		}
 		if retry.Status != LockClearStatusRefused || retry.Reason != LockClearReasonLockAbsent {
 			t.Fatalf("retry result = %#v", retry)
+		}
+	})
+}
+
+func TestClearTransactionLockOperationLock(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("existing operation lock refuses clear", func(t *testing.T) {
+		service := New(Dependencies{Git: porttest.NewGit()}, Options{})
+		stateDir := t.TempDir()
+		store := NewFileJournalStore(stateDir)
+		writePruneJournal(t, store, "tx-one", TransactionStatusCommitted, time.Unix(1, 0).UTC())
+		writeLockFile(t, stateDir, "tx-one")
+		writeOperationLockFile(t, stateDir, operationLockPublish, "other-token")
+
+		result, err := service.ClearTransactionLock(ctx, stateDir, LockClearOptions{TransactionID: "tx-one", Confirm: "tx-one"})
+		if err == nil {
+			t.Fatal("ClearTransactionLock() error = nil")
+		}
+		if result.Status != LockClearStatusFailed || result.Reason != LockClearReasonOperationLockExists {
+			t.Fatalf("result = %#v", result)
+		}
+		assertLockExists(t, stateDir)
+		assertJournalExists(t, store, "tx-one")
+		if _, err := os.Stat(operationLockPath(stateDir)); err != nil {
+			t.Fatalf("operation lock missing: %v", err)
+		}
+	})
+
+	t.Run("release sync failure after clear is partial outcome", func(t *testing.T) {
+		service := New(Dependencies{Git: porttest.NewGit()}, Options{})
+		stateDir := t.TempDir()
+		store := NewFileJournalStore(stateDir)
+		writePruneJournal(t, store, "tx-one", TransactionStatusCommitted, time.Unix(1, 0).UTC())
+		writeLockFile(t, stateDir, "tx-one")
+		ops := testOperationLockOps()
+		failSync := false
+		ops.beforeRemove = func() { failSync = true }
+		ops.syncParent = func(string) error {
+			if failSync {
+				return errors.New("operation sync refused")
+			}
+			return nil
+		}
+		service.operationLockOps = ops
+
+		result, err := service.ClearTransactionLock(ctx, stateDir, LockClearOptions{TransactionID: "tx-one", Confirm: "tx-one"})
+		if err == nil {
+			t.Fatal("ClearTransactionLock() error = nil")
+		}
+		if result.Status != LockClearStatusFailed || result.Reason != LockClearReasonOperationLockRelease {
+			t.Fatalf("result = %#v", result)
+		}
+		if !result.LockCleared || result.PostClearState != LockPostClearReadyForPublish {
+			t.Fatalf("partial result = %#v", result)
+		}
+		assertLockMissing(t, stateDir)
+		assertJournalExists(t, store, "tx-one")
+		if _, err := os.Stat(operationLockPath(stateDir)); !os.IsNotExist(err) {
+			t.Fatalf("operation lock exists or stat failed: %v", err)
 		}
 	})
 }

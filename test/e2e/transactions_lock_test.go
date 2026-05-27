@@ -192,6 +192,22 @@ func TestTransactionsLockClearMissingJournalIsUnverified(t *testing.T) {
 	assertPathMissing(t, transactionJournalPath(stateDir, "tx-orphan"))
 }
 
+func TestTransactionsLockClearRefusesOperationLock(t *testing.T) {
+	stateDir := t.TempDir()
+	writeE2ETransactionJournal(t, stateDir, "tx-committed", "committed", time.Now())
+	writeE2ELockFile(t, stateDir, "tx-committed")
+	writeE2EOperationLock(t, stateDir, "publish")
+
+	_, decoded := runTransactionsLockClearJSON(t, stateDir, 1, "tx-committed")
+
+	if got := stringField(t, decoded, "reason"); got != "operation_lock_exists" {
+		t.Fatalf("reason = %q", got)
+	}
+	assertFileExists(t, transactionLockPath(stateDir))
+	assertFileExists(t, transactionJournalPath(stateDir, "tx-committed"))
+	assertFileExists(t, transactionOperationLockPath(stateDir))
+}
+
 func TestTransactionsLockNoPathLeaksByDefault(t *testing.T) {
 	stateDir := t.TempDir()
 	writeE2ETransactionJournal(t, stateDir, "tx-committed", "committed", time.Now())
@@ -205,6 +221,7 @@ func TestTransactionsLockNoPathLeaksByDefault(t *testing.T) {
 func TestTransactionsLockDiagnoseReportsBlockersReadOnly(t *testing.T) {
 	stateDir := t.TempDir()
 	writeE2ETransactionJournal(t, stateDir, "tx-failed", "failed", time.Now())
+	writeE2EOperationLock(t, stateDir, "publish")
 
 	result := runArcpub(t, "transactions", "diagnose", "--state-dir", stateDir, "--output", "json")
 	assertExitCode(t, result, 0)
@@ -213,6 +230,21 @@ func TestTransactionsLockDiagnoseReportsBlockersReadOnly(t *testing.T) {
 	assertContains(t, result.Stdout, `"kind": "failed_journal"`)
 	assertNoLocalPathLeak(t, result.Stdout, stateDir)
 	assertFileExists(t, transactionJournalPath(stateDir, "tx-failed"))
+	assertFileExists(t, transactionOperationLockPath(stateDir))
+}
+
+func TestTransactionsLockDiagnoseRendersPartialErrors(t *testing.T) {
+	stateDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(stateDir, "transactions"), []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	result := runArcpub(t, "transactions", "diagnose", "--state-dir", stateDir, "--output", "json")
+	assertExitCode(t, result, 1)
+	assertContains(t, result.Stdout, `"kind": "transactions-diagnostics"`)
+	assertContains(t, result.Stdout, `"kind": "journal_directory_read_failed"`)
+	assertContains(t, result.Stdout, `"reason": "journal_directory_read_failed"`)
+	assertNoLocalPathLeak(t, result.Stdout, stateDir)
 }
 
 func runTransactionsLockShowJSON(t *testing.T, stateDir string, wantCode int) (commandResult, map[string]any) {
@@ -259,4 +291,19 @@ func writeE2ERawLockFile(t *testing.T, stateDir string, data string) {
 
 func transactionLockPath(stateDir string) string {
 	return filepath.Join(stateDir, "publish.lock")
+}
+
+func writeE2EOperationLock(t *testing.T, stateDir string, operation string) {
+	t.Helper()
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	content := "schemaVersion=1\noperation=" + operation + "\ntoken=token-one\npid=1\nstartedAt=2026-01-01T00:00:00Z\n"
+	if err := os.WriteFile(transactionOperationLockPath(stateDir), []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+}
+
+func transactionOperationLockPath(stateDir string) string {
+	return filepath.Join(stateDir, "operation.lock")
 }

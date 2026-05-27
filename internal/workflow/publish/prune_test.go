@@ -16,6 +16,7 @@ package publish
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -200,6 +201,62 @@ func TestPruneServiceCorruptLockPolicy(t *testing.T) {
 	}
 	assertLockExists(t, stateDir)
 	assertJournalExists(t, store, "tx-committed")
+}
+
+func TestPruneServiceOperationLockPolicy(t *testing.T) {
+	ctx := context.Background()
+	stateDir := t.TempDir()
+	store := NewFileJournalStore(stateDir)
+	writePruneJournal(t, store, "tx-committed", TransactionStatusCommitted, time.Unix(1, 0).UTC())
+	writeOperationLockFile(t, stateDir, operationLockPublish, "other-token")
+
+	service := New(Dependencies{Git: porttest.NewGit()}, Options{})
+	if _, err := service.PruneTransactions(ctx, stateDir, PruneOptions{Statuses: []TransactionStatus{TransactionStatusCommitted}}); err == nil {
+		t.Fatal("PruneTransactions() with operation lock error = nil")
+	}
+	assertJournalExists(t, store, "tx-committed")
+	if _, err := os.Stat(operationLockPath(stateDir)); err != nil {
+		t.Fatalf("operation lock missing: %v", err)
+	}
+
+	result, err := service.PruneTransactions(ctx, stateDir, PruneOptions{Statuses: []TransactionStatus{TransactionStatusCommitted}, DryRun: true})
+	if err != nil {
+		t.Fatalf("PruneTransactions() dry-run error = %v", err)
+	}
+	if result.Status != PruneStatusDryRun || len(result.Matched) != 1 {
+		t.Fatalf("dry-run result = %#v", result)
+	}
+}
+
+func TestPruneServiceOperationLockReleaseFailure(t *testing.T) {
+	ctx := context.Background()
+	stateDir := t.TempDir()
+	store := NewFileJournalStore(stateDir)
+	writePruneJournal(t, store, "tx-committed", TransactionStatusCommitted, time.Unix(1, 0).UTC())
+
+	service := New(Dependencies{Git: porttest.NewGit()}, Options{})
+	ops := testOperationLockOps()
+	failSync := false
+	ops.beforeRemove = func() { failSync = true }
+	ops.syncParent = func(string) error {
+		if failSync {
+			return errors.New("operation sync refused")
+		}
+		return nil
+	}
+	service.operationLockOps = ops
+
+	result, err := service.PruneTransactions(ctx, stateDir, PruneOptions{Statuses: []TransactionStatus{TransactionStatusCommitted}})
+	if err == nil {
+		t.Fatal("PruneTransactions() error = nil")
+	}
+	if result.Status != PruneStatusFailed || len(result.Warnings) != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	assertJournalMissing(t, store, "tx-committed")
+	if _, err := os.Stat(operationLockPath(stateDir)); !os.IsNotExist(err) {
+		t.Fatalf("operation lock exists or stat failed: %v", err)
+	}
 }
 
 func writePruneJournal(t *testing.T, store FileJournalStore, id TransactionID, status TransactionStatus, at time.Time) {

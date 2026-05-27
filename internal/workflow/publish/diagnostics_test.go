@@ -49,6 +49,22 @@ func TestInspectTransactionStateNoLockNoJournals(t *testing.T) {
 	}
 }
 
+func TestInspectTransactionStateIgnoresOperationLock(t *testing.T) {
+	stateDir := t.TempDir()
+	writeOperationLockFile(t, stateDir, operationLockPublish, "other-token")
+
+	diagnostics, err := InspectTransactionState(context.Background(), stateDir)
+	if err != nil {
+		t.Fatalf("InspectTransactionState() error = %v", err)
+	}
+	if diagnostics.PublishBlocked || len(diagnostics.Blockers) != 0 {
+		t.Fatalf("diagnostics = %#v", diagnostics)
+	}
+	if _, err := os.Stat(operationLockPath(stateDir)); err != nil {
+		t.Fatalf("operation lock missing: %v", err)
+	}
+}
+
 func TestInspectTransactionStateJournalPolicyMatrix(t *testing.T) {
 	tests := []struct {
 		id          TransactionID

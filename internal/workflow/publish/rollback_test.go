@@ -16,6 +16,7 @@ package publish
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -166,5 +167,34 @@ func TestRollbackTransactionRefusesExistingLock(t *testing.T) {
 	_, err = New(Dependencies{Git: porttest.NewGit()}, Options{}).RollbackTransaction(ctx, stateDir, "tx-test")
 	if err == nil {
 		t.Fatal("RollbackTransaction() error = nil")
+	}
+	if _, err := os.Stat(operationLockPath(stateDir)); !os.IsNotExist(err) {
+		t.Fatalf("operation lock exists or stat failed: %v", err)
+	}
+}
+
+func TestRollbackTransactionRefusesExistingOperationLock(t *testing.T) {
+	ctx := context.Background()
+	stateDir := t.TempDir()
+	store := NewFileJournalStore(stateDir)
+	if err := store.Create(ctx, TransactionJournal{
+		ID:        "tx-test",
+		Status:    TransactionStatusFailed,
+		StartedAt: time.Unix(1, 0).UTC(),
+		UpdatedAt: time.Unix(1, 0).UTC(),
+	}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	writeOperationLockFile(t, stateDir, operationLockPublish, "other-token")
+
+	journal, err := New(Dependencies{Git: porttest.NewGit()}, Options{}).RollbackTransaction(ctx, stateDir, "tx-test")
+	if err == nil {
+		t.Fatal("RollbackTransaction() error = nil")
+	}
+	if journal.ID != "tx-test" {
+		t.Fatalf("journal = %#v", journal)
+	}
+	if _, err := os.Stat(operationLockPath(stateDir)); err != nil {
+		t.Fatalf("operation lock missing: %v", err)
 	}
 }

@@ -16,6 +16,7 @@ package publish
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -67,8 +68,17 @@ type PruneEntry struct {
 // PruneTransactions deletes only selected terminal transaction journals. A
 // live publish lock blocks non-dry-run prune because prune mutates transaction
 // state and must not race an owner that still holds publish.lock.
-func (s Service) PruneTransactions(ctx context.Context, stateDir string, opts PruneOptions) (PruneResult, error) {
+func (s Service) PruneTransactions(ctx context.Context, stateDir string, opts PruneOptions) (result PruneResult, err error) {
 	if !opts.DryRun {
+		var operationLock operationLock
+		operationLock, err = acquireOperationLock(ctx, stateDir, operationLockPrune, s.operationLockOps)
+		if err != nil {
+			return PruneResult{Status: PruneStatusFailed}, operationLockAcquireError(operationLockPrune, err)
+		}
+		defer func() {
+			result, err = releaseOperationLockForPrune(operationLock, result, err)
+		}()
+
 		if lock, ok, err := currentTransactionLock(stateDir); err != nil {
 			return PruneResult{Status: PruneStatusFailed}, &Error{Code: CodeLockFailed, Message: "read publish transaction lock failed", Cause: err}
 		} else if ok {
@@ -78,11 +88,25 @@ func (s Service) PruneTransactions(ctx context.Context, stateDir string, opts Pr
 			}
 		}
 	}
-	result, err := NewFileJournalStore(stateDir).Prune(ctx, opts)
+	result, err = NewFileJournalStore(stateDir).Prune(ctx, opts)
 	if err != nil {
 		return result, &Error{Code: CodePruneFailed, Message: "prune publish transactions failed", Cause: err}
 	}
 	return result, nil
+}
+
+func releaseOperationLockForPrune(lock operationLock, result PruneResult, err error) (PruneResult, error) {
+	outcome, releaseErr := lock.Release()
+	if releaseErr == nil {
+		return result, err
+	}
+	releaseFailure := operationLockReleaseError(outcome, releaseErr)
+	result.Warnings = append(result.Warnings, operationLockReleaseWarning(outcome, releaseErr))
+	if err != nil {
+		return result, errors.Join(err, releaseFailure)
+	}
+	result.Status = PruneStatusFailed
+	return result, releaseFailure
 }
 
 // Prune safely removes selected terminal transaction journals from disk.

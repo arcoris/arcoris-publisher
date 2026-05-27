@@ -134,6 +134,21 @@ func TestTransactionsPruneBlockedByLock(t *testing.T) {
 	assertFileExists(t, transactionJournalPath(stateDir, "tx-committed"))
 }
 
+func TestTransactionsPruneBlockedByOperationLock(t *testing.T) {
+	stateDir := t.TempDir()
+	writeE2ETransactionJournal(t, stateDir, "tx-committed", "committed", time.Now().Add(-48*time.Hour))
+	writeE2EOperationLock(t, stateDir, "publish")
+
+	actual := runTransactionsPrune(t, stateDir, 1, "--status", "committed")
+	assertContains(t, actual.Stderr, "operation lock")
+	assertFileExists(t, transactionJournalPath(stateDir, "tx-committed"))
+	assertFileExists(t, transactionOperationLockPath(stateDir))
+
+	runTransactionsPruneJSON(t, stateDir, 0, "--dry-run", "--status", "committed")
+	assertFileExists(t, transactionJournalPath(stateDir, "tx-committed"))
+	assertFileExists(t, transactionOperationLockPath(stateDir))
+}
+
 func runTransactionsPruneJSON(t *testing.T, stateDir string, wantCode int, extra ...string) (commandResult, map[string]any) {
 	t.Helper()
 	result := runTransactionsPrune(t, stateDir, wantCode, append(extra, "--output", "json")...)
