@@ -208,13 +208,17 @@ func TestPruneServiceOperationLockPolicy(t *testing.T) {
 	stateDir := t.TempDir()
 	store := NewFileJournalStore(stateDir)
 	writePruneJournal(t, store, "tx-committed", TransactionStatusCommitted, time.Unix(1, 0).UTC())
+	writeRawLockFile(t, stateDir, "pid=1\n")
 	writeOperationLockFile(t, stateDir, operationLockPublish, "other-token")
 
 	service := New(Dependencies{Git: porttest.NewGit()}, Options{})
 	if _, err := service.PruneTransactions(ctx, stateDir, PruneOptions{Statuses: []TransactionStatus{TransactionStatusCommitted}}); err == nil {
 		t.Fatal("PruneTransactions() with operation lock error = nil")
+	} else if !errors.Is(err, errOperationLockExists) {
+		t.Fatalf("PruneTransactions() error = %v, want operation lock exists", err)
 	}
 	assertJournalExists(t, store, "tx-committed")
+	assertLockExists(t, stateDir)
 	if _, err := os.Stat(operationLockPath(stateDir)); err != nil {
 		t.Fatalf("operation lock missing: %v", err)
 	}

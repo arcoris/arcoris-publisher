@@ -40,19 +40,19 @@ func (s Service) ShowTransaction(ctx context.Context, stateDir string, id Transa
 
 // RollbackTransaction attempts compensating rollback from a durable journal.
 func (s Service) RollbackTransaction(ctx context.Context, stateDir string, id TransactionID) (journal TransactionJournal, err error) {
-	store := NewFileJournalStore(stateDir)
-	journal, err = store.Load(ctx, id)
-	if err != nil {
-		return TransactionJournal{}, &Error{Code: CodeRecoveryFailed, Message: "load publish transaction failed", Cause: err}
-	}
 	operationLock, err := acquireOperationLock(ctx, stateDir, operationLockRollback, s.operationLockOps)
 	if err != nil {
-		return journal, operationLockAcquireError(operationLockRollback, err)
+		return TransactionJournal{}, operationLockAcquireError(operationLockRollback, err)
 	}
 	defer func() {
 		journal, err = releaseOperationLockForRollback(operationLock, journal, err)
 	}()
 
+	store := NewFileJournalStore(stateDir)
+	journal, err = store.Load(ctx, id)
+	if err != nil {
+		return TransactionJournal{}, &Error{Code: CodeRecoveryFailed, Message: "load publish transaction failed", Cause: err}
+	}
 	if lock, ok, err := currentTransactionLock(stateDir); err != nil {
 		return journal, &Error{Code: CodeLockFailed, Message: "read publish transaction lock failed", Cause: err}
 	} else if ok {

@@ -628,25 +628,105 @@ func TestClearTransactionLockDeleteAndSyncFailures(t *testing.T) {
 func TestClearTransactionLockOperationLock(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("existing operation lock refuses clear", func(t *testing.T) {
-		service := New(Dependencies{Git: porttest.NewGit()}, Options{})
-		stateDir := t.TempDir()
-		store := NewFileJournalStore(stateDir)
-		writePruneJournal(t, store, "tx-one", TransactionStatusCommitted, time.Unix(1, 0).UTC())
-		writeLockFile(t, stateDir, "tx-one")
-		writeOperationLockFile(t, stateDir, operationLockPublish, "other-token")
+	t.Run("existing operation lock wins over state inspection", func(t *testing.T) {
+		tests := []struct {
+			name           string
+			setup          func(t *testing.T, stateDir string, store FileJournalStore)
+			wantLockExists bool
+			wantJournalID  TransactionID
+		}{
+			{
+				name: "committed lock",
+				setup: func(t *testing.T, stateDir string, store FileJournalStore) {
+					writePruneJournal(t, store, "tx-one", TransactionStatusCommitted, time.Unix(1, 0).UTC())
+					writeLockFile(t, stateDir, "tx-one")
+				},
+				wantLockExists: true,
+				wantJournalID:  "tx-one",
+			},
+			{name: "absent lock"},
+			{
+				name: "corrupt lock",
+				setup: func(t *testing.T, stateDir string, _ FileJournalStore) {
+					writeRawLockFile(t, stateDir, "pid=1\n")
+				},
+				wantLockExists: true,
+			},
+			{
+				name: "mismatched lock",
+				setup: func(t *testing.T, stateDir string, store FileJournalStore) {
+					writePruneJournal(t, store, "tx-other", TransactionStatusCommitted, time.Unix(1, 0).UTC())
+					writeLockFile(t, stateDir, "tx-other")
+				},
+				wantLockExists: true,
+				wantJournalID:  "tx-other",
+			},
+			{
+				name: "active journal",
+				setup: func(t *testing.T, stateDir string, store FileJournalStore) {
+					writePruneJournal(t, store, "tx-one", TransactionStatusPending, time.Unix(1, 0).UTC())
+					writeLockFile(t, stateDir, "tx-one")
+				},
+				wantLockExists: true,
+				wantJournalID:  "tx-one",
+			},
+			{
+				name: "missing journal",
+				setup: func(t *testing.T, stateDir string, _ FileJournalStore) {
+					writeLockFile(t, stateDir, "tx-one")
+				},
+				wantLockExists: true,
+			},
+			{
+				name: "corrupt journal",
+				setup: func(t *testing.T, stateDir string, _ FileJournalStore) {
+					writeLockFile(t, stateDir, "tx-one")
+					txDir := filepath.Join(stateDir, "transactions")
+					if err := os.MkdirAll(txDir, 0o700); err != nil {
+						t.Fatalf("MkdirAll() error = %v", err)
+					}
+					if err := os.WriteFile(filepath.Join(txDir, "tx-one.json"), []byte("{"), 0o600); err != nil {
+						t.Fatalf("WriteFile() error = %v", err)
+					}
+				},
+				wantLockExists: true,
+				wantJournalID:  "tx-one",
+			},
+		}
 
-		result, err := service.ClearTransactionLock(ctx, stateDir, LockClearOptions{TransactionID: "tx-one", Confirm: "tx-one"})
-		if err == nil {
-			t.Fatal("ClearTransactionLock() error = nil")
-		}
-		if result.Status != LockClearStatusFailed || result.Reason != LockClearReasonOperationLockExists {
-			t.Fatalf("result = %#v", result)
-		}
-		assertLockExists(t, stateDir)
-		assertJournalExists(t, store, "tx-one")
-		if _, err := os.Stat(operationLockPath(stateDir)); err != nil {
-			t.Fatalf("operation lock missing: %v", err)
+		for _, tt := range tests {
+			tt := tt
+			t.Run(tt.name, func(t *testing.T) {
+				service := New(Dependencies{Git: porttest.NewGit()}, Options{})
+				stateDir := t.TempDir()
+				store := NewFileJournalStore(stateDir)
+				if tt.setup != nil {
+					tt.setup(t, stateDir, store)
+				}
+				writeOperationLockFile(t, stateDir, operationLockPublish, "other-token")
+
+				result, err := service.ClearTransactionLock(ctx, stateDir, LockClearOptions{TransactionID: "tx-one", Confirm: "tx-one"})
+				if err == nil {
+					t.Fatal("ClearTransactionLock() error = nil")
+				}
+				if result.Status != LockClearStatusFailed || result.Reason != LockClearReasonOperationLockExists {
+					t.Fatalf("result = %#v", result)
+				}
+				if !errors.Is(err, errOperationLockExists) {
+					t.Fatalf("ClearTransactionLock() error = %v, want operation lock exists", err)
+				}
+				if tt.wantLockExists {
+					assertLockExists(t, stateDir)
+				} else {
+					assertLockMissing(t, stateDir)
+				}
+				if tt.wantJournalID != "" {
+					assertJournalExists(t, store, tt.wantJournalID)
+				}
+				if _, err := os.Stat(operationLockPath(stateDir)); err != nil {
+					t.Fatalf("operation lock missing: %v", err)
+				}
+			})
 		}
 	})
 
@@ -683,6 +763,44 @@ func TestClearTransactionLockOperationLock(t *testing.T) {
 			t.Fatalf("operation lock exists or stat failed: %v", err)
 		}
 	})
+}
+
+func TestClearTransactionLockUsageErrorsDoNotAcquireOperationLock(t *testing.T) {
+	tests := []struct {
+		name       string
+		opts       LockClearOptions
+		wantReason LockClearReason
+	}{
+		{name: "missing transaction", opts: LockClearOptions{Confirm: "tx-one"}, wantReason: LockClearReasonMissingTransactionID},
+		{name: "missing confirm", opts: LockClearOptions{TransactionID: "tx-one"}, wantReason: LockClearReasonMissingConfirmation},
+		{name: "confirm mismatch", opts: LockClearOptions{TransactionID: "tx-one", Confirm: "tx-two"}, wantReason: LockClearReasonConfirmationMismatch},
+		{name: "invalid transaction", opts: LockClearOptions{TransactionID: "../bad", Confirm: "../bad"}, wantReason: LockClearReasonInvalidTransactionID},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			service := New(Dependencies{Git: porttest.NewGit()}, Options{})
+			tokenCalled := false
+			ops := testOperationLockOps()
+			ops.token = func() (string, error) {
+				tokenCalled = true
+				return "token-one", nil
+			}
+			service.operationLockOps = ops
+
+			result, err := service.ClearTransactionLock(context.Background(), t.TempDir(), tt.opts)
+			if err == nil {
+				t.Fatal("ClearTransactionLock() error = nil")
+			}
+			if result.Reason != tt.wantReason {
+				t.Fatalf("reason = %q, want %q", result.Reason, tt.wantReason)
+			}
+			if tokenCalled {
+				t.Fatal("operation lock acquired for usage error")
+			}
+		})
+	}
 }
 
 func TestClearTransactionLockRefusesChangedLockBeforeDelete(t *testing.T) {

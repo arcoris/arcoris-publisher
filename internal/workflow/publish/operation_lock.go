@@ -26,8 +26,8 @@ import (
 	"time"
 )
 
-// operationLock serializes transaction state mutations. It does not replace
-// publish.lock, which still records semantic ownership of one publish transaction.
+// operationLock serializes transaction mutation decisions and writes. It does
+// not replace publish.lock, which still records ownership of one publish transaction.
 type operationLock struct {
 	path      string
 	operation operationLockOperation

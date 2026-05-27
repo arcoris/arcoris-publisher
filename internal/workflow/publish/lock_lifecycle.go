@@ -276,6 +276,17 @@ func (s Service) ClearTransactionLock(ctx context.Context, stateDir string, opts
 		result.Message = "resolve publish lock path failed"
 		return result, &Error{Code: CodeLockFailed, Message: result.Message, Cause: err}
 	}
+	operationLock, err := acquireOperationLock(ctx, stateDir, operationLockLockClear, s.operationLockOps)
+	if err != nil {
+		result.Status = LockClearStatusFailed
+		result.Reason = lockClearOperationLockReason(err)
+		result.Message = lockClearOperationLockMessage(result.Reason)
+		return result, &Error{Code: CodeLockFailed, Message: result.Message, Cause: err}
+	}
+	defer func() {
+		result, err = releaseOperationLockForClear(operationLock, result, err)
+	}()
+
 	lock, err := readTransactionLock(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -323,17 +334,6 @@ func (s Service) ClearTransactionLock(ctx context.Context, stateDir string, opts
 		result.Message = "referenced transaction is active"
 		return result, &Error{Code: CodeLockFailed, Message: fmt.Sprintf("transaction %s is %s; refusing to clear active publish lock", lock.ID, journal.Status)}
 	}
-
-	operationLock, err := acquireOperationLock(ctx, stateDir, operationLockLockClear, s.operationLockOps)
-	if err != nil {
-		result.Status = LockClearStatusFailed
-		result.Reason = lockClearOperationLockReason(err)
-		result.Message = lockClearOperationLockMessage(result.Reason)
-		return result, &Error{Code: CodeLockFailed, Message: result.Message, Cause: err}
-	}
-	defer func() {
-		result, err = releaseOperationLockForClear(operationLock, result, err)
-	}()
 
 	outcome, err := removeTransactionLockIfCurrent(path, lock.ID, s.lockOps)
 	if err != nil {

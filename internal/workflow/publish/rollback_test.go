@@ -16,7 +16,9 @@ package publish
 
 import (
 	"context"
+	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -174,6 +176,67 @@ func TestRollbackTransactionRefusesExistingLock(t *testing.T) {
 }
 
 func TestRollbackTransactionRefusesExistingOperationLock(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, stateDir string)
+	}{
+		{
+			name: "valid failed journal",
+			setup: func(t *testing.T, stateDir string) {
+				if err := NewFileJournalStore(stateDir).Create(context.Background(), TransactionJournal{
+					ID:        "tx-test",
+					Status:    TransactionStatusFailed,
+					StartedAt: time.Unix(1, 0).UTC(),
+					UpdatedAt: time.Unix(1, 0).UTC(),
+				}); err != nil {
+					t.Fatalf("Create() error = %v", err)
+				}
+			},
+		},
+		{
+			name: "missing journal",
+		},
+		{
+			name: "corrupt journal",
+			setup: func(t *testing.T, stateDir string) {
+				txDir := filepath.Join(stateDir, "transactions")
+				if err := os.MkdirAll(txDir, 0o700); err != nil {
+					t.Fatalf("MkdirAll() error = %v", err)
+				}
+				if err := os.WriteFile(filepath.Join(txDir, "tx-test.json"), []byte("{"), 0o600); err != nil {
+					t.Fatalf("WriteFile() error = %v", err)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			stateDir := t.TempDir()
+			if tt.setup != nil {
+				tt.setup(t, stateDir)
+			}
+			writeOperationLockFile(t, stateDir, operationLockPublish, "other-token")
+
+			journal, err := New(Dependencies{Git: porttest.NewGit()}, Options{}).RollbackTransaction(context.Background(), stateDir, "tx-test")
+			if err == nil {
+				t.Fatal("RollbackTransaction() error = nil")
+			}
+			if !errors.Is(err, errOperationLockExists) {
+				t.Fatalf("RollbackTransaction() error = %v, want operation lock exists", err)
+			}
+			if tt.setup == nil && journal.ID != "" {
+				t.Fatalf("journal = %#v, want zero value for missing journal blocked before load", journal)
+			}
+			if _, err := os.Stat(operationLockPath(stateDir)); err != nil {
+				t.Fatalf("operation lock missing: %v", err)
+			}
+		})
+	}
+}
+
+func TestReadOnlyTransactionsIgnoreOperationLock(t *testing.T) {
 	ctx := context.Background()
 	stateDir := t.TempDir()
 	store := NewFileJournalStore(stateDir)
@@ -186,15 +249,98 @@ func TestRollbackTransactionRefusesExistingOperationLock(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 	writeOperationLockFile(t, stateDir, operationLockPublish, "other-token")
+	service := New(Dependencies{Git: porttest.NewGit()}, Options{})
 
-	journal, err := New(Dependencies{Git: porttest.NewGit()}, Options{}).RollbackTransaction(ctx, stateDir, "tx-test")
-	if err == nil {
-		t.Fatal("RollbackTransaction() error = nil")
+	summaries, err := service.ListTransactions(ctx, stateDir)
+	if err != nil {
+		t.Fatalf("ListTransactions() error = %v", err)
+	}
+	if len(summaries) != 1 || summaries[0].ID != "tx-test" {
+		t.Fatalf("summaries = %#v", summaries)
+	}
+	journal, err := service.ShowTransaction(ctx, stateDir, "tx-test")
+	if err != nil {
+		t.Fatalf("ShowTransaction() error = %v", err)
 	}
 	if journal.ID != "tx-test" {
 		t.Fatalf("journal = %#v", journal)
 	}
 	if _, err := os.Stat(operationLockPath(stateDir)); err != nil {
 		t.Fatalf("operation lock missing: %v", err)
+	}
+}
+
+func TestRollbackTransactionLoadsJournalAfterOperationLock(t *testing.T) {
+	ctx := context.Background()
+	stateDir := t.TempDir()
+	store := NewFileJournalStore(stateDir)
+	if err := store.Create(ctx, TransactionJournal{
+		ID:        "tx-test",
+		Status:    TransactionStatusFailed,
+		StartedAt: time.Unix(1, 0).UTC(),
+		UpdatedAt: time.Unix(1, 0).UTC(),
+	}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	service := New(Dependencies{Git: porttest.NewGit()}, Options{})
+	ops := testOperationLockOps()
+	mutated := false
+	ops.syncParent = func(string) error {
+		if !mutated {
+			mutated = true
+			if err := store.Update(ctx, TransactionJournal{
+				ID:        "tx-test",
+				Status:    TransactionStatusRolledBack,
+				StartedAt: time.Unix(1, 0).UTC(),
+				UpdatedAt: time.Unix(2, 0).UTC(),
+			}); err != nil {
+				t.Fatalf("Update() error = %v", err)
+			}
+		}
+		return nil
+	}
+	service.operationLockOps = ops
+
+	journal, err := service.RollbackTransaction(ctx, stateDir, "tx-test")
+	if err != nil {
+		t.Fatalf("RollbackTransaction() error = %v", err)
+	}
+	if journal.Status != TransactionStatusRolledBack {
+		t.Fatalf("journal status = %q, want post-acquire rolled_back", journal.Status)
+	}
+}
+
+func TestRollbackTransactionSurfacesOperationLockReleaseFailure(t *testing.T) {
+	ctx := context.Background()
+	stateDir := t.TempDir()
+	if err := NewFileJournalStore(stateDir).Create(ctx, TransactionJournal{
+		ID:        "tx-test",
+		Status:    TransactionStatusRolledBack,
+		StartedAt: time.Unix(1, 0).UTC(),
+		UpdatedAt: time.Unix(1, 0).UTC(),
+	}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	service := New(Dependencies{Git: porttest.NewGit()}, Options{})
+	ops := testOperationLockOps()
+	failSync := false
+	ops.beforeRemove = func() { failSync = true }
+	ops.syncParent = func(string) error {
+		if failSync {
+			return errors.New("operation sync refused")
+		}
+		return nil
+	}
+	service.operationLockOps = ops
+
+	journal, err := service.RollbackTransaction(ctx, stateDir, "tx-test")
+	if err == nil {
+		t.Fatal("RollbackTransaction() error = nil")
+	}
+	if !errors.Is(err, errOperationLockSyncFailed) {
+		t.Fatalf("RollbackTransaction() error = %v, want operation sync failure", err)
+	}
+	if journal.Status != TransactionStatusRolledBack {
+		t.Fatalf("journal = %#v", journal)
 	}
 }

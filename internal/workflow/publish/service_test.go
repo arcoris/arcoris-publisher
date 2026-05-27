@@ -104,14 +104,23 @@ func TestPublishRefusesExistingOperationLock(t *testing.T) {
 	req, fakeGit, worktree := publishRequest(t, nil)
 	fakeGit.Statuses[worktree] = dirtyStatus()
 	opts := publishOptions(t, Options{})
+	if err := os.WriteFile(filepath.Join(opts.StateDir, "transactions"), []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
 	writeOperationLockFile(t, opts.StateDir, operationLockPrune, "other-token")
 
 	_, err := New(Dependencies{Git: fakeGit}, opts).Publish(context.Background(), req)
 	if err == nil {
 		t.Fatal("Publish() error = nil")
 	}
+	if !errors.Is(err, errOperationLockExists) {
+		t.Fatalf("Publish() error = %v, want operation lock exists", err)
+	}
 	if _, err := os.Stat(filepath.Join(opts.StateDir, "publish.lock")); !os.IsNotExist(err) {
 		t.Fatalf("publish lock exists or stat failed: %v", err)
+	}
+	if info, err := os.Stat(filepath.Join(opts.StateDir, "transactions")); err != nil || info.IsDir() {
+		t.Fatalf("transactions marker changed: info=%#v err=%v", info, err)
 	}
 	if _, err := os.Stat(operationLockPath(opts.StateDir)); err != nil {
 		t.Fatalf("operation lock missing: %v", err)
