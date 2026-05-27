@@ -138,8 +138,8 @@ func (s Service) publishTransaction(
 	}
 
 	if err := store.Create(ctx, journal); err != nil {
-		_, _ = lock.Release()
-		return Result{}, &Error{Code: CodeJournalFailed, Message: "create transaction journal failed", Cause: err}
+		releaseOutcome, releaseErr := lock.Release()
+		return Result{}, journalCreateError(err, releaseOutcome, releaseErr)
 	}
 
 	tx := transactionRunner{service: s, request: req, store: store, journal: journal}
@@ -158,17 +158,32 @@ func (s Service) publishTransaction(
 }
 
 func lockReleaseWarning(outcome lockReleaseOutcome, err error) string {
+	return lockReleaseMessage(outcome, err) + ": " + err.Error()
+}
+
+func journalCreateError(createErr error, releaseOutcome lockReleaseOutcome, releaseErr error) *Error {
+	if releaseErr == nil {
+		return &Error{Code: CodeJournalFailed, Message: "create transaction journal failed", Cause: createErr}
+	}
+	return &Error{
+		Code:    CodeJournalFailed,
+		Message: "create transaction journal failed and " + lockReleaseMessage(releaseOutcome, releaseErr),
+		Cause:   errors.Join(createErr, releaseErr),
+	}
+}
+
+func lockReleaseMessage(outcome lockReleaseOutcome, err error) string {
 	switch {
 	case errors.Is(err, errTransactionLockSyncFailed) && outcome.Removed:
-		return "publish transaction lock cleanup sync failed after lock removal: " + err.Error()
+		return "publish transaction lock cleanup sync failed after lock removal"
 	case errors.Is(err, errTransactionLockDeleteFailed):
-		return "publish transaction lock cleanup delete failed: " + err.Error()
+		return "publish transaction lock cleanup delete failed"
 	case errors.Is(err, errTransactionLockChanged):
-		return "publish transaction lock cleanup refused changed lock: " + err.Error()
+		return "publish transaction lock cleanup refused changed lock"
 	case errors.Is(err, errTransactionLockCorrupt):
-		return "publish transaction lock cleanup refused corrupt lock: " + err.Error()
+		return "publish transaction lock cleanup refused corrupt lock"
 	default:
-		return "publish transaction lock cleanup failed: " + err.Error()
+		return "publish transaction lock cleanup failed"
 	}
 }
 

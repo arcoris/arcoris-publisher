@@ -183,6 +183,88 @@ func TestPublishReportsTransactionLockReleaseFailures(t *testing.T) {
 	}
 }
 
+func TestPublishPreservesLockReleaseFailureAfterJournalCreateFailure(t *testing.T) {
+	tests := []struct {
+		name            string
+		lockOps         func(stateDir string) transactionLockOps
+		wantMessagePart string
+		wantLockID      TransactionID
+		wantLockMissing bool
+	}{
+		{
+			name:            "release success",
+			lockOps:         func(string) transactionLockOps { return transactionLockOps{} },
+			wantMessagePart: "create transaction journal failed",
+			wantLockMissing: true,
+		},
+		{
+			name: "delete failed",
+			lockOps: func(string) transactionLockOps {
+				return transactionLockOps{remove: func(string) error { return errors.New("delete refused") }}
+			},
+			wantMessagePart: "create transaction journal failed and publish transaction lock cleanup delete failed",
+			wantLockID:      "tx-test",
+		},
+		{
+			name: "sync failed after removal",
+			lockOps: func(string) transactionLockOps {
+				return transactionLockOps{syncParent: func(string) error { return errors.New("sync refused") }}
+			},
+			wantMessagePart: "create transaction journal failed and publish transaction lock cleanup sync failed after lock removal",
+			wantLockMissing: true,
+		},
+		{
+			name: "lock changed",
+			lockOps: func(stateDir string) transactionLockOps {
+				return transactionLockOps{beforeRemove: func() {
+					writeLockFile(t, stateDir, "tx-other")
+				}}
+			},
+			wantMessagePart: "create transaction journal failed and publish transaction lock cleanup refused changed lock",
+			wantLockID:      "tx-other",
+		},
+		{
+			name: "lock corrupt",
+			lockOps: func(stateDir string) transactionLockOps {
+				return transactionLockOps{beforeRemove: func() {
+					writeRawLockFile(t, stateDir, "pid=1\n")
+				}}
+			},
+			wantMessagePart: "create transaction journal failed and publish transaction lock cleanup refused corrupt lock",
+			wantLockID:      "",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			req, fakeGit, worktree := publishRequest(t, nil)
+			fakeGit.Statuses[worktree] = dirtyStatus()
+			stateDir := t.TempDir()
+			opts := publishOptions(t, Options{StateDir: stateDir})
+			forceJournalCreateFailure(t, stateDir, "tx-test")
+			service := New(Dependencies{Git: fakeGit}, opts)
+			service.lockOps = tt.lockOps(stateDir)
+
+			_, err := service.Publish(context.Background(), req)
+			if err == nil {
+				t.Fatal("Publish() error = nil")
+			}
+			got, ok := err.(*Error)
+			if !ok {
+				t.Fatalf("error type = %T", err)
+			}
+			if got.Code != CodeJournalFailed {
+				t.Fatalf("Code = %q", got.Code)
+			}
+			if !strings.Contains(got.Message, tt.wantMessagePart) {
+				t.Fatalf("Message = %q, want contains %q", got.Message, tt.wantMessagePart)
+			}
+			assertReleaseFailureLockState(t, stateDir, tt.wantLockID, tt.wantLockMissing)
+		})
+	}
+}
+
 func TestPublishDoesNotPushTagWhenBranchPushFails(t *testing.T) {
 	req, fakeGit, worktree := publishRequest(t, nil)
 	fakeGit.Statuses[worktree] = dirtyStatus()
@@ -195,6 +277,37 @@ func TestPublishDoesNotPushTagWhenBranchPushFails(t *testing.T) {
 	}
 	assertCallAbsent(t, fakeGit.Calls, "tag")
 	assertCallAbsent(t, fakeGit.Calls, "push-tag")
+}
+
+func forceJournalCreateFailure(t *testing.T, stateDir string, id TransactionID) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(stateDir, "transactions", id.String()+".json"), 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+}
+
+func assertReleaseFailureLockState(t *testing.T, stateDir string, wantID TransactionID, wantMissing bool) {
+	t.Helper()
+	path := filepath.Join(stateDir, "publish.lock")
+	if wantMissing {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("publish lock exists or stat failed: %v", err)
+		}
+		return
+	}
+	info, err := readTransactionLock(path)
+	if wantID == "" {
+		if err == nil {
+			t.Fatalf("readTransactionLock() error = nil, info=%#v", info)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("readTransactionLock() error = %v", err)
+	}
+	if info.ID != wantID {
+		t.Fatalf("lock id = %q, want %q", info.ID, wantID)
+	}
 }
 
 func TestPublishDryRunDoesNotMutateGit(t *testing.T) {
