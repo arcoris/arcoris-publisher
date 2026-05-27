@@ -282,7 +282,7 @@ func TestTransactionDiagnosticsReportJSONAndText(t *testing.T) {
 	for _, want := range []string{
 		"Transaction diagnostics",
 		"Publish blocked: true",
-		"Operation lock: publish",
+		"Operation lock: publish pid=123 startedAt=2026-01-01T00:00:00Z",
 		"publish_lock: tx-test recovery_transaction",
 		"corrupt_journal: bad.lock.json corrupt_journal",
 		"tx-test: rollback_failed",
@@ -294,6 +294,9 @@ func TestTransactionDiagnosticsReportJSONAndText(t *testing.T) {
 	}
 	if strings.Contains(textBuf.String(), "/state") {
 		t.Fatalf("diagnostics text leaked local path: %s", textBuf.String())
+	}
+	if strings.Contains(textBuf.String(), "token") {
+		t.Fatalf("diagnostics text leaked operation lock token: %s", textBuf.String())
 	}
 }
 
@@ -313,6 +316,131 @@ func TestTransactionDiagnosticsReportIncludesLocalPathsWhenRequested(t *testing.
 	}
 	if report.OperationLock.Path != "/state/operation.lock" {
 		t.Fatalf("operation lock path = %q", report.OperationLock.Path)
+	}
+}
+
+func TestTransactionDiagnosticsReportOperationLockStates(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		lock publish.OperationLockDiagnostic
+		want []string
+	}{
+		{
+			name: "absent",
+			want: []string{`"operationLock":`, `"present": false`},
+		},
+		{
+			name: "present",
+			lock: publish.OperationLockDiagnostic{
+				Present:   true,
+				Operation: "publish",
+				PID:       "123",
+				StartedAt: "2026-01-01T00:00:00Z",
+				Path:      "/state/operation.lock",
+			},
+			want: []string{`"present": true`, `"operation": "publish"`, `"pid": "123"`, `"startedAt": "2026-01-01T00:00:00Z"`},
+		},
+		{
+			name: "corrupt",
+			lock: publish.OperationLockDiagnostic{
+				Present: true,
+				Corrupt: true,
+				Message: "transaction operation lock is corrupt",
+				Path:    "/state/operation.lock",
+			},
+			want: []string{`"present": true`, `"corrupt": true`, `"message": "transaction operation lock is corrupt"`},
+		},
+		{
+			name: "read failed",
+			lock: publish.OperationLockDiagnostic{
+				Present:    true,
+				ReadFailed: true,
+				Message:    "read transaction operation lock failed",
+				Path:       "/state/operation.lock",
+			},
+			want: []string{`"present": true`, `"readFailed": true`, `"message": "read transaction operation lock failed"`},
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			diagnostics := publish.TransactionStateDiagnostics{OperationLock: tt.lock}
+
+			var buf bytes.Buffer
+			if err := New(Options{Format: FormatJSON, Pretty: true}).TransactionDiagnostics(&buf, diagnostics); err != nil {
+				t.Fatalf("TransactionDiagnostics(JSON) error = %v", err)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(buf.String(), want) {
+					t.Fatalf("diagnostics JSON missing %q:\n%s", want, buf.String())
+				}
+			}
+			if strings.Contains(buf.String(), "/state") || strings.Contains(buf.String(), "token") {
+				t.Fatalf("diagnostics JSON leaked path/token: %s", buf.String())
+			}
+
+			var text bytes.Buffer
+			if err := New(Options{Format: FormatText}).TransactionDiagnostics(&text, diagnostics); err != nil {
+				t.Fatalf("TransactionDiagnostics(text) error = %v", err)
+			}
+			if !strings.Contains(text.String(), "Operation lock:") {
+				t.Fatalf("diagnostics text missing operation lock section:\n%s", text.String())
+			}
+			if strings.Contains(text.String(), "/state") || strings.Contains(text.String(), "token") {
+				t.Fatalf("diagnostics text leaked path/token: %s", text.String())
+			}
+		})
+	}
+}
+
+func TestTransactionDiagnosticsReportJournalPolicyFields(t *testing.T) {
+	t.Parallel()
+
+	diagnostics := publish.TransactionStateDiagnostics{
+		Journals: []publish.JournalDiagnostic{
+			{
+				ID:               "tx-committed",
+				Name:             "tx-committed.json",
+				Status:           publish.TransactionStatusCommitted,
+				Prunable:         true,
+				BlocksNewPublish: false,
+				AllowsLockClear:  true,
+			},
+			{
+				ID:               "tx-failed",
+				Name:             "tx-failed.json",
+				Status:           publish.TransactionStatusFailed,
+				Prunable:         false,
+				BlocksNewPublish: true,
+				AllowsLockClear:  true,
+			},
+			{
+				ID:               "tx-pending",
+				Name:             "tx-pending.json",
+				Status:           publish.TransactionStatusPending,
+				Prunable:         false,
+				BlocksNewPublish: true,
+				AllowsLockClear:  false,
+			},
+		},
+	}
+
+	report := BuildTransactionDiagnosticsReport(diagnostics, Options{})
+	want := map[string]TransactionJournalDiagnosticReport{}
+	for _, journal := range report.Journals {
+		want[journal.TransactionID] = journal
+	}
+	if !want["tx-committed"].Prunable || want["tx-committed"].BlocksNewPublish || !want["tx-committed"].AllowsLockClear {
+		t.Fatalf("committed journal report = %#v", want["tx-committed"])
+	}
+	if want["tx-failed"].Prunable || !want["tx-failed"].BlocksNewPublish || !want["tx-failed"].AllowsLockClear {
+		t.Fatalf("failed journal report = %#v", want["tx-failed"])
+	}
+	if want["tx-pending"].Prunable || !want["tx-pending"].BlocksNewPublish || want["tx-pending"].AllowsLockClear {
+		t.Fatalf("pending journal report = %#v", want["tx-pending"])
 	}
 }
 
@@ -343,6 +471,7 @@ func TestTransactionDiagnosticsTextHandlesMissingLabels(t *testing.T) {
 		t.Fatalf("TransactionDiagnostics(text) error = %v", err)
 	}
 	for _, want := range []string{
+		"Operation lock: absent",
 		"journal_directory_read_failed: journal_directory_read_failed",
 		"corrupt_journal: bad.lock.json corrupt_journal",
 		"bad.lock.json: corrupt",

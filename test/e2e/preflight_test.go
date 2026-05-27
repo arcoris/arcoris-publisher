@@ -168,6 +168,21 @@ func TestPreflightFailsOnCorruptLock(t *testing.T) {
 	assertPreflightGlobalFailedCode(t, decoded, "publish-lock", "publish_lock_corrupt")
 }
 
+func TestPreflightFailsOnOperationLockWithoutMutatingIt(t *testing.T) {
+	setup := prepareLocalPublish(t)
+	stateDir := filepath.Join(setup.targetRoot, ".arcpub", "state")
+	writeE2EOperationLock(t, stateDir, "publish")
+
+	result, decoded := runPreflightJSON(t, setup, 1)
+
+	assertPreflightGlobalFailedCode(t, decoded, "publish-lock", "operation_lock_exists")
+	if strings.Contains(result.Stdout, "token-one") {
+		t.Fatalf("preflight leaked operation lock token:\n%s", result.Stdout)
+	}
+	assertNoLocalPathLeak(t, result.Stdout, stateDir)
+	assertFileExists(t, transactionOperationLockPath(stateDir))
+}
+
 func TestPreflightRejectsMultiBranch(t *testing.T) {
 	setup := prepareLocalPublish(t)
 	data, err := os.ReadFile(e2eManifest(setup.root))

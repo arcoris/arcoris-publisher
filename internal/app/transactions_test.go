@@ -113,3 +113,20 @@ func TestDiagnoseTransactionsReturnsWorkflowDiagnostics(t *testing.T) {
 		t.Fatalf("diagnostics = %#v", got)
 	}
 }
+
+func TestDiagnoseTransactionsReturnsPartialDiagnosticsOnIncompleteInspection(t *testing.T) {
+	app, _ := appFixture(t)
+	stateDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(stateDir, "transactions"), []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	result, err := app.DiagnoseTransactions(context.Background(), TransactionRequest{StateDir: stateDir})
+	if err == nil {
+		t.Fatal("DiagnoseTransactions() error = nil")
+	}
+	got := result.Result()
+	if !got.PublishBlocked || len(got.Blockers) != 1 || got.Blockers[0].Kind != publish.TransactionBlockerJournalDirectoryReadFailed {
+		t.Fatalf("diagnostics = %#v", got)
+	}
+}

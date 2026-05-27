@@ -27,6 +27,29 @@ import (
 	"arcoris.dev/arcoris-publisher/internal/workflow/target"
 )
 
+const (
+	checkCodePendingTransaction               = "pending_transaction"
+	checkCodeTransactionRecoveryRequired      = "transaction_recovery_required"
+	checkCodeTransactionJournalCorrupt        = "transaction_journal_corrupt"
+	checkCodeTransactionJournalFileReadFailed = "transaction_journal_file_read_failed"
+	checkCodeTransactionJournalDirReadFailed  = "transaction_journal_directory_read_failed"
+	checkCodePublishLockExists                = "publish_lock_exists"
+	checkCodeStalePublishLockTerminal         = "stale_publish_lock_terminal_transaction"
+	checkCodePublishLockRecoveryRequired      = "publish_lock_recovery_required"
+	checkCodeStalePublishLockJournalMissing   = "stale_publish_lock_journal_missing"
+	checkCodePublishLockCorrupt               = "publish_lock_corrupt"
+	checkCodePublishLockReadFailed            = "publish_lock_read_failed"
+	checkCodeOperationLockExists              = "operation_lock_exists"
+	checkCodeOperationLockCorrupt             = "operation_lock_corrupt"
+	checkCodeOperationLockReadFailed          = "operation_lock_read_failed"
+	checkCodePublishLockJournalCorrupt        = "publish_lock_journal_corrupt"
+	checkCodePublishLockJournalReadFailed     = "publish_lock_journal_read_failed"
+	checkCodePublishLockLookupFailed          = "lock_lookup_failed"
+	checkCodeTransactionJournalLookupFailed   = "journal_lookup_failed"
+	checkCodeTransactionStateDirMissing       = "state_dir_missing"
+	checkCodeSourceInspectionFailed           = "source_inspection_failed"
+)
+
 // Service checks whether publish can safely start without mutating target
 // files, local refs, remote refs, journals, or locks.
 type Service struct {
@@ -102,7 +125,7 @@ func (s Service) checkSource(ctx context.Context, req Request, builder *resultBu
 		StagingDir:    req.StagingDir,
 	})
 	if err != nil {
-		builder.addGlobal(failed("source-repository", "source_inspection_failed", "source repository inspection failed"))
+		builder.addGlobal(failed("source-repository", checkCodeSourceInspectionFailed, "source repository inspection failed"))
 		return source.Snapshot{}, false
 	}
 	return snapshot, true
@@ -138,10 +161,12 @@ func (s Service) checkTargetRoot(ctx context.Context, req Request, builder *resu
 
 func (s Service) checkTransactions(ctx context.Context, stateDir string, builder *resultBuilder) {
 	if stateDir == "" {
-		builder.addGlobal(failed("pending-transactions", "state_dir_missing", "transaction state directory is unavailable"))
+		builder.addGlobal(failed("pending-transactions", checkCodeTransactionStateDirMissing, "transaction state directory is unavailable"))
 		return
 	}
 
+	// Diagnostics owns transaction state classification; preflight maps its
+	// blockers to readiness checks without re-reading or mutating state.
 	diagnostics, err := publish.InspectTransactionState(ctx, stateDir)
 	s.checkPendingTransactions(diagnostics, err, builder)
 	s.checkPublishLock(diagnostics, err, builder)
@@ -153,7 +178,7 @@ func (s Service) checkPendingTransactions(diagnostics publish.TransactionStateDi
 		return
 	}
 	if err != nil && diagnostics.Lock.Status != publish.LockShowStatusFailed {
-		builder.addGlobal(failed("pending-transactions", "journal_lookup_failed", "transaction journal lookup failed"))
+		builder.addGlobal(failed("pending-transactions", checkCodeTransactionJournalLookupFailed, "transaction journal lookup failed"))
 		return
 	}
 	builder.addGlobal(passed("pending-transactions", "no pending transactions"))
@@ -177,21 +202,21 @@ func firstTransactionJournalBlocker(blockers []publish.TransactionStateBlocker) 
 func pendingTransactionCheck(blocker publish.TransactionStateBlocker) CheckResult {
 	switch blocker.Kind {
 	case publish.TransactionBlockerCorruptJournal:
-		return failed("pending-transactions", "transaction_journal_corrupt", "transaction journal is corrupt")
+		return failed("pending-transactions", checkCodeTransactionJournalCorrupt, "transaction journal is corrupt")
 	case publish.TransactionBlockerJournalDirectoryReadFailed:
-		return failed("pending-transactions", "transaction_journal_directory_read_failed", "transaction journal directory lookup failed")
+		return failed("pending-transactions", checkCodeTransactionJournalDirReadFailed, "transaction journal directory lookup failed")
 	case publish.TransactionBlockerJournalFileReadFailed:
-		return failed("pending-transactions", "transaction_journal_file_read_failed", "transaction journal file lookup failed")
+		return failed("pending-transactions", checkCodeTransactionJournalFileReadFailed, "transaction journal file lookup failed")
 	case publish.TransactionBlockerFailedJournal, publish.TransactionBlockerRollbackFailed:
 		return failed(
 			"pending-transactions",
-			"transaction_recovery_required",
+			checkCodeTransactionRecoveryRequired,
 			fmt.Sprintf("publish transaction %s has recovery status %s", blocker.TransactionID, blocker.Status),
 		)
 	default:
 		return failed(
 			"pending-transactions",
-			"pending_transaction",
+			checkCodePendingTransaction,
 			fmt.Sprintf("pending publish transaction %s has status %s", blocker.TransactionID, blocker.Status),
 		)
 	}
@@ -207,10 +232,10 @@ func (s Service) checkPublishLock(diagnostics publish.TransactionStateDiagnostic
 		return
 	}
 	if err != nil {
-		builder.addGlobal(failed("publish-lock", "lock_lookup_failed", "publish lock lookup failed"))
+		builder.addGlobal(failed("publish-lock", checkCodePublishLockLookupFailed, "publish lock lookup failed"))
 		return
 	}
-	builder.addGlobal(failed("publish-lock", "lock_lookup_failed", "publish lock state is unavailable"))
+	builder.addGlobal(failed("publish-lock", checkCodePublishLockLookupFailed, "publish lock state is unavailable"))
 }
 
 func firstLockBlocker(diagnostics publish.TransactionStateDiagnostics) (publish.TransactionStateBlocker, bool) {
@@ -240,30 +265,30 @@ func lockBlockerCheck(blocker publish.TransactionStateBlocker) CheckResult {
 	case publish.TransactionBlockerPublishLock:
 		switch blocker.Reason {
 		case publish.TransactionBlockerReasonStaleTerminalLock:
-			return failed("publish-lock", "stale_publish_lock_terminal_transaction", fmt.Sprintf("publish lock references terminal transaction %s with status %s", blocker.TransactionID, blocker.Status))
+			return failed("publish-lock", checkCodeStalePublishLockTerminal, fmt.Sprintf("publish lock references terminal transaction %s with status %s", blocker.TransactionID, blocker.Status))
 		case publish.TransactionBlockerReasonRecoveryLock:
-			return failed("publish-lock", "publish_lock_recovery_required", fmt.Sprintf("publish lock references recovery transaction %s with status %s", blocker.TransactionID, blocker.Status))
+			return failed("publish-lock", checkCodePublishLockRecoveryRequired, fmt.Sprintf("publish lock references recovery transaction %s with status %s", blocker.TransactionID, blocker.Status))
 		default:
-			return failed("publish-lock", "publish_lock_exists", fmt.Sprintf("publish lock exists for active transaction %s with status %s", blocker.TransactionID, blocker.Status))
+			return failed("publish-lock", checkCodePublishLockExists, fmt.Sprintf("publish lock exists for active transaction %s with status %s", blocker.TransactionID, blocker.Status))
 		}
 	case publish.TransactionBlockerMissingLockJournal:
-		return failed("publish-lock", "stale_publish_lock_journal_missing", fmt.Sprintf("publish lock references missing transaction journal %s", blocker.TransactionID))
+		return failed("publish-lock", checkCodeStalePublishLockJournalMissing, fmt.Sprintf("publish lock references missing transaction journal %s", blocker.TransactionID))
 	case publish.TransactionBlockerCorruptLock:
-		return failed("publish-lock", "publish_lock_corrupt", "publish lock is not parseable")
+		return failed("publish-lock", checkCodePublishLockCorrupt, "publish lock is not parseable")
 	case publish.TransactionBlockerLockReadFailed:
-		return failed("publish-lock", "publish_lock_read_failed", "publish lock lookup failed")
+		return failed("publish-lock", checkCodePublishLockReadFailed, "publish lock lookup failed")
 	case publish.TransactionBlockerOperationLock:
-		return failed("publish-lock", "transaction_operation_lock_exists", "transaction state operation lock exists")
+		return failed("publish-lock", checkCodeOperationLockExists, "transaction state operation lock exists")
 	case publish.TransactionBlockerCorruptOperationLock:
-		return failed("publish-lock", "transaction_operation_lock_corrupt", "transaction state operation lock is corrupt")
+		return failed("publish-lock", checkCodeOperationLockCorrupt, "transaction state operation lock is corrupt")
 	case publish.TransactionBlockerOperationLockReadFailed:
-		return failed("publish-lock", "transaction_operation_lock_read_failed", "transaction state operation lock lookup failed")
+		return failed("publish-lock", checkCodeOperationLockReadFailed, "transaction state operation lock lookup failed")
 	case publish.TransactionBlockerCorruptJournal:
-		return failed("publish-lock", "publish_lock_journal_corrupt", fmt.Sprintf("publish lock references corrupt transaction journal %s", blocker.TransactionID))
+		return failed("publish-lock", checkCodePublishLockJournalCorrupt, fmt.Sprintf("publish lock references corrupt transaction journal %s", blocker.TransactionID))
 	case publish.TransactionBlockerJournalFileReadFailed:
-		return failed("publish-lock", "publish_lock_journal_read_failed", fmt.Sprintf("publish lock references unreadable transaction journal %s", blocker.TransactionID))
+		return failed("publish-lock", checkCodePublishLockJournalReadFailed, fmt.Sprintf("publish lock references unreadable transaction journal %s", blocker.TransactionID))
 	default:
-		return failed("publish-lock", "lock_lookup_failed", "publish lock state is unavailable")
+		return failed("publish-lock", checkCodePublishLockLookupFailed, "publish lock state is unavailable")
 	}
 }
 

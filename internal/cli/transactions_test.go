@@ -18,7 +18,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -272,6 +274,100 @@ func TestRunTransactionsDiagnosePassesStateDir(t *testing.T) {
 	}
 	if !bytes.Contains(stdout.Bytes(), []byte(`"kind": "transactions-diagnostics"`)) {
 		t.Fatalf("diagnostics JSON = %s", stdout.String())
+	}
+}
+
+func TestRunTransactionsDiagnoseExitSemantics(t *testing.T) {
+	t.Parallel()
+
+	t.Run("blockers are successful diagnostics", func(t *testing.T) {
+		t.Parallel()
+		stateDir := t.TempDir()
+		writeCLIOperationLock(t, stateDir)
+		cli := New(Dependencies{App: app.New(app.Dependencies{}, app.Options{})}, Options{})
+		var stdout, stderr bytes.Buffer
+
+		code := cli.Run(context.Background(), []string{"transactions", "diagnose", "--state-dir", stateDir, "--output", "json"}, &stdout, &stderr)
+
+		if code != ExitOK {
+			t.Fatalf("Run(transactions diagnose) code = %d stderr = %s", code, stderr.String())
+		}
+		if !bytes.Contains(stdout.Bytes(), []byte(`"kind": "operation_lock"`)) {
+			t.Fatalf("diagnostics JSON = %s", stdout.String())
+		}
+	})
+
+	t.Run("partial diagnostics and use case error render report then fail", func(t *testing.T) {
+		t.Parallel()
+		stateDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(stateDir, "transactions"), []byte("not a directory"), 0o600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+		cli := New(Dependencies{App: app.New(app.Dependencies{}, app.Options{})}, Options{})
+		var stdout, stderr bytes.Buffer
+
+		code := cli.Run(context.Background(), []string{"transactions", "diagnose", "--state-dir", stateDir, "--output", "json"}, &stdout, &stderr)
+
+		if code != ExitError {
+			t.Fatalf("Run(transactions diagnose) code = %d stderr = %s", code, stderr.String())
+		}
+		if !bytes.Contains(stdout.Bytes(), []byte(`"kind": "transactions-diagnostics"`)) ||
+			!bytes.Contains(stdout.Bytes(), []byte(`"kind": "journal_directory_read_failed"`)) {
+			t.Fatalf("diagnostics JSON = %s", stdout.String())
+		}
+		if !strings.Contains(stderr.String(), string(CodeUseCaseFailed)) {
+			t.Fatalf("stderr = %s", stderr.String())
+		}
+	})
+
+	t.Run("report render failure wins over use case error", func(t *testing.T) {
+		t.Parallel()
+		stateDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(stateDir, "transactions"), []byte("not a directory"), 0o600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+		cli := New(Dependencies{App: app.New(app.Dependencies{}, app.Options{})}, Options{})
+		var stderr bytes.Buffer
+
+		code := cli.Run(context.Background(), []string{"transactions", "diagnose", "--state-dir", stateDir}, failingWriter{}, &stderr)
+
+		if code != ExitError {
+			t.Fatalf("Run(transactions diagnose) code = %d stderr = %s", code, stderr.String())
+		}
+		if !strings.Contains(stderr.String(), string(CodeReportFailed)) {
+			t.Fatalf("stderr = %s", stderr.String())
+		}
+	})
+
+	t.Run("context cancellation is command failure with partial report", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		cli := New(Dependencies{App: app.New(app.Dependencies{}, app.Options{})}, Options{})
+		var stdout, stderr bytes.Buffer
+
+		code := cli.Run(ctx, []string{"transactions", "diagnose", "--state-dir", t.TempDir(), "--output", "json"}, &stdout, &stderr)
+
+		if code != ExitError {
+			t.Fatalf("Run(transactions diagnose) code = %d stderr = %s", code, stderr.String())
+		}
+		if !bytes.Contains(stdout.Bytes(), []byte(`"reason": "context_canceled"`)) {
+			t.Fatalf("diagnostics JSON = %s", stdout.String())
+		}
+		if !strings.Contains(stderr.String(), string(CodeUseCaseFailed)) {
+			t.Fatalf("stderr = %s", stderr.String())
+		}
+	})
+}
+
+func writeCLIOperationLock(t *testing.T, stateDir string) {
+	t.Helper()
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	content := "schemaVersion=1\noperation=publish\ntoken=token-one\npid=1\nstartedAt=2026-01-01T00:00:00Z\n"
+	if err := os.WriteFile(filepath.Join(stateDir, "operation.lock"), []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
 	}
 }
 

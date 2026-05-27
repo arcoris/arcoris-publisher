@@ -68,6 +68,9 @@ func TestInspectTransactionStateReportsOperationLock(t *testing.T) {
 		t.Fatalf("diagnostics = %#v", diagnostics)
 	}
 	assertDiagnosticBlockerReason(t, diagnostics, TransactionBlockerOperationLock, "", "", TransactionBlockerReasonOperationLockExists)
+	if diagnostics.Blockers[0].Name != "publish" {
+		t.Fatalf("operation lock blocker name = %q", diagnostics.Blockers[0].Name)
+	}
 	if _, err := os.Stat(operationLockPath(stateDir)); err != nil {
 		t.Fatalf("operation lock missing: %v", err)
 	}
@@ -86,6 +89,9 @@ func TestInspectTransactionStateOperationLockFailures(t *testing.T) {
 		}
 		if !diagnostics.OperationLock.Present || !diagnostics.OperationLock.Corrupt || diagnostics.OperationLock.Message == "" {
 			t.Fatalf("operation lock = %#v", diagnostics.OperationLock)
+		}
+		if strings.Contains(diagnostics.OperationLock.Message, "token") {
+			t.Fatalf("operation lock message leaked token field name: %q", diagnostics.OperationLock.Message)
 		}
 		assertDiagnosticBlockerReason(t, diagnostics, TransactionBlockerCorruptOperationLock, "", "", TransactionBlockerReasonOperationLockCorrupt)
 	})
@@ -107,6 +113,114 @@ func TestInspectTransactionStateOperationLockFailures(t *testing.T) {
 			t.Fatalf("operation lock message leaked path: %q", diagnostics.OperationLock.Message)
 		}
 		assertDiagnosticBlockerReason(t, diagnostics, TransactionBlockerOperationLockReadFailed, "", "", TransactionBlockerReasonOperationLockReadFailed)
+	})
+}
+
+func TestInspectTransactionStateExitSemantics(t *testing.T) {
+	t.Run("blockers do not fail completed diagnostics", func(t *testing.T) {
+		tests := []struct {
+			name  string
+			setup func(t *testing.T, stateDir string)
+			kind  TransactionStateBlockerKind
+		}{
+			{
+				name: "parseable operation lock",
+				setup: func(t *testing.T, stateDir string) {
+					writeOperationLockFile(t, stateDir, operationLockPublish, "token-one")
+				},
+				kind: TransactionBlockerOperationLock,
+			},
+			{
+				name: "corrupt operation lock",
+				setup: func(t *testing.T, stateDir string) {
+					if err := os.WriteFile(operationLockPath(stateDir), []byte("schemaVersion=1\noperation=publish\npid=1\nstartedAt=2026-01-01T00:00:00Z\n"), 0o600); err != nil {
+						t.Fatalf("WriteFile() error = %v", err)
+					}
+				},
+				kind: TransactionBlockerCorruptOperationLock,
+			},
+			{
+				name: "failed journal",
+				setup: func(t *testing.T, stateDir string) {
+					writePruneJournal(t, NewFileJournalStore(stateDir), "tx-failed", TransactionStatusFailed, time.Unix(1, 0).UTC())
+				},
+				kind: TransactionBlockerFailedJournal,
+			},
+			{
+				name: "corrupt publish lock",
+				setup: func(t *testing.T, stateDir string) {
+					writeRawLockFile(t, stateDir, "pid=1\n")
+				},
+				kind: TransactionBlockerCorruptLock,
+			},
+			{
+				name: "corrupt journal",
+				setup: func(t *testing.T, stateDir string) {
+					txDir := filepath.Join(stateDir, "transactions")
+					if err := os.MkdirAll(txDir, 0o700); err != nil {
+						t.Fatalf("MkdirAll() error = %v", err)
+					}
+					if err := os.WriteFile(filepath.Join(txDir, "tx-corrupt.json"), []byte("{"), 0o600); err != nil {
+						t.Fatalf("WriteFile() error = %v", err)
+					}
+				},
+				kind: TransactionBlockerCorruptJournal,
+			},
+			{
+				name: "journal file read failed",
+				setup: func(t *testing.T, stateDir string) {
+					if err := os.MkdirAll(filepath.Join(stateDir, "transactions", "tx-bad.json"), 0o700); err != nil {
+						t.Fatalf("MkdirAll() error = %v", err)
+					}
+				},
+				kind: TransactionBlockerJournalFileReadFailed,
+			},
+		}
+		for _, tt := range tests {
+			tt := tt
+			t.Run(tt.name, func(t *testing.T) {
+				stateDir := t.TempDir()
+				tt.setup(t, stateDir)
+
+				diagnostics, err := InspectTransactionState(context.Background(), stateDir)
+				if err != nil {
+					t.Fatalf("InspectTransactionState() error = %v diagnostics=%#v", err, diagnostics)
+				}
+				assertDiagnosticBlockerKind(t, diagnostics, tt.kind)
+			})
+		}
+	})
+
+	t.Run("incomplete diagnostics return errors", func(t *testing.T) {
+		t.Run("journal directory read failed", func(t *testing.T) {
+			stateDir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(stateDir, "transactions"), []byte("not a directory"), 0o600); err != nil {
+				t.Fatalf("WriteFile() error = %v", err)
+			}
+			diagnostics, err := InspectTransactionState(context.Background(), stateDir)
+			if err == nil {
+				t.Fatal("InspectTransactionState() error = nil")
+			}
+			assertDiagnosticBlocker(t, diagnostics, TransactionBlockerJournalDirectoryReadFailed, "", "")
+		})
+
+		t.Run("context canceled", func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			diagnostics, err := InspectTransactionState(ctx, t.TempDir())
+			if err == nil || diagnostics.Lock.Reason != LockShowReasonContextCanceled {
+				t.Fatalf("InspectTransactionState() diagnostics=%#v error=%v", diagnostics, err)
+			}
+		})
+
+		t.Run("context deadline", func(t *testing.T) {
+			ctx, cancel := context.WithDeadline(context.Background(), time.Unix(1, 0))
+			defer cancel()
+			diagnostics, err := InspectTransactionState(ctx, t.TempDir())
+			if err == nil || diagnostics.Lock.Reason != LockShowReasonContextDeadline {
+				t.Fatalf("InspectTransactionState() diagnostics=%#v error=%v", diagnostics, err)
+			}
+		})
 	})
 }
 
@@ -421,6 +535,16 @@ func TestTransactionStateDiagnosticsFinalize(t *testing.T) {
 func assertDiagnosticBlocker(t *testing.T, diagnostics TransactionStateDiagnostics, kind TransactionStateBlockerKind, id TransactionID, status TransactionStatus) {
 	t.Helper()
 	assertDiagnosticBlockerReason(t, diagnostics, kind, id, status, "")
+}
+
+func assertDiagnosticBlockerKind(t *testing.T, diagnostics TransactionStateDiagnostics, kind TransactionStateBlockerKind) {
+	t.Helper()
+	for _, blocker := range diagnostics.Blockers {
+		if blocker.Kind == kind {
+			return
+		}
+	}
+	t.Fatalf("blocker kind=%q not found: %#v", kind, diagnostics.Blockers)
 }
 
 func assertDiagnosticBlockerReason(t *testing.T, diagnostics TransactionStateDiagnostics, kind TransactionStateBlockerKind, id TransactionID, status TransactionStatus, reason TransactionStateBlockerReason) {

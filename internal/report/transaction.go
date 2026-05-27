@@ -16,6 +16,7 @@ package report
 
 import (
 	"io"
+	"strings"
 	"time"
 
 	"arcoris.dev/arcoris-publisher/internal/workflow/publish"
@@ -693,7 +694,14 @@ func operationLockState(lock TransactionOperationLockReport) string {
 	case lock.ReadFailed:
 		return formatDiagnosticsState("read_failed", lock.Message)
 	case lock.Present:
-		return lock.Operation
+		parts := []string{lock.Operation}
+		if lock.PID != "" {
+			parts = append(parts, "pid="+lock.PID)
+		}
+		if lock.StartedAt != "" {
+			parts = append(parts, "startedAt="+lock.StartedAt)
+		}
+		return strings.Join(parts, " ")
 	default:
 		return "absent"
 	}

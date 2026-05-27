@@ -27,8 +27,8 @@ import (
 )
 
 // TransactionStateDiagnostics is a read-only snapshot of transaction state
-// safety. It is shared by preflight and future operator diagnostics so publish,
-// prune, lock inspection, and recovery use the same status policy.
+// safety. Blockers describe inspected state; only incomplete inspection should
+// make diagnostics commands fail.
 type TransactionStateDiagnostics struct {
 	PublishBlocked bool
 	Blockers       []TransactionStateBlocker
@@ -106,7 +106,8 @@ type JournalDiagnostic struct {
 	Message          string
 }
 
-// OperationLockDiagnostic reports operation.lock without exposing its token.
+// OperationLockDiagnostic reports operation.lock without exposing its identity
+// token or clearing stale locks.
 type OperationLockDiagnostic struct {
 	Present    bool
 	Operation  string
@@ -124,8 +125,8 @@ type TransactionDiagnosticWarning struct {
 	Message string
 }
 
-// InspectTransactionState reports transaction journals and publish.lock
-// blockers without clearing, pruning, rolling back, or touching Git state.
+// InspectTransactionState reports transaction journals and locks without
+// clearing, pruning, rolling back, or touching Git state.
 func InspectTransactionState(ctx context.Context, stateDir string) (TransactionStateDiagnostics, error) {
 	var diagnostics TransactionStateDiagnostics
 	if err := ctx.Err(); err != nil {

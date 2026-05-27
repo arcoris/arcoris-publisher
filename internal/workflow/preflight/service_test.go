@@ -23,6 +23,7 @@ import (
 	"arcoris.dev/arcoris-publisher/internal/ports/git"
 	"arcoris.dev/arcoris-publisher/internal/testutil/porttest"
 	"arcoris.dev/arcoris-publisher/internal/testutil/publishertest"
+	"arcoris.dev/arcoris-publisher/internal/workflow/publish"
 	"arcoris.dev/arcoris-publisher/internal/workflow/target"
 )
 
@@ -55,9 +56,58 @@ func TestCheckReportsOperationLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Check() error = %v", err)
 	}
-	assertGlobalCheckCode(t, result, "publish-lock", StatusFailed, "transaction_operation_lock_exists")
+	assertGlobalCheckCode(t, result, "publish-lock", StatusFailed, "operation_lock_exists")
 	if _, err := os.Stat(filepath.Join(opts.StateDir, "operation.lock")); err != nil {
 		t.Fatalf("operation lock missing: %v", err)
+	}
+}
+
+func TestCheckOperationLockDiagnostics(t *testing.T) {
+	tests := []struct {
+		name     string
+		content  string
+		wantCode string
+	}{
+		{
+			name:     "present",
+			content:  "schemaVersion=1\noperation=publish\ntoken=token-one\npid=1\nstartedAt=2026-01-01T00:00:00Z\n",
+			wantCode: "operation_lock_exists",
+		},
+		{
+			name:     "corrupt",
+			content:  "schemaVersion=1\noperation=publish\npid=1\nstartedAt=2026-01-01T00:00:00Z\n",
+			wantCode: "operation_lock_corrupt",
+		},
+		{
+			name:     "read failed",
+			wantCode: "operation_lock_read_failed",
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			deps, req, opts := preflightFixture(t)
+			if err := os.MkdirAll(opts.StateDir, 0o700); err != nil {
+				t.Fatalf("MkdirAll() error = %v", err)
+			}
+			path := filepath.Join(opts.StateDir, "operation.lock")
+			if tt.content == "" {
+				if err := os.MkdirAll(path, 0o700); err != nil {
+					t.Fatalf("MkdirAll(operation.lock) error = %v", err)
+				}
+			} else if err := os.WriteFile(path, []byte(tt.content), 0o600); err != nil {
+				t.Fatalf("WriteFile() error = %v", err)
+			}
+
+			result, err := New(deps, opts).Check(context.Background(), req)
+			if err != nil {
+				t.Fatalf("Check() error = %v", err)
+			}
+			assertGlobalCheckCode(t, result, "publish-lock", StatusFailed, tt.wantCode)
+			if _, err := os.Stat(path); err != nil {
+				t.Fatalf("operation lock missing after preflight: %v", err)
+			}
+		})
 	}
 }
 
@@ -297,6 +347,13 @@ func TestCheckPublishLockDiagnostics(t *testing.T) {
 			}
 			assertGlobalCheckCode(t, result, "publish-lock", tt.wantStatus, tt.wantCode)
 		})
+	}
+}
+
+func TestLockBlockerCheckFailsSafeForUnknownBlocker(t *testing.T) {
+	check := lockBlockerCheck(publish.TransactionStateBlocker{Kind: publish.TransactionStateBlockerKind("future_blocker")})
+	if check.Status() != StatusFailed || check.Code() != "lock_lookup_failed" {
+		t.Fatalf("check = %#v", check)
 	}
 }
 

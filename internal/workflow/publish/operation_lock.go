@@ -27,7 +27,7 @@ import (
 )
 
 // operationLock serializes transaction mutation decisions and writes. It does
-// not replace publish.lock, which still records ownership of one publish transaction.
+// not replace publish.lock, and stale locks are reported but never auto-cleared.
 type operationLock struct {
 	path      string
 	operation operationLockOperation
@@ -120,7 +120,7 @@ func acquireOperationLock(ctx context.Context, stateDir string, operation operat
 		return operationLock{}, err
 	}
 	if !isOperationLockToken(token) {
-		return operationLock{}, fmt.Errorf("operation lock token is invalid")
+		return operationLock{}, fmt.Errorf("operation lock identity is invalid")
 	}
 
 	path := operationLockPath(stateDir)
@@ -206,7 +206,7 @@ func readOperationLock(path string) (operationLockInfo, error) {
 			return operationLockInfo{}, operationLockCorruptf("malformed transaction operation lock line %d", lineNo+1)
 		}
 		if seen[key] {
-			return operationLockInfo{}, operationLockCorruptf("duplicate transaction operation lock key %q", key)
+			return operationLockInfo{}, operationLockCorruptf("duplicate transaction operation lock key")
 		}
 		seen[key] = true
 		switch key {
@@ -221,7 +221,7 @@ func readOperationLock(path string) (operationLockInfo, error) {
 			}
 		case "token":
 			if !isOperationLockToken(value) {
-				return operationLockInfo{}, operationLockCorruptf("transaction operation lock token is invalid")
+				return operationLockInfo{}, operationLockCorruptf("transaction operation lock identity is invalid")
 			}
 			info.Token = value
 		case "pid":
@@ -241,7 +241,7 @@ func readOperationLock(path string) (operationLockInfo, error) {
 			}
 			info.StartedAt = value
 		default:
-			return operationLockInfo{}, operationLockCorruptf("unknown transaction operation lock key %q", key)
+			return operationLockInfo{}, operationLockCorruptf("transaction operation lock contains unsupported key")
 		}
 	}
 	if !seen["schemaVersion"] {
@@ -251,7 +251,7 @@ func readOperationLock(path string) (operationLockInfo, error) {
 		return operationLockInfo{}, operationLockCorruptf("transaction operation lock operation is missing")
 	}
 	if info.Token == "" {
-		return operationLockInfo{}, operationLockCorruptf("transaction operation lock token is missing")
+		return operationLockInfo{}, operationLockCorruptf("transaction operation lock identity is missing")
 	}
 	info.Path = path
 	return info, nil
