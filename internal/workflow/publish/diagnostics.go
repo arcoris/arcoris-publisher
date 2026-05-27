@@ -42,7 +42,7 @@ type TransactionStateBlocker struct {
 	Kind          TransactionStateBlockerKind
 	TransactionID TransactionID
 	Status        TransactionStatus
-	Reason        string
+	Reason        TransactionStateBlockerReason
 	Name          string
 }
 
@@ -58,32 +58,27 @@ const (
 	TransactionBlockerLockReadFailed             TransactionStateBlockerKind = "lock_read_failed"
 	TransactionBlockerCorruptJournal             TransactionStateBlockerKind = "corrupt_journal"
 	TransactionBlockerMissingLockJournal         TransactionStateBlockerKind = "missing_lock_journal"
-	TransactionBlockerJournalReadFailed          TransactionStateBlockerKind = "journal_file_read_failed"
 	TransactionBlockerJournalFileReadFailed      TransactionStateBlockerKind = "journal_file_read_failed"
 	TransactionBlockerJournalDirectoryReadFailed TransactionStateBlockerKind = "journal_directory_read_failed"
 	TransactionBlockerStateDirUnavailable        TransactionStateBlockerKind = "state_dir_unavailable"
 )
 
-const (
-	transactionDiagnosticReasonActiveJournal              = "active_transaction"
-	transactionDiagnosticReasonFailedJournal              = "failed_transaction"
-	transactionDiagnosticReasonRollbackFailed             = "rollback_failed_transaction"
-	transactionDiagnosticReasonStaleTerminalLock          = "stale_terminal_transaction"
-	transactionDiagnosticReasonRecoveryLock               = "recovery_transaction"
-	transactionDiagnosticReasonMissingLockJournal         = "missing_lock_journal"
-	transactionDiagnosticReasonCorruptLock                = "corrupt_lock"
-	transactionDiagnosticReasonLockReadFailed             = "lock_read_failed"
-	transactionDiagnosticReasonCorruptJournal             = "corrupt_journal"
-	transactionDiagnosticReasonJournalReadFailed          = "journal_file_read_failed"
-	transactionDiagnosticReasonJournalFileReadFailed      = "journal_file_read_failed"
-	transactionDiagnosticReasonJournalDirectoryReadFailed = "journal_directory_read_failed"
-	transactionDiagnosticReasonStateDirMissing            = "state_dir_missing"
-)
+// TransactionStateBlockerReason is a stable machine-readable blocker reason.
+type TransactionStateBlockerReason string
 
 const (
-	TransactionBlockerReasonActiveJournal     = transactionDiagnosticReasonActiveJournal
-	TransactionBlockerReasonStaleTerminalLock = transactionDiagnosticReasonStaleTerminalLock
-	TransactionBlockerReasonRecoveryLock      = transactionDiagnosticReasonRecoveryLock
+	TransactionBlockerReasonActiveJournal              TransactionStateBlockerReason = "active_transaction"
+	TransactionBlockerReasonFailedJournal              TransactionStateBlockerReason = "failed_transaction"
+	TransactionBlockerReasonRollbackFailed             TransactionStateBlockerReason = "rollback_failed_transaction"
+	TransactionBlockerReasonStaleTerminalLock          TransactionStateBlockerReason = "stale_terminal_transaction"
+	TransactionBlockerReasonRecoveryLock               TransactionStateBlockerReason = "recovery_transaction"
+	TransactionBlockerReasonMissingLockJournal         TransactionStateBlockerReason = "missing_lock_journal"
+	TransactionBlockerReasonCorruptLock                TransactionStateBlockerReason = "corrupt_lock"
+	TransactionBlockerReasonLockReadFailed             TransactionStateBlockerReason = "lock_read_failed"
+	TransactionBlockerReasonCorruptJournal             TransactionStateBlockerReason = "corrupt_journal"
+	TransactionBlockerReasonJournalFileReadFailed      TransactionStateBlockerReason = "journal_file_read_failed"
+	TransactionBlockerReasonJournalDirectoryReadFailed TransactionStateBlockerReason = "journal_directory_read_failed"
+	TransactionBlockerReasonStateDirMissing            TransactionStateBlockerReason = "state_dir_missing"
 )
 
 // JournalDiagnostic describes one transaction journal without mutating it.
@@ -122,8 +117,9 @@ func InspectTransactionState(ctx context.Context, stateDir string) (TransactionS
 		diagnostics.Lock = lockShowFailed(LockShowReasonStateDirMissing, "transaction state directory is unavailable")
 		diagnostics.addBlocker(TransactionStateBlocker{
 			Kind:   TransactionBlockerStateDirUnavailable,
-			Reason: transactionDiagnosticReasonStateDirMissing,
+			Reason: TransactionBlockerReasonStateDirMissing,
 		})
+		diagnostics.finalize()
 		return diagnostics, &Error{Code: CodeLockFailed, Message: diagnostics.Lock.Message}
 	}
 
@@ -136,13 +132,13 @@ func InspectTransactionState(ctx context.Context, stateDir string) (TransactionS
 	if err != nil {
 		diagnostics.addBlocker(TransactionStateBlocker{
 			Kind:   TransactionBlockerJournalDirectoryReadFailed,
-			Reason: transactionDiagnosticReasonJournalDirectoryReadFailed,
+			Reason: TransactionBlockerReasonJournalDirectoryReadFailed,
 		})
 		diagnostics.addWarning(TransactionDiagnosticWarning{
-			Code:    transactionDiagnosticReasonJournalDirectoryReadFailed,
+			Code:    string(TransactionBlockerReasonJournalDirectoryReadFailed),
 			Message: "read transaction journals directory failed",
 		})
-		diagnostics.PublishBlocked = len(diagnostics.Blockers) > 0
+		diagnostics.finalize()
 		return diagnostics, err
 	}
 	diagnostics.Journals = journals
@@ -150,7 +146,7 @@ func InspectTransactionState(ctx context.Context, stateDir string) (TransactionS
 		diagnostics.addJournalBlocker(journal)
 		diagnostics.addJournalWarning(journal)
 	}
-	diagnostics.PublishBlocked = len(diagnostics.Blockers) > 0
+	diagnostics.finalize()
 
 	if lockErr != nil && lockResult.Status == LockShowStatusFailed {
 		return diagnostics, lockErr
@@ -161,11 +157,11 @@ func InspectTransactionState(ctx context.Context, stateDir string) (TransactionS
 func (d *TransactionStateDiagnostics) addLockBlockers(result LockShowResult) {
 	switch result.Status {
 	case LockShowStatusPresent:
-		reason := transactionDiagnosticReasonActiveJournal
+		reason := TransactionBlockerReasonActiveJournal
 		if !result.Journal.Status.BlocksNewPublish() {
-			reason = transactionDiagnosticReasonStaleTerminalLock
+			reason = TransactionBlockerReasonStaleTerminalLock
 		} else if result.Journal.Status.AllowsLockClear() {
-			reason = transactionDiagnosticReasonRecoveryLock
+			reason = TransactionBlockerReasonRecoveryLock
 		}
 		d.addBlocker(TransactionStateBlocker{
 			Kind:          TransactionBlockerPublishLock,
@@ -177,18 +173,18 @@ func (d *TransactionStateDiagnostics) addLockBlockers(result LockShowResult) {
 		d.addBlocker(TransactionStateBlocker{
 			Kind:          TransactionBlockerMissingLockJournal,
 			TransactionID: result.Lock.ID,
-			Reason:        transactionDiagnosticReasonMissingLockJournal,
+			Reason:        TransactionBlockerReasonMissingLockJournal,
 		})
 	case LockShowStatusCorrupt:
 		d.addBlocker(TransactionStateBlocker{
 			Kind:   TransactionBlockerCorruptLock,
-			Reason: transactionDiagnosticReasonCorruptLock,
+			Reason: TransactionBlockerReasonCorruptLock,
 		})
 	case LockShowStatusJournalCorrupt:
 		d.addBlocker(TransactionStateBlocker{
 			Kind:          TransactionBlockerCorruptJournal,
 			TransactionID: result.Lock.ID,
-			Reason:        transactionDiagnosticReasonCorruptJournal,
+			Reason:        TransactionBlockerReasonCorruptJournal,
 		})
 	case LockShowStatusFailed:
 		d.addLockFailureBlocker(result)
@@ -201,17 +197,17 @@ func (d *TransactionStateDiagnostics) addLockFailureBlocker(result LockShowResul
 		d.addBlocker(TransactionStateBlocker{
 			Kind:          TransactionBlockerJournalFileReadFailed,
 			TransactionID: result.Lock.ID,
-			Reason:        transactionDiagnosticReasonJournalFileReadFailed,
+			Reason:        TransactionBlockerReasonJournalFileReadFailed,
 		})
 	case LockShowReasonStateDirMissing:
 		d.addBlocker(TransactionStateBlocker{
 			Kind:   TransactionBlockerStateDirUnavailable,
-			Reason: transactionDiagnosticReasonStateDirMissing,
+			Reason: TransactionBlockerReasonStateDirMissing,
 		})
 	case LockShowReasonLockReadFailed:
 		d.addBlocker(TransactionStateBlocker{
 			Kind:   TransactionBlockerLockReadFailed,
-			Reason: transactionDiagnosticReasonLockReadFailed,
+			Reason: TransactionBlockerReasonLockReadFailed,
 		})
 	}
 }
@@ -222,14 +218,14 @@ func (d *TransactionStateDiagnostics) addJournalBlocker(journal JournalDiagnosti
 		d.addBlocker(TransactionStateBlocker{
 			Kind:          TransactionBlockerCorruptJournal,
 			TransactionID: journal.ID,
-			Reason:        transactionDiagnosticReasonCorruptJournal,
+			Reason:        TransactionBlockerReasonCorruptJournal,
 			Name:          journal.Name,
 		})
 	case journal.ReadFailed:
 		d.addBlocker(TransactionStateBlocker{
 			Kind:          TransactionBlockerJournalFileReadFailed,
 			TransactionID: journal.ID,
-			Reason:        transactionDiagnosticReasonJournalFileReadFailed,
+			Reason:        TransactionBlockerReasonJournalFileReadFailed,
 			Name:          journal.Name,
 		})
 	case journal.Status.BlocksNewPublish():
@@ -252,7 +248,7 @@ func (d *TransactionStateDiagnostics) addJournalWarning(journal JournalDiagnosti
 		})
 	case journal.ReadFailed:
 		d.addWarning(TransactionDiagnosticWarning{
-			Code:    transactionDiagnosticReasonJournalFileReadFailed,
+			Code:    string(TransactionBlockerReasonJournalFileReadFailed),
 			Message: journal.Message,
 		})
 	}
@@ -269,7 +265,10 @@ func (d *TransactionStateDiagnostics) addBlocker(blocker TransactionStateBlocker
 		}
 	}
 	d.Blockers = append(d.Blockers, blocker)
-	d.PublishBlocked = true
+}
+
+func (d *TransactionStateDiagnostics) finalize() {
+	d.PublishBlocked = len(d.Blockers) > 0
 }
 
 func journalBlockerKind(status TransactionStatus) TransactionStateBlockerKind {
@@ -283,14 +282,14 @@ func journalBlockerKind(status TransactionStatus) TransactionStateBlockerKind {
 	}
 }
 
-func journalBlockerReason(status TransactionStatus) string {
+func journalBlockerReason(status TransactionStatus) TransactionStateBlockerReason {
 	switch status {
 	case TransactionStatusFailed:
-		return transactionDiagnosticReasonFailedJournal
+		return TransactionBlockerReasonFailedJournal
 	case TransactionStatusRollbackFailed:
-		return transactionDiagnosticReasonRollbackFailed
+		return TransactionBlockerReasonRollbackFailed
 	default:
-		return transactionDiagnosticReasonActiveJournal
+		return TransactionBlockerReasonActiveJournal
 	}
 }
 

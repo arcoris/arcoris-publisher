@@ -277,12 +277,17 @@ func TestTransactionDiagnosticsReportJSONAndText(t *testing.T) {
 	for _, want := range []string{
 		"Transaction diagnostics",
 		"Publish blocked: true",
-		"corrupt_journal",
-		"bad.lock.json",
+		"publish_lock: tx-test recovery_transaction",
+		"corrupt_journal: bad.lock.json corrupt_journal",
+		"tx-test: rollback_failed",
+		"bad.lock.json: corrupt",
 	} {
 		if !strings.Contains(textBuf.String(), want) {
 			t.Fatalf("diagnostics text missing %q:\n%s", want, textBuf.String())
 		}
+	}
+	if strings.Contains(textBuf.String(), "/state") {
+		t.Fatalf("diagnostics text leaked local path: %s", textBuf.String())
 	}
 }
 
@@ -299,6 +304,47 @@ func TestTransactionDiagnosticsReportIncludesLocalPathsWhenRequested(t *testing.
 	}
 	if report.Lock.Lock == nil || report.Lock.Lock.Path != "/state/publish.lock" {
 		t.Fatalf("lock = %#v", report.Lock.Lock)
+	}
+}
+
+func TestTransactionDiagnosticsTextHandlesMissingLabels(t *testing.T) {
+	t.Parallel()
+
+	diagnostics := publish.TransactionStateDiagnostics{
+		PublishBlocked: true,
+		Blockers: []publish.TransactionStateBlocker{
+			{
+				Kind:   publish.TransactionBlockerJournalDirectoryReadFailed,
+				Reason: publish.TransactionBlockerReasonJournalDirectoryReadFailed,
+			},
+			{
+				Kind:   publish.TransactionBlockerCorruptJournal,
+				Reason: publish.TransactionBlockerReasonCorruptJournal,
+				Name:   "bad.lock.json",
+			},
+		},
+		Journals: []publish.JournalDiagnostic{
+			{Name: "bad.lock.json", Corrupt: true},
+			{ReadFailed: true},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := New(Options{Format: FormatText}).TransactionDiagnostics(&buf, diagnostics); err != nil {
+		t.Fatalf("TransactionDiagnostics(text) error = %v", err)
+	}
+	for _, want := range []string{
+		"journal_directory_read_failed: journal_directory_read_failed",
+		"corrupt_journal: bad.lock.json corrupt_journal",
+		"bad.lock.json: corrupt",
+		"<unknown>: read_failed",
+	} {
+		if !strings.Contains(buf.String(), want) {
+			t.Fatalf("diagnostics text missing %q:\n%s", want, buf.String())
+		}
+	}
+	if strings.Contains(buf.String(), ":  ") {
+		t.Fatalf("diagnostics text contains empty label placeholder:\n%s", buf.String())
 	}
 }
 
@@ -380,7 +426,7 @@ func transactionDiagnosticsFixture() publish.TransactionStateDiagnostics {
 			},
 			{
 				Kind:   publish.TransactionBlockerCorruptJournal,
-				Reason: "corrupt_journal",
+				Reason: publish.TransactionBlockerReasonCorruptJournal,
 				Name:   "bad.lock.json",
 			},
 		},

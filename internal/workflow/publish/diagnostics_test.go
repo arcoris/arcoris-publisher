@@ -110,7 +110,7 @@ func TestInspectTransactionStateLockBlockers(t *testing.T) {
 		wantKind   TransactionStateBlockerKind
 		wantID     TransactionID
 		wantStatus TransactionStatus
-		wantReason string
+		wantReason TransactionStateBlockerReason
 	}{
 		{
 			name: "active lock",
@@ -122,7 +122,7 @@ func TestInspectTransactionStateLockBlockers(t *testing.T) {
 			wantKind:   TransactionBlockerPublishLock,
 			wantID:     "tx-active",
 			wantStatus: TransactionStatusPending,
-			wantReason: transactionDiagnosticReasonActiveJournal,
+			wantReason: TransactionBlockerReasonActiveJournal,
 		},
 		{
 			name: "terminal stale lock",
@@ -134,7 +134,7 @@ func TestInspectTransactionStateLockBlockers(t *testing.T) {
 			wantKind:   TransactionBlockerPublishLock,
 			wantID:     "tx-committed",
 			wantStatus: TransactionStatusCommitted,
-			wantReason: transactionDiagnosticReasonStaleTerminalLock,
+			wantReason: TransactionBlockerReasonStaleTerminalLock,
 		},
 		{
 			name: "failed stale lock",
@@ -146,7 +146,7 @@ func TestInspectTransactionStateLockBlockers(t *testing.T) {
 			wantKind:   TransactionBlockerPublishLock,
 			wantID:     "tx-failed",
 			wantStatus: TransactionStatusFailed,
-			wantReason: transactionDiagnosticReasonRecoveryLock,
+			wantReason: TransactionBlockerReasonRecoveryLock,
 		},
 		{
 			name: "missing lock journal",
@@ -155,7 +155,7 @@ func TestInspectTransactionStateLockBlockers(t *testing.T) {
 			},
 			wantKind:   TransactionBlockerMissingLockJournal,
 			wantID:     "tx-missing",
-			wantReason: transactionDiagnosticReasonMissingLockJournal,
+			wantReason: TransactionBlockerReasonMissingLockJournal,
 		},
 		{
 			name: "corrupt lock",
@@ -163,7 +163,7 @@ func TestInspectTransactionStateLockBlockers(t *testing.T) {
 				writeRawLockFile(t, stateDir, "pid=1\n")
 			},
 			wantKind:   TransactionBlockerCorruptLock,
-			wantReason: transactionDiagnosticReasonCorruptLock,
+			wantReason: TransactionBlockerReasonCorruptLock,
 		},
 		{
 			name: "corrupt lock journal",
@@ -179,7 +179,7 @@ func TestInspectTransactionStateLockBlockers(t *testing.T) {
 			},
 			wantKind:   TransactionBlockerCorruptJournal,
 			wantID:     "tx-corrupt",
-			wantReason: transactionDiagnosticReasonCorruptJournal,
+			wantReason: TransactionBlockerReasonCorruptJournal,
 		},
 	}
 
@@ -325,9 +325,36 @@ func TestInspectTransactionStateCorruptJournalNames(t *testing.T) {
 			if journal.ID != tt.wantID || journal.Name != tt.wantName || journal.Corrupt != tt.wantCorrupt {
 				t.Fatalf("journal = %#v", journal)
 			}
-			assertDiagnosticBlockerReason(t, diagnostics, TransactionBlockerCorruptJournal, tt.wantID, "", transactionDiagnosticReasonCorruptJournal)
+			assertDiagnosticBlockerReason(t, diagnostics, TransactionBlockerCorruptJournal, tt.wantID, "", TransactionBlockerReasonCorruptJournal)
 		})
 	}
+}
+
+func TestTransactionStateDiagnosticsFinalize(t *testing.T) {
+	t.Run("warning without blocker does not block", func(t *testing.T) {
+		var diagnostics TransactionStateDiagnostics
+		diagnostics.addWarning(TransactionDiagnosticWarning{Code: "journal_missing", Message: "journal missing"})
+		diagnostics.finalize()
+		if diagnostics.PublishBlocked {
+			t.Fatalf("PublishBlocked = true diagnostics=%#v", diagnostics)
+		}
+	})
+
+	t.Run("duplicate blocker is not duplicated but blocks", func(t *testing.T) {
+		var diagnostics TransactionStateDiagnostics
+		blocker := TransactionStateBlocker{
+			Kind:          TransactionBlockerFailedJournal,
+			TransactionID: "tx-one",
+			Status:        TransactionStatusFailed,
+			Reason:        TransactionBlockerReasonFailedJournal,
+		}
+		diagnostics.addBlocker(blocker)
+		diagnostics.addBlocker(blocker)
+		diagnostics.finalize()
+		if !diagnostics.PublishBlocked || len(diagnostics.Blockers) != 1 {
+			t.Fatalf("diagnostics = %#v", diagnostics)
+		}
+	})
 }
 
 func assertDiagnosticBlocker(t *testing.T, diagnostics TransactionStateDiagnostics, kind TransactionStateBlockerKind, id TransactionID, status TransactionStatus) {
@@ -335,7 +362,7 @@ func assertDiagnosticBlocker(t *testing.T, diagnostics TransactionStateDiagnosti
 	assertDiagnosticBlockerReason(t, diagnostics, kind, id, status, "")
 }
 
-func assertDiagnosticBlockerReason(t *testing.T, diagnostics TransactionStateDiagnostics, kind TransactionStateBlockerKind, id TransactionID, status TransactionStatus, reason string) {
+func assertDiagnosticBlockerReason(t *testing.T, diagnostics TransactionStateDiagnostics, kind TransactionStateBlockerKind, id TransactionID, status TransactionStatus, reason TransactionStateBlockerReason) {
 	t.Helper()
 	for _, blocker := range diagnostics.Blockers {
 		if blocker.Kind == kind &&

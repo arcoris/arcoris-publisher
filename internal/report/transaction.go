@@ -376,7 +376,7 @@ func buildTransactionDiagnosticBlockers(blockers []publish.TransactionStateBlock
 			Kind:          string(blocker.Kind),
 			TransactionID: blocker.TransactionID.String(),
 			Status:        string(blocker.Status),
-			Reason:        blocker.Reason,
+			Reason:        string(blocker.Reason),
 			Name:          blocker.Name,
 		})
 	}
@@ -627,11 +627,7 @@ func writeTransactionDiagnosticsText(w io.Writer, report TransactionDiagnosticsR
 			return err
 		}
 		for _, blocker := range report.Blockers {
-			label := blocker.TransactionID
-			if label == "" {
-				label = blocker.Name
-			}
-			if err := writeLine(w, "    %s: %s %s", blocker.Kind, label, blocker.Reason); err != nil {
+			if err := writeLine(w, "    %s: %s", blocker.Kind, formatDiagnosticsState(blockerLabel(blocker), blocker.Reason)); err != nil {
 				return err
 			}
 		}
@@ -641,17 +637,13 @@ func writeTransactionDiagnosticsText(w io.Writer, report TransactionDiagnosticsR
 			return err
 		}
 		for _, journal := range report.Journals {
-			label := journal.TransactionID
-			if label == "" {
-				label = journal.Name
-			}
 			state := journal.Status
 			if journal.Corrupt {
 				state = "corrupt"
 			} else if journal.ReadFailed {
 				state = "read_failed"
 			}
-			if err := writeLine(w, "    %s: %s", label, state); err != nil {
+			if err := writeLine(w, "    %s: %s", journalLabel(journal), state); err != nil {
 				return err
 			}
 		}
@@ -662,6 +654,33 @@ func writeTransactionDiagnosticsText(w io.Writer, report TransactionDiagnosticsR
 		}
 	}
 	return nil
+}
+
+func blockerLabel(blocker TransactionDiagnosticsBlockerReport) string {
+	if blocker.TransactionID != "" {
+		return blocker.TransactionID
+	}
+	return blocker.Name
+}
+
+func journalLabel(journal TransactionJournalDiagnosticReport) string {
+	if journal.TransactionID != "" {
+		return journal.TransactionID
+	}
+	if journal.Name != "" {
+		return journal.Name
+	}
+	return "<unknown>"
+}
+
+func formatDiagnosticsState(label, reason string) string {
+	if label == "" {
+		return reason
+	}
+	if reason == "" {
+		return label
+	}
+	return label + " " + reason
 }
 
 func writeTransactionLockWarnings(w io.Writer, warnings []TransactionLockWarning) error {
