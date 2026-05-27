@@ -169,7 +169,7 @@ func (s FileJournalStore) pruneCandidate(
 		UpdatedAt: journal.UpdatedAt,
 		Path:      path,
 	}
-	if !journal.Status.Terminal() {
+	if !journal.Status.Prunable() {
 		entry.Reason = "status is not prunable"
 		return entry, false, nil
 	}
@@ -205,12 +205,10 @@ func prunableStatusSet(statuses []TransactionStatus) (map[TransactionStatus]bool
 		return out, nil
 	}
 	for _, status := range statuses {
-		switch status {
-		case TransactionStatusCommitted, TransactionStatusRolledBack:
-			out[status] = true
-		default:
+		if !status.Prunable() {
 			return nil, fmt.Errorf("transaction status %q is not prunable", status)
 		}
+		out[status] = true
 	}
 	return out, nil
 }

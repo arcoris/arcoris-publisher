@@ -88,13 +88,15 @@ type TransactionLockReport struct {
 
 // TransactionLockClearReport is the stable DTO for guarded lock clearing.
 type TransactionLockClearReport struct {
-	Kind          string                   `json:"kind"`
-	Status        string                   `json:"status"`
-	TransactionID string                   `json:"transactionId,omitempty"`
-	Reason        string                   `json:"reason,omitempty"`
-	Lock          TransactionLockClearInfo `json:"lock"`
-	Journal       *TransactionLockJournal  `json:"journal"`
-	Warnings      []TransactionLockWarning `json:"warnings"`
+	Kind           string                   `json:"kind"`
+	Status         string                   `json:"status"`
+	TransactionID  string                   `json:"transactionId,omitempty"`
+	Reason         string                   `json:"reason,omitempty"`
+	Message        string                   `json:"message,omitempty"`
+	PostClearState string                   `json:"postClearState,omitempty"`
+	Lock           TransactionLockClearInfo `json:"lock"`
+	Journal        *TransactionLockJournal  `json:"journal"`
+	Warnings       []TransactionLockWarning `json:"warnings"`
 }
 
 // TransactionLockInfo describes publish.lock metadata.
@@ -269,10 +271,12 @@ func BuildTransactionLockReport(result publish.LockShowResult, opts Options) Tra
 // BuildTransactionLockClearReport converts lock clear results to a path-safe DTO.
 func BuildTransactionLockClearReport(result publish.LockClearResult, opts Options) TransactionLockClearReport {
 	return TransactionLockClearReport{
-		Kind:          "transactions-lock-clear",
-		Status:        string(result.Status),
-		TransactionID: result.TransactionID.String(),
-		Reason:        result.Reason,
+		Kind:           "transactions-lock-clear",
+		Status:         string(result.Status),
+		TransactionID:  result.TransactionID.String(),
+		Reason:         string(result.Reason),
+		Message:        result.Message,
+		PostClearState: string(result.PostClearState),
 		Lock: TransactionLockClearInfo{
 			Cleared: result.LockCleared,
 			Path:    includePath(result.Lock.Path, opts),
@@ -312,7 +316,7 @@ func buildTransactionLockJournal(journal publish.LockJournalState) *TransactionL
 func buildTransactionLockWarnings(warnings []publish.LockWarning) []TransactionLockWarning {
 	out := make([]TransactionLockWarning, 0, len(warnings))
 	for _, warning := range warnings {
-		out = append(out, TransactionLockWarning{Code: warning.Code, Message: warning.Message})
+		out = append(out, TransactionLockWarning{Code: string(warning.Code), Message: warning.Message})
 	}
 	return out
 }
@@ -432,6 +436,16 @@ func writeTransactionLockClearText(w io.Writer, report TransactionLockClearRepor
 	}
 	if report.Reason != "" {
 		if err := writeLine(w, "  Reason: %s", report.Reason); err != nil {
+			return err
+		}
+	}
+	if report.Message != "" {
+		if err := writeLine(w, "  Message: %s", report.Message); err != nil {
+			return err
+		}
+	}
+	if report.PostClearState != "" {
+		if err := writeLine(w, "  Post-clear: %s", report.PostClearState); err != nil {
 			return err
 		}
 	}

@@ -86,5 +86,7 @@ func TestTransactionLockUseCasesReturnWorkflowResults(t *testing.T) {
 	}
 	if got := clear.Result(); got.Status != publish.LockClearStatusCleared || !got.LockCleared {
 		t.Fatalf("clear result = %#v", got)
+	} else if got.Reason != publish.LockClearReasonCleared || got.PostClearState != publish.LockPostClearReadyForPublish {
+		t.Fatalf("clear result contract = %#v", got)
 	}
 }

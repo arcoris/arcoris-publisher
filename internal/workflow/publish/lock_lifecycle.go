@@ -36,6 +36,8 @@ const (
 	LockShowStatusJournalMissing LockShowStatus = "journal_missing"
 	// LockShowStatusJournalCorrupt means the referenced journal is unreadable.
 	LockShowStatusJournalCorrupt LockShowStatus = "journal_corrupt"
+	// LockShowStatusFailed means inspection failed for reasons other than lock corruption.
+	LockShowStatusFailed LockShowStatus = "failed"
 )
 
 // LockClearStatus describes a guarded publish lock clear attempt.
@@ -50,9 +52,50 @@ const (
 	LockClearStatusFailed LockClearStatus = "failed"
 )
 
+// LockClearReason is a stable machine-readable lock clear outcome code.
+type LockClearReason string
+
+const (
+	LockClearReasonCleared              LockClearReason = "cleared"
+	LockClearReasonMissingTransactionID LockClearReason = "missing_transaction_id"
+	LockClearReasonMissingConfirmation  LockClearReason = "missing_confirmation"
+	LockClearReasonConfirmationMismatch LockClearReason = "confirmation_mismatch"
+	LockClearReasonInvalidTransactionID LockClearReason = "invalid_transaction_id"
+	LockClearReasonStateDirMissing      LockClearReason = "state_dir_missing"
+	LockClearReasonLockAbsent           LockClearReason = "lock_absent"
+	LockClearReasonLockCorrupt          LockClearReason = "lock_corrupt"
+	LockClearReasonLockReadFailed       LockClearReason = "lock_read_failed"
+	LockClearReasonTransactionMismatch  LockClearReason = "transaction_mismatch"
+	LockClearReasonJournalCorrupt       LockClearReason = "journal_corrupt"
+	LockClearReasonJournalReadFailed    LockClearReason = "journal_read_failed"
+	LockClearReasonActiveTransaction    LockClearReason = "active_transaction"
+	LockClearReasonLockChanged          LockClearReason = "lock_changed"
+	LockClearReasonDeleteFailed         LockClearReason = "delete_failed"
+	LockClearReasonSyncFailed           LockClearReason = "sync_failed"
+)
+
+// LockWarningCode is a stable machine-readable lock warning code.
+type LockWarningCode string
+
+const (
+	LockWarningJournalMissing LockWarningCode = "journal_missing"
+	LockWarningJournalCorrupt LockWarningCode = "journal_corrupt"
+	LockWarningLockCorrupt    LockWarningCode = "lock_corrupt"
+)
+
+// LockPostClearState tells operators whether clearing publish.lock removed the
+// publish blocker or only exposed remaining journal recovery state.
+type LockPostClearState string
+
+const (
+	LockPostClearReadyForPublish      LockPostClearState = "ready_for_publish"
+	LockPostClearTransactionStillOpen LockPostClearState = "transaction_still_blocks_publish"
+	LockPostClearUnverifiedNoJournal  LockPostClearState = "unverified_no_journal"
+)
+
 // LockWarning describes recoverable lock inspection information.
 type LockWarning struct {
-	Code    string
+	Code    LockWarningCode
 	Message string
 }
 
@@ -82,26 +125,31 @@ type LockClearOptions struct {
 
 // LockClearResult reports a guarded publish lock clear attempt.
 type LockClearResult struct {
-	Status        LockClearStatus
-	TransactionID TransactionID
-	Lock          TransactionLockInfo
-	LockCleared   bool
-	Journal       LockJournalState
-	Reason        string
-	Warnings      []LockWarning
+	Status         LockClearStatus
+	TransactionID  TransactionID
+	Lock           TransactionLockInfo
+	LockCleared    bool
+	Journal        LockJournalState
+	Reason         LockClearReason
+	Message        string
+	PostClearState LockPostClearState
+	Warnings       []LockWarning
 }
 
 // ShowTransactionLock inspects publish.lock and its referenced journal.
 func (s Service) ShowTransactionLock(ctx context.Context, stateDir string) (LockShowResult, error) {
 	if err := ctx.Err(); err != nil {
-		return LockShowResult{Status: LockShowStatusCorrupt}, err
+		return LockShowResult{Status: LockShowStatusFailed}, err
 	}
 	lock, ok, err := currentTransactionLock(stateDir)
 	if err != nil {
-		return LockShowResult{
-			Status:   LockShowStatusCorrupt,
-			Warnings: []LockWarning{{Code: "lock_corrupt", Message: "publish lock is not parseable"}},
-		}, &Error{Code: CodeLockFailed, Message: "read publish transaction lock failed", Cause: err}
+		status := LockShowStatusFailed
+		warnings := []LockWarning{}
+		if errors.Is(err, errTransactionLockCorrupt) {
+			status = LockShowStatusCorrupt
+			warnings = append(warnings, LockWarning{Code: LockWarningLockCorrupt, Message: "publish lock is not parseable"})
+		}
+		return LockShowResult{Status: status, Warnings: warnings}, &Error{Code: CodeLockFailed, Message: "read publish transaction lock failed", Cause: err}
 	}
 	if !ok {
 		return LockShowResult{Status: LockShowStatusAbsent}, nil
@@ -113,8 +161,12 @@ func (s Service) ShowTransactionLock(ctx context.Context, stateDir string) (Lock
 		result.Warnings = append(result.Warnings, warning)
 	}
 	if err != nil {
-		result.Status = LockShowStatusJournalCorrupt
-		return result, &Error{Code: CodeRecoveryFailed, Message: "load publish transaction journal failed", Cause: err}
+		if errors.Is(err, errTransactionJournalCorrupt) {
+			result.Status = LockShowStatusJournalCorrupt
+			return result, &Error{Code: CodeRecoveryFailed, Message: "load publish transaction journal failed", Cause: err}
+		}
+		result.Status = LockShowStatusFailed
+		return result, &Error{Code: CodeLockFailed, Message: "inspect publish transaction lock failed", Cause: err}
 	}
 	if !journal.Present {
 		result.Status = LockShowStatusJournalMissing
@@ -124,51 +176,61 @@ func (s Service) ShowTransactionLock(ctx context.Context, stateDir string) (Lock
 
 // ClearTransactionLock removes only publish.lock after explicit confirmation.
 func (s Service) ClearTransactionLock(ctx context.Context, stateDir string, opts LockClearOptions) (LockClearResult, error) {
-	result := LockClearResult{
-		Status:        LockClearStatusRefused,
-		TransactionID: opts.TransactionID,
-	}
+	result := LockClearResult{Status: LockClearStatusRefused, TransactionID: opts.TransactionID}
 	if err := ctx.Err(); err != nil {
 		result.Status = LockClearStatusFailed
 		return result, err
 	}
 	if opts.TransactionID == "" {
-		result.Reason = "missing transaction id"
-		return result, &Error{Code: CodeLockFailed, Message: "transaction id is required"}
+		result.Reason = LockClearReasonMissingTransactionID
+		result.Message = "transaction id is required"
+		return result, &Error{Code: CodeLockFailed, Message: result.Message}
 	}
 	if opts.Confirm == "" {
-		result.Reason = "missing confirmation"
-		return result, &Error{Code: CodeLockFailed, Message: "confirmation transaction id is required"}
+		result.Reason = LockClearReasonMissingConfirmation
+		result.Message = "confirmation transaction id is required"
+		return result, &Error{Code: CodeLockFailed, Message: result.Message}
 	}
 	if opts.Confirm != opts.TransactionID {
-		result.Reason = "confirmation does not match transaction id"
-		return result, &Error{Code: CodeLockFailed, Message: "confirmation transaction id does not match"}
+		result.Reason = LockClearReasonConfirmationMismatch
+		result.Message = "confirmation transaction id does not match"
+		return result, &Error{Code: CodeLockFailed, Message: result.Message}
 	}
 	if err := validateTransactionID(opts.TransactionID); err != nil {
-		result.Reason = "invalid transaction id"
-		return result, &Error{Code: CodeLockFailed, Message: "invalid transaction id", Cause: err}
+		result.Reason = LockClearReasonInvalidTransactionID
+		result.Message = "invalid transaction id"
+		return result, &Error{Code: CodeLockFailed, Message: result.Message, Cause: err}
 	}
 
 	path, err := transactionLockPath(stateDir)
 	if err != nil {
 		result.Status = LockClearStatusFailed
-		result.Reason = "state dir is required"
-		return result, &Error{Code: CodeLockFailed, Message: "resolve publish lock path failed", Cause: err}
+		result.Reason = LockClearReasonStateDirMissing
+		result.Message = "resolve publish lock path failed"
+		return result, &Error{Code: CodeLockFailed, Message: result.Message, Cause: err}
 	}
 	lock, err := readTransactionLock(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			result.Reason = "publish lock is absent"
-			return result, &Error{Code: CodeLockFailed, Message: "publish lock is absent"}
+			result.Reason = LockClearReasonLockAbsent
+			result.Message = "publish lock is absent"
+			return result, &Error{Code: CodeLockFailed, Message: result.Message}
 		}
 		result.Status = LockClearStatusFailed
-		result.Reason = "publish lock is not parseable"
-		result.Warnings = append(result.Warnings, LockWarning{Code: "lock_corrupt", Message: "publish lock is not parseable"})
+		if errors.Is(err, errTransactionLockCorrupt) {
+			result.Reason = LockClearReasonLockCorrupt
+			result.Message = "publish lock is not parseable"
+			result.Warnings = append(result.Warnings, LockWarning{Code: LockWarningLockCorrupt, Message: result.Message})
+		} else {
+			result.Reason = LockClearReasonLockReadFailed
+			result.Message = "read publish transaction lock failed"
+		}
 		return result, &Error{Code: CodeLockFailed, Message: "read publish transaction lock failed", Cause: err}
 	}
 	result.Lock = lock
 	if lock.ID != opts.TransactionID {
-		result.Reason = "lock transaction does not match requested transaction"
+		result.Reason = LockClearReasonTransactionMismatch
+		result.Message = "lock transaction does not match requested transaction"
 		return result, &Error{Code: CodeLockFailed, Message: fmt.Sprintf("publish lock belongs to %s, not %s", lock.ID, opts.TransactionID)}
 	}
 
@@ -179,28 +241,34 @@ func (s Service) ClearTransactionLock(ctx context.Context, stateDir string, opts
 	}
 	if err != nil {
 		result.Status = LockClearStatusFailed
-		result.Reason = "referenced transaction journal is corrupt"
-		return result, &Error{Code: CodeRecoveryFailed, Message: "load publish transaction journal failed", Cause: err}
+		if errors.Is(err, errTransactionJournalCorrupt) {
+			result.Reason = LockClearReasonJournalCorrupt
+			result.Message = "referenced transaction journal is corrupt"
+			return result, &Error{Code: CodeRecoveryFailed, Message: "load publish transaction journal failed", Cause: err}
+		}
+		result.Reason = LockClearReasonJournalReadFailed
+		result.Message = "read referenced transaction journal failed"
+		return result, &Error{Code: CodeLockFailed, Message: "read referenced transaction journal failed", Cause: err}
 	}
-	if journal.Present && !canClearLockForStatus(journal.Status) {
-		result.Reason = "referenced transaction is active"
+	postState := postClearState(journal)
+	if journal.Present && !journal.Status.AllowsLockClear() {
+		result.Reason = LockClearReasonActiveTransaction
+		result.Message = "referenced transaction is active"
 		return result, &Error{Code: CodeLockFailed, Message: fmt.Sprintf("transaction %s is %s; refusing to clear active publish lock", lock.ID, journal.Status)}
 	}
 
-	if err := os.Remove(path); err != nil {
+	if err := removeTransactionLockIfCurrent(path, lock.ID); err != nil {
 		result.Status = LockClearStatusFailed
-		result.Reason = "delete publish lock failed"
-		return result, &Error{Code: CodeLockFailed, Message: "delete publish lock failed", Cause: err}
-	}
-	if err := syncParentDir(path); err != nil {
-		result.Status = LockClearStatusFailed
-		result.Reason = "sync publish lock directory failed"
-		return result, &Error{Code: CodeLockFailed, Message: "sync publish lock directory failed", Cause: err}
+		result.Reason = lockClearRemoveReason(err)
+		result.Message = lockClearRemoveMessage(result.Reason)
+		return result, &Error{Code: CodeLockFailed, Message: result.Message, Cause: err}
 	}
 
 	result.Status = LockClearStatusCleared
 	result.LockCleared = true
-	result.Reason = "publish lock cleared"
+	result.Reason = LockClearReasonCleared
+	result.Message = "publish lock cleared"
+	result.PostClearState = postState
 	return result, nil
 }
 
@@ -209,14 +277,17 @@ func loadLockJournal(ctx context.Context, stateDir string, id TransactionID) (Lo
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return LockJournalState{}, LockWarning{
-				Code:    "journal_missing",
+				Code:    LockWarningJournalMissing,
 				Message: "publish lock references a transaction journal that does not exist",
 			}, nil
 		}
-		return LockJournalState{}, LockWarning{
-			Code:    "journal_corrupt",
-			Message: "publish lock references a transaction journal that cannot be read safely",
-		}, err
+		if errors.Is(err, errTransactionJournalCorrupt) {
+			return LockJournalState{}, LockWarning{
+				Code:    LockWarningJournalCorrupt,
+				Message: "publish lock references a transaction journal that cannot be read safely",
+			}, err
+		}
+		return LockJournalState{}, LockWarning{}, err
 	}
 	return LockJournalState{
 		Present:   true,
@@ -228,14 +299,38 @@ func loadLockJournal(ctx context.Context, stateDir string, id TransactionID) (Lo
 	}, LockWarning{}, nil
 }
 
-func canClearLockForStatus(status TransactionStatus) bool {
-	switch status {
-	case TransactionStatusCommitted,
-		TransactionStatusRolledBack,
-		TransactionStatusFailed,
-		TransactionStatusRollbackFailed:
-		return true
+func postClearState(journal LockJournalState) LockPostClearState {
+	if !journal.Present {
+		return LockPostClearUnverifiedNoJournal
+	}
+	if journal.Status.BlocksNewPublish() {
+		return LockPostClearTransactionStillOpen
+	}
+	return LockPostClearReadyForPublish
+}
+
+func lockClearRemoveReason(err error) LockClearReason {
+	switch {
+	case errors.Is(err, errTransactionLockChanged), errors.Is(err, os.ErrNotExist), errors.Is(err, errTransactionLockCorrupt):
+		return LockClearReasonLockChanged
+	case errors.Is(err, errTransactionLockDeleteFailed):
+		return LockClearReasonDeleteFailed
+	case errors.Is(err, errTransactionLockSyncFailed):
+		return LockClearReasonSyncFailed
 	default:
-		return false
+		return LockClearReasonDeleteFailed
+	}
+}
+
+func lockClearRemoveMessage(reason LockClearReason) string {
+	switch reason {
+	case LockClearReasonLockChanged:
+		return "publish lock changed before deletion"
+	case LockClearReasonSyncFailed:
+		return "sync publish lock directory failed"
+	case LockClearReasonLockCorrupt:
+		return "publish lock is not parseable"
+	default:
+		return "delete publish lock failed"
 	}
 }

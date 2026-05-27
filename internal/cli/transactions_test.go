@@ -201,8 +201,8 @@ func TestRunTransactionsLockClearPassesGuardedRequest(t *testing.T) {
 	code := cli.Run(context.Background(), []string{
 		"transactions", "lock", "clear",
 		"--state-dir", "/state",
-		"--transaction", "tx-one",
-		"--confirm", "tx-one",
+		"--transaction", " tx-one ",
+		"--confirm", " tx-one ",
 		"--output", "json",
 	}, &stdout, &stderr)
 

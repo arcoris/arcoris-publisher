@@ -64,14 +64,45 @@ const (
 	TransactionStatusRollbackFailed TransactionStatus = "rollback_failed"
 )
 
-// Terminal reports whether a transaction no longer blocks a new publish.
-func (s TransactionStatus) Terminal() bool {
+// BlocksNewPublish reports whether this journal must keep new publish attempts
+// out until an operator resolves or preserves the recovery state.
+func (s TransactionStatus) BlocksNewPublish() bool {
+	switch s {
+	case TransactionStatusCommitted, TransactionStatusRolledBack:
+		return false
+	default:
+		return true
+	}
+}
+
+// Prunable reports whether a journal is safe lifecycle clutter, not recovery
+// state. Failed and rollback_failed journals are deliberately kept.
+func (s TransactionStatus) Prunable() bool {
 	switch s {
 	case TransactionStatusCommitted, TransactionStatusRolledBack:
 		return true
 	default:
 		return false
 	}
+}
+
+// AllowsLockClear reports whether an explicit operator confirmation may remove
+// only publish.lock while preserving any referenced transaction journal.
+func (s TransactionStatus) AllowsLockClear() bool {
+	switch s {
+	case TransactionStatusCommitted,
+		TransactionStatusRolledBack,
+		TransactionStatusFailed,
+		TransactionStatusRollbackFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Terminal reports whether a transaction no longer blocks a new publish.
+func (s TransactionStatus) Terminal() bool {
+	return !s.BlocksNewPublish()
 }
 
 // RollbackStatus identifies rollback outcome.

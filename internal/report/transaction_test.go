@@ -149,6 +149,8 @@ func TestTransactionLockClearReportJSONAndText(t *testing.T) {
 	}
 	if !strings.Contains(jsonBuf.String(), `"kind": "transactions-lock-clear"`) ||
 		!strings.Contains(jsonBuf.String(), `"status": "cleared"`) ||
+		!strings.Contains(jsonBuf.String(), `"reason": "cleared"`) ||
+		!strings.Contains(jsonBuf.String(), `"postClearState": "ready_for_publish"`) ||
 		strings.Contains(jsonBuf.String(), "/state") {
 		t.Fatalf("transaction lock clear JSON = %s", jsonBuf.String())
 	}
@@ -158,8 +160,41 @@ func TestTransactionLockClearReportJSONAndText(t *testing.T) {
 		t.Fatalf("TransactionLockClear(text) error = %v", err)
 	}
 	if !strings.Contains(textBuf.String(), "Transaction lock clear") ||
-		!strings.Contains(textBuf.String(), "Status: cleared") {
+		!strings.Contains(textBuf.String(), "Status: cleared") ||
+		!strings.Contains(textBuf.String(), "Reason: cleared") ||
+		!strings.Contains(textBuf.String(), "Post-clear: ready_for_publish") {
 		t.Fatalf("transaction lock clear text = %s", textBuf.String())
+	}
+}
+
+func TestTransactionLockWarningCodesAreStable(t *testing.T) {
+	t.Parallel()
+
+	result := transactionLockFixture()
+	result.Warnings = []publish.LockWarning{
+		{Code: publish.LockWarningJournalMissing, Message: "publish lock references a transaction journal that does not exist"},
+		{Code: publish.LockWarningJournalCorrupt, Message: "publish lock references a transaction journal that cannot be read safely"},
+		{Code: publish.LockWarningLockCorrupt, Message: "publish lock is not parseable"},
+	}
+
+	var jsonBuf bytes.Buffer
+	if err := New(Options{Format: FormatJSON, Pretty: true}).TransactionLock(&jsonBuf, result); err != nil {
+		t.Fatalf("TransactionLock(JSON) error = %v", err)
+	}
+	if !strings.Contains(jsonBuf.String(), `"code": "journal_missing"`) ||
+		!strings.Contains(jsonBuf.String(), `"code": "journal_corrupt"`) ||
+		!strings.Contains(jsonBuf.String(), `"code": "lock_corrupt"`) {
+		t.Fatalf("transaction lock JSON = %s", jsonBuf.String())
+	}
+
+	var textBuf bytes.Buffer
+	if err := New(Options{Format: FormatText}).TransactionLock(&textBuf, result); err != nil {
+		t.Fatalf("TransactionLock(text) error = %v", err)
+	}
+	if !strings.Contains(textBuf.String(), "journal_missing") ||
+		!strings.Contains(textBuf.String(), "journal_corrupt") ||
+		!strings.Contains(textBuf.String(), "lock_corrupt") {
+		t.Fatalf("transaction lock text = %s", textBuf.String())
 	}
 }
 
@@ -227,12 +262,14 @@ func transactionLockFixture() publish.LockShowResult {
 func transactionLockClearFixture() publish.LockClearResult {
 	fixture := transactionLockFixture()
 	return publish.LockClearResult{
-		Status:        publish.LockClearStatusCleared,
-		TransactionID: "tx-test",
-		Lock:          fixture.Lock,
-		LockCleared:   true,
-		Journal:       fixture.Journal,
-		Reason:        "publish lock cleared",
+		Status:         publish.LockClearStatusCleared,
+		TransactionID:  "tx-test",
+		Lock:           fixture.Lock,
+		LockCleared:    true,
+		Journal:        fixture.Journal,
+		Reason:         publish.LockClearReasonCleared,
+		Message:        "publish lock cleared",
+		PostClearState: publish.LockPostClearReadyForPublish,
 	}
 }
 

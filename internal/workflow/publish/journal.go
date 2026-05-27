@@ -42,6 +42,12 @@ type FileJournalStore struct {
 	stateDir string
 }
 
+var errTransactionJournalCorrupt = errors.New("transaction journal corrupt")
+
+func journalCorruptf(format string, args ...any) error {
+	return fmt.Errorf("%w: "+format, append([]any{errTransactionJournalCorrupt}, args...)...)
+}
+
 // NewFileJournalStore returns a journal store rooted at stateDir.
 func NewFileJournalStore(stateDir string) FileJournalStore {
 	return FileJournalStore{stateDir: stateDir}
@@ -75,7 +81,7 @@ func (s FileJournalStore) Load(ctx context.Context, id TransactionID) (Transacti
 	}
 	var journal TransactionJournal
 	if err := json.Unmarshal(data, &journal); err != nil {
-		return TransactionJournal{}, fmt.Errorf("transaction journal %s is corrupt: %w", filepath.Base(path), err)
+		return TransactionJournal{}, journalCorruptf("transaction journal %s is corrupt: %w", filepath.Base(path), err)
 	}
 	if err := validateJournalIdentity(filepath.Base(path), id, journal.ID); err != nil {
 		return TransactionJournal{}, err
@@ -108,7 +114,7 @@ func (s FileJournalStore) List(ctx context.Context) ([]TransactionSummary, error
 		}
 		var journal TransactionJournal
 		if err := json.Unmarshal(data, &journal); err != nil {
-			return nil, fmt.Errorf("transaction journal %s is corrupt: %w", entry.Name(), err)
+			return nil, journalCorruptf("transaction journal %s is corrupt: %w", entry.Name(), err)
 		}
 		if err := validateJournalIdentity(entry.Name(), "", journal.ID); err != nil {
 			return nil, err
@@ -131,7 +137,7 @@ func (s FileJournalStore) HasPending(ctx context.Context) (TransactionSummary, b
 		return TransactionSummary{}, false, err
 	}
 	for _, summary := range summaries {
-		if !summary.Status.Terminal() {
+		if summary.Status.BlocksNewPublish() {
 			return summary, true, nil
 		}
 	}
@@ -181,13 +187,13 @@ func (s FileJournalStore) transactionsDir() string {
 
 func validateJournalIdentity(filename string, requested TransactionID, actual TransactionID) error {
 	if err := validateTransactionID(actual); err != nil {
-		return fmt.Errorf("transaction journal %s has unsafe transaction id %q", filename, actual)
+		return journalCorruptf("transaction journal %s has unsafe transaction id %q: %w", filename, actual, err)
 	}
 	if expected := strings.TrimSuffix(filename, ".json"); expected != actual.String() {
-		return fmt.Errorf("transaction journal %s contains transaction id %q", filename, actual)
+		return journalCorruptf("transaction journal %s contains transaction id %q", filename, actual)
 	}
 	if requested != "" && actual != requested {
-		return fmt.Errorf("transaction journal %s contains transaction id %q, want %q", filename, actual, requested)
+		return journalCorruptf("transaction journal %s contains transaction id %q, want %q", filename, actual, requested)
 	}
 	return nil
 }

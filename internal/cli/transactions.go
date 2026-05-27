@@ -114,10 +114,12 @@ func (c CLI) newTransactionsLockClearCommand(flags *transactionFlags, output *ou
 			"It never deletes transaction journals, refs, tags, branches, remotes, or worktree files.",
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if strings.TrimSpace(clearFlags.transaction) == "" {
+			clearFlags.transaction = strings.TrimSpace(clearFlags.transaction)
+			clearFlags.confirm = strings.TrimSpace(clearFlags.confirm)
+			if clearFlags.transaction == "" {
 				return usageError("--transaction is required")
 			}
-			if strings.TrimSpace(clearFlags.confirm) == "" {
+			if clearFlags.confirm == "" {
 				return usageError("--confirm is required")
 			}
 			if clearFlags.confirm != clearFlags.transaction {

@@ -50,6 +50,8 @@ assert_code "$code" 0 "$clear_stderr"
 assert_json_if_python "$clear_report"
 assert_no_path_leak "$clear_report"
 assert_contains "$clear_report" '"status": "cleared"'
+assert_contains "$clear_report" '"reason": "cleared"'
+assert_contains "$clear_report" '"postClearState": "ready_for_publish"'
 [[ ! -e "$(lab_state_dir)/publish.lock" ]] || fail "publish lock was not cleared"
 assert_file_exists "$tx_path"
 
@@ -82,6 +84,7 @@ assert_code "$code" 1 "$refused_stderr"
 assert_json_if_python "$refused_report"
 assert_no_path_leak "$refused_report"
 assert_contains "$refused_report" '"status": "refused"'
+assert_contains "$refused_report" '"reason": "active_transaction"'
 assert_file_exists "$(lab_state_dir)/publish.lock"
 assert_file_exists "$(lab_state_dir)/transactions/tx-pending-lock-lab.json"
 rm -f "$(lab_state_dir)/publish.lock"

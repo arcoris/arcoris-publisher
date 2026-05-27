@@ -118,6 +118,49 @@ func TestFileJournalStoreWriteLoadListPending(t *testing.T) {
 	}
 }
 
+func TestTransactionStatusPolicies(t *testing.T) {
+	tests := []struct {
+		status          TransactionStatus
+		blocksPublish   bool
+		prunable        bool
+		allowsLockClear bool
+	}{
+		{status: TransactionStatusPending, blocksPublish: true},
+		{status: TransactionStatusPreflighted, blocksPublish: true},
+		{status: TransactionStatusSnapshotted, blocksPublish: true},
+		{status: TransactionStatusCommittedLocally, blocksPublish: true},
+		{status: TransactionStatusCandidatesPushed, blocksPublish: true},
+		{status: TransactionStatusPromoting, blocksPublish: true},
+		{status: TransactionStatusBranchesPromoted, blocksPublish: true},
+		{status: TransactionStatusTagging, blocksPublish: true},
+		{status: TransactionStatusCommitted, prunable: true, allowsLockClear: true},
+		{status: TransactionStatusFailed, blocksPublish: true, allowsLockClear: true},
+		{status: TransactionStatusRollingBack, blocksPublish: true},
+		{status: TransactionStatusRolledBack, prunable: true, allowsLockClear: true},
+		{status: TransactionStatusRollbackFailed, blocksPublish: true, allowsLockClear: true},
+		{status: TransactionStatus("unknown"), blocksPublish: true},
+		{status: TransactionStatus(""), blocksPublish: true},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(string(tt.status), func(t *testing.T) {
+			if got := tt.status.BlocksNewPublish(); got != tt.blocksPublish {
+				t.Fatalf("BlocksNewPublish() = %v, want %v", got, tt.blocksPublish)
+			}
+			if got := tt.status.Prunable(); got != tt.prunable {
+				t.Fatalf("Prunable() = %v, want %v", got, tt.prunable)
+			}
+			if got := tt.status.AllowsLockClear(); got != tt.allowsLockClear {
+				t.Fatalf("AllowsLockClear() = %v, want %v", got, tt.allowsLockClear)
+			}
+			if got := tt.status.Terminal(); got != !tt.blocksPublish {
+				t.Fatalf("Terminal() = %v, want %v", got, !tt.blocksPublish)
+			}
+		})
+	}
+}
+
 func TestFileJournalStoreRejectsUnsafeTransactionID(t *testing.T) {
 	store := NewFileJournalStore(t.TempDir())
 	if err := store.Create(context.Background(), TransactionJournal{ID: "../escape"}); err == nil {
@@ -187,6 +230,38 @@ func TestTransactionLockConflict(t *testing.T) {
 	}
 }
 
+func TestTransactionLockReleaseSyncsParentAfterRemove(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	lock, err := acquireTransactionLock(ctx, dir, "tx-one", time.Unix(1, 0).UTC())
+	if err != nil {
+		t.Fatalf("lock error = %v", err)
+	}
+	var synced bool
+	syncTransactionLockParent = func(path string) error {
+		synced = path == lock.path
+		return nil
+	}
+	t.Cleanup(func() { syncTransactionLockParent = syncParentDir })
+
+	if err := lock.Release(); err != nil {
+		t.Fatalf("Release() error = %v", err)
+	}
+	if !synced {
+		t.Fatal("Release() did not sync parent directory")
+	}
+	if _, err := os.Stat(lock.path); !os.IsNotExist(err) {
+		t.Fatalf("lock exists or stat failed: %v", err)
+	}
+}
+
+func TestTransactionLockReleaseMissingIsNoop(t *testing.T) {
+	lock := transactionLock{path: filepath.Join(t.TempDir(), "publish.lock"), id: "tx-missing"}
+	if err := lock.Release(); err != nil {
+		t.Fatalf("Release() error = %v", err)
+	}
+}
+
 func TestTransactionLockReleaseRefusesMismatchedLock(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -195,7 +270,7 @@ func TestTransactionLockReleaseRefusesMismatchedLock(t *testing.T) {
 		t.Fatalf("first lock error = %v", err)
 	}
 	path := first.path
-	if err := os.WriteFile(path, []byte("transaction=tx-two\npid=1\nstartedAt=now\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("transaction=tx-two\npid=1\nstartedAt=2026-01-01T00:00:00Z\ncommand=publish\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 	if err := first.Release(); err == nil {
@@ -203,5 +278,80 @@ func TestTransactionLockReleaseRefusesMismatchedLock(t *testing.T) {
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("mismatched lock was removed: %v", err)
+	}
+}
+
+func TestTransactionLockReleasePreservesCorruptLock(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	lock, err := acquireTransactionLock(ctx, dir, "tx-one", time.Unix(1, 0).UTC())
+	if err != nil {
+		t.Fatalf("lock error = %v", err)
+	}
+	if err := os.WriteFile(lock.path, []byte("pid=1\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	if err := lock.Release(); err == nil {
+		t.Fatal("Release() error = nil")
+	}
+	if _, err := os.Stat(lock.path); err != nil {
+		t.Fatalf("corrupt lock was removed: %v", err)
+	}
+}
+
+func TestReadTransactionLockStrictParser(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		wantErr bool
+	}{
+		{
+			name:    "valid current format",
+			content: "transaction=tx-one\npid=123\nstartedAt=2026-01-01T00:00:00Z\ncommand=publish\n",
+		},
+		{
+			name:    "valid required transaction only",
+			content: "transaction=tx-one\n",
+		},
+		{name: "missing transaction", content: "pid=1\nstartedAt=2026-01-01T00:00:00Z\ncommand=publish\n", wantErr: true},
+		{name: "invalid transaction", content: "transaction=../bad\npid=1\nstartedAt=2026-01-01T00:00:00Z\ncommand=publish\n", wantErr: true},
+		{name: "duplicate transaction", content: "transaction=tx-one\ntransaction=tx-two\npid=1\nstartedAt=2026-01-01T00:00:00Z\ncommand=publish\n", wantErr: true},
+		{name: "malformed line", content: "transaction=tx-one\nnot-a-pair\npid=1\nstartedAt=2026-01-01T00:00:00Z\ncommand=publish\n", wantErr: true},
+		{name: "duplicate pid", content: "transaction=tx-one\npid=1\npid=2\nstartedAt=2026-01-01T00:00:00Z\ncommand=publish\n", wantErr: true},
+		{name: "duplicate startedAt", content: "transaction=tx-one\npid=1\nstartedAt=2026-01-01T00:00:00Z\nstartedAt=2026-01-01T00:00:01Z\ncommand=publish\n", wantErr: true},
+		{name: "duplicate command", content: "transaction=tx-one\npid=1\nstartedAt=2026-01-01T00:00:00Z\ncommand=publish\ncommand=publish\n", wantErr: true},
+		{name: "invalid pid", content: "transaction=tx-one\npid=-1\nstartedAt=2026-01-01T00:00:00Z\ncommand=publish\n", wantErr: true},
+		{name: "invalid startedAt", content: "transaction=tx-one\npid=1\nstartedAt=now\ncommand=publish\n", wantErr: true},
+		{name: "empty command", content: "transaction=tx-one\npid=1\nstartedAt=2026-01-01T00:00:00Z\ncommand=\n", wantErr: true},
+		{name: "unknown key", content: "transaction=tx-one\npid=1\nstartedAt=2026-01-01T00:00:00Z\ncommand=publish\nowner=operator\n", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "publish.lock")
+			if err := os.WriteFile(path, []byte(tt.content), 0o600); err != nil {
+				t.Fatalf("WriteFile() error = %v", err)
+			}
+
+			info, err := readTransactionLock(path)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("readTransactionLock() error = nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("readTransactionLock() error = %v", err)
+			}
+			if info.ID != "tx-one" {
+				t.Fatalf("transaction id = %q", info.ID)
+			}
+			if tt.name == "valid current format" && (info.PID != "123" || info.Command != "publish" || info.StartedAt != "2026-01-01T00:00:00Z") {
+				t.Fatalf("lock info = %#v", info)
+			}
+		})
 	}
 }

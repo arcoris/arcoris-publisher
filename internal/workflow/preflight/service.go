@@ -156,14 +156,41 @@ func (s Service) checkTransactions(ctx context.Context, stateDir string, builder
 		builder.addGlobal(passed("pending-transactions", "no pending transactions"))
 	}
 
-	lock, locked, err := publish.CurrentTransactionLock(stateDir)
-	if err != nil {
-		builder.addGlobal(failed("publish-lock", "lock_lookup_failed", "publish lock lookup failed"))
-	} else if locked {
-		builder.addGlobal(failed("publish-lock", "publish_lock_exists", fmt.Sprintf("publish lock exists for transaction %s", lock.ID)))
-	} else {
+	s.checkPublishLock(ctx, stateDir, builder)
+}
+
+func (s Service) checkPublishLock(ctx context.Context, stateDir string, builder *resultBuilder) {
+	lockResult, err := publish.New(publish.Dependencies{Git: s.deps.Git}, publish.Options{}).ShowTransactionLock(ctx, stateDir)
+	switch lockResult.Status {
+	case publish.LockShowStatusAbsent:
 		builder.addGlobal(passed("publish-lock", "publish lock absent"))
+	case publish.LockShowStatusPresent:
+		builder.addGlobal(lockPresentCheck(lockResult))
+	case publish.LockShowStatusJournalMissing:
+		builder.addGlobal(failed("publish-lock", "stale_publish_lock_journal_missing", fmt.Sprintf("publish lock references missing transaction journal %s", lockResult.Lock.ID)))
+	case publish.LockShowStatusCorrupt:
+		builder.addGlobal(failed("publish-lock", "publish_lock_corrupt", "publish lock is not parseable"))
+	case publish.LockShowStatusJournalCorrupt:
+		builder.addGlobal(failed("publish-lock", "publish_lock_journal_corrupt", fmt.Sprintf("publish lock references corrupt transaction journal %s", lockResult.Lock.ID)))
+	default:
+		if err != nil {
+			builder.addGlobal(failed("publish-lock", "lock_lookup_failed", "publish lock lookup failed"))
+		} else {
+			builder.addGlobal(failed("publish-lock", "lock_lookup_failed", "publish lock state is unavailable"))
+		}
 	}
+}
+
+func lockPresentCheck(lockResult publish.LockShowResult) CheckResult {
+	id := lockResult.Lock.ID
+	status := lockResult.Journal.Status
+	if !status.BlocksNewPublish() {
+		return failed("publish-lock", "stale_publish_lock_terminal_transaction", fmt.Sprintf("publish lock references terminal transaction %s with status %s", id, status))
+	}
+	if status.AllowsLockClear() {
+		return failed("publish-lock", "publish_lock_recovery_required", fmt.Sprintf("publish lock references recovery transaction %s with status %s", id, status))
+	}
+	return failed("publish-lock", "publish_lock_exists", fmt.Sprintf("publish lock exists for active transaction %s with status %s", id, status))
 }
 
 func (s Service) checkModule(ctx context.Context, root string, p plan.Plan, mod plan.ModulePlan) ModuleResult {

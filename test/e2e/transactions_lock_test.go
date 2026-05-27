@@ -69,6 +69,24 @@ func TestTransactionsLockShowCorruptLock(t *testing.T) {
 	}
 }
 
+func TestTransactionsLockShowCorruptJournal(t *testing.T) {
+	stateDir := t.TempDir()
+	writeE2ELockFile(t, stateDir, "tx-corrupt")
+	txDir := filepath.Join(stateDir, "transactions")
+	if err := os.MkdirAll(txDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(txDir, "tx-corrupt.json"), []byte("{"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	result, decoded := runTransactionsLockShowJSON(t, stateDir, 1)
+
+	if got := stringField(t, decoded, "status"); got != "journal_corrupt" {
+		t.Fatalf("status = %q\nstdout=%s\nstderr=%s", got, result.Stdout, result.Stderr)
+	}
+}
+
 func TestTransactionsLockClearRequiresTransactionAndConfirm(t *testing.T) {
 	stateDir := t.TempDir()
 	for _, tt := range []struct {
@@ -107,6 +125,12 @@ func TestTransactionsLockClearDeletesTerminalLockOnly(t *testing.T) {
 	if got := stringField(t, decoded, "status"); got != "cleared" {
 		t.Fatalf("status = %q", got)
 	}
+	if got := stringField(t, decoded, "reason"); got != "cleared" {
+		t.Fatalf("reason = %q", got)
+	}
+	if got := stringField(t, decoded, "postClearState"); got != "ready_for_publish" {
+		t.Fatalf("postClearState = %q", got)
+	}
 	assertPathMissing(t, transactionLockPath(stateDir))
 	assertFileExists(t, transactionJournalPath(stateDir, "tx-committed"))
 }
@@ -128,10 +152,29 @@ func TestTransactionsLockClearRollbackFailedPolicy(t *testing.T) {
 	writeE2ETransactionJournal(t, stateDir, "tx-rollback-failed", "rollback_failed", time.Now())
 	writeE2ELockFile(t, stateDir, "tx-rollback-failed")
 
-	runTransactionsLockClearJSON(t, stateDir, 0, "tx-rollback-failed")
+	_, decoded := runTransactionsLockClearJSON(t, stateDir, 0, "tx-rollback-failed")
 
+	if got := stringField(t, decoded, "postClearState"); got != "transaction_still_blocks_publish" {
+		t.Fatalf("postClearState = %q", got)
+	}
 	assertPathMissing(t, transactionLockPath(stateDir))
 	assertFileExists(t, transactionJournalPath(stateDir, "tx-rollback-failed"))
+}
+
+func TestTransactionsLockClearMissingJournalIsUnverified(t *testing.T) {
+	stateDir := t.TempDir()
+	writeE2ELockFile(t, stateDir, "tx-orphan")
+
+	_, decoded := runTransactionsLockClearJSON(t, stateDir, 0, "tx-orphan")
+
+	if got := stringField(t, decoded, "status"); got != "cleared" {
+		t.Fatalf("status = %q", got)
+	}
+	if got := stringField(t, decoded, "postClearState"); got != "unverified_no_journal" {
+		t.Fatalf("postClearState = %q", got)
+	}
+	assertPathMissing(t, transactionLockPath(stateDir))
+	assertPathMissing(t, transactionJournalPath(stateDir, "tx-orphan"))
 }
 
 func TestTransactionsLockNoPathLeaksByDefault(t *testing.T) {

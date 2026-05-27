@@ -29,6 +29,43 @@ type transactionLock struct {
 	id   TransactionID
 }
 
+var (
+	errTransactionLockCorrupt      = errors.New("publish lock corrupt")
+	errTransactionLockChanged      = errors.New("publish lock changed")
+	errTransactionLockDeleteFailed = errors.New("publish lock delete failed")
+	errTransactionLockSyncFailed   = errors.New("publish lock sync failed")
+)
+
+var (
+	beforeRemoveTransactionLockForTest func()
+	removeTransactionLockFile          = os.Remove
+	syncTransactionLockParent          = syncParentDir
+)
+
+func lockCorruptf(format string, args ...any) error {
+	return fmt.Errorf("%w: "+format, append([]any{errTransactionLockCorrupt}, args...)...)
+}
+
+func removeTransactionLockIfCurrent(path string, expected TransactionID) error {
+	if beforeRemoveTransactionLockForTest != nil {
+		beforeRemoveTransactionLockForTest()
+	}
+	info, err := readTransactionLock(path)
+	if err != nil {
+		return err
+	}
+	if info.ID != expected {
+		return fmt.Errorf("%w: publish lock changed from %s to %s", errTransactionLockChanged, expected, info.ID)
+	}
+	if err := removeTransactionLockFile(path); err != nil {
+		return fmt.Errorf("%w: %v", errTransactionLockDeleteFailed, err)
+	}
+	if err := syncTransactionLockParent(path); err != nil {
+		return fmt.Errorf("%w: %v", errTransactionLockSyncFailed, err)
+	}
+	return nil
+}
+
 // TransactionLockInfo describes an existing publish lock without exposing the
 // lock file path. Preflight and recovery commands use it for diagnostics.
 type TransactionLockInfo struct {
@@ -86,17 +123,13 @@ func (l transactionLock) Release() error {
 	if l.path == "" {
 		return nil
 	}
-	info, err := readTransactionLock(l.path)
-	if err != nil {
+	if err := removeTransactionLockIfCurrent(l.path, l.id); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
 		return err
 	}
-	if info.ID != l.id {
-		return fmt.Errorf("publish lock belongs to transaction %s, not %s", info.ID, l.id)
-	}
-	return os.Remove(l.path)
+	return nil
 }
 
 func currentTransactionLock(stateDir string) (TransactionLockInfo, bool, error) {
@@ -132,28 +165,66 @@ func readTransactionLock(path string) (TransactionLockInfo, error) {
 		return TransactionLockInfo{}, err
 	}
 	info := TransactionLockInfo{}
-	for _, line := range strings.Split(string(data), "\n") {
-		key, value, ok := strings.Cut(line, "=")
-		if !ok {
+	seen := map[string]bool{}
+	for lineNo, rawLine := range strings.Split(string(data), "\n") {
+		line := strings.TrimSuffix(rawLine, "\r")
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			return TransactionLockInfo{}, lockCorruptf("malformed publish lock line %d", lineNo+1)
+		}
+		if seen[key] {
+			return TransactionLockInfo{}, lockCorruptf("duplicate publish lock key %q", key)
+		}
+		seen[key] = true
 		switch key {
 		case "transaction":
 			info.ID = TransactionID(value)
 		case "pid":
+			if strings.TrimSpace(value) == "" {
+				return TransactionLockInfo{}, lockCorruptf("publish lock pid is empty")
+			}
+			if !isASCIIInteger(value) {
+				return TransactionLockInfo{}, lockCorruptf("publish lock pid is not numeric")
+			}
 			info.PID = value
 		case "startedAt":
+			if strings.TrimSpace(value) == "" {
+				return TransactionLockInfo{}, lockCorruptf("publish lock startedAt is empty")
+			}
+			if _, err := time.Parse(time.RFC3339Nano, value); err != nil {
+				return TransactionLockInfo{}, lockCorruptf("publish lock startedAt is invalid")
+			}
 			info.StartedAt = value
 		case "command":
+			if strings.TrimSpace(value) == "" {
+				return TransactionLockInfo{}, lockCorruptf("publish lock command is empty")
+			}
 			info.Command = value
+		default:
+			return TransactionLockInfo{}, lockCorruptf("unknown publish lock key %q", key)
 		}
 	}
 	if info.ID == "" {
-		return TransactionLockInfo{}, fmt.Errorf("publish lock is missing transaction id")
+		return TransactionLockInfo{}, lockCorruptf("publish lock is missing transaction id")
 	}
 	if err := validateTransactionID(info.ID); err != nil {
-		return TransactionLockInfo{}, fmt.Errorf("publish lock has unsafe transaction id %q", info.ID)
+		return TransactionLockInfo{}, lockCorruptf("publish lock has unsafe transaction id %q", info.ID)
 	}
 	info.Path = path
 	return info, nil
+}
+
+func isASCIIInteger(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, ch := range value {
+		if ch < '0' || ch > '9' {
+			return false
+		}
+	}
+	return true
 }

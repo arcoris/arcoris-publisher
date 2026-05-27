@@ -138,19 +138,34 @@ func TestPreflightFailsOnCorruptedJournal(t *testing.T) {
 	assertPreflightGlobalFailed(t, decoded, "pending-transactions")
 }
 
-func TestPreflightFailsOnLockConflict(t *testing.T) {
+func TestPreflightFailsOnMissingJournalLock(t *testing.T) {
 	setup := prepareLocalPublish(t)
 	stateDir := filepath.Join(setup.targetRoot, ".arcpub", "state")
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(stateDir, "publish.lock"), []byte("transaction=tx-other\npid=1\nstartedAt=now\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(stateDir, "publish.lock"), []byte("transaction=tx-other\npid=1\nstartedAt=2026-01-01T00:00:00Z\ncommand=publish\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
 	_, decoded := runPreflightJSON(t, setup, 1)
 
-	assertPreflightGlobalFailed(t, decoded, "publish-lock")
+	assertPreflightGlobalFailedCode(t, decoded, "publish-lock", "stale_publish_lock_journal_missing")
+}
+
+func TestPreflightFailsOnCorruptLock(t *testing.T) {
+	setup := prepareLocalPublish(t)
+	stateDir := filepath.Join(setup.targetRoot, ".arcpub", "state")
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "publish.lock"), []byte("pid=1\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	_, decoded := runPreflightJSON(t, setup, 1)
+
+	assertPreflightGlobalFailedCode(t, decoded, "publish-lock", "publish_lock_corrupt")
 }
 
 func TestPreflightRejectsMultiBranch(t *testing.T) {
@@ -242,17 +257,22 @@ func writePendingJournal(t *testing.T, setup localPublishSetup, statusFragment s
 
 func assertPreflightGlobalFailed(t *testing.T, decoded map[string]any, name string) {
 	t.Helper()
+	assertPreflightGlobalFailedCode(t, decoded, name, "")
+}
+
+func assertPreflightGlobalFailedCode(t *testing.T, decoded map[string]any, name string, code string) {
+	t.Helper()
 	checks, ok := decoded["checks"].([]any)
 	if !ok {
 		t.Fatalf("checks missing: %#v", decoded)
 	}
 	for _, raw := range checks {
 		check := raw.(map[string]any)
-		if check["name"] == name && check["status"] == "failed" {
+		if check["name"] == name && check["status"] == "failed" && (code == "" || check["code"] == code) {
 			return
 		}
 	}
-	t.Fatalf("failed global check %q not found: %#v", name, checks)
+	t.Fatalf("failed global check %q code %q not found: %#v", name, code, checks)
 }
 
 func assertPreflightCheckFailed(t *testing.T, decoded map[string]any, name string) {
