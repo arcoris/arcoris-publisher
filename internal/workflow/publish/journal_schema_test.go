@@ -76,15 +76,13 @@ func TestFileJournalStoreRejectsUnsupportedWriteSchema(t *testing.T) {
 	}
 }
 
-func TestFileJournalStoreRejectsUnsupportedReadRepresentations(t *testing.T) {
+func TestFileJournalStoreRejectsUnsupportedWireRepresentations(t *testing.T) {
 	tests := []struct {
 		name string
 		json string
 	}{
 		{name: "missing schema", json: `{"id":"tx-test","status":"pending"}`},
 		{name: "future schema", json: `{"schemaVersion":2,"id":"tx-test","status":"pending"}`},
-		{name: "unknown status", json: `{"schemaVersion":1,"id":"tx-test","status":"future_state"}`},
-		{name: "unknown rollback status", json: `{"schemaVersion":1,"id":"tx-test","status":"failed","rollbackStatus":"future_state"}`},
 		{name: "unknown field", json: `{"schemaVersion":1,"id":"tx-test","status":"pending","futureField":true}`},
 		{name: "multiple values", json: `{"schemaVersion":1,"id":"tx-test","status":"pending"} {}`},
 	}
@@ -127,5 +125,32 @@ func TestFileJournalStoreRejectsUnsupportedReadRepresentations(t *testing.T) {
 				t.Fatalf("blockers = %#v, want corrupt journal blocker", diagnostics.Blockers)
 			}
 		})
+	}
+}
+
+func TestFileJournalStoreKeepsUnknownStatusOpaqueAndBlocking(t *testing.T) {
+	store := NewFileJournalStore(t.TempDir())
+	journal := TransactionJournal{
+		ID:        "tx-unknown",
+		Status:    TransactionStatus("future_state"),
+		Rollback:  RollbackStatus("future_state"),
+		StartedAt: time.Unix(1, 0).UTC(),
+		UpdatedAt: time.Unix(1, 0).UTC(),
+	}
+	if err := store.Create(context.Background(), journal); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	loaded, err := store.Load(context.Background(), journal.ID)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if loaded.Status != journal.Status || loaded.Rollback != journal.Rollback {
+		t.Fatalf("loaded opaque values = status %q rollback %q", loaded.Status, loaded.Rollback)
+	}
+	if !loaded.Status.BlocksNewPublish() || loaded.Status.Prunable() || loaded.Status.AllowsLockClear() {
+		t.Fatalf("unknown status policy is not fail-closed: %q", loaded.Status)
+	}
+	if err := validateTransactionStatusTransition(loaded.Status, TransactionStatusFailed); !errors.Is(err, errInvalidTransactionStatusTransition) {
+		t.Fatalf("unknown status transition error = %v, want invalid transition", err)
 	}
 }
