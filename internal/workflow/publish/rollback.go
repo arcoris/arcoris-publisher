@@ -16,6 +16,7 @@ package publish
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -25,21 +26,28 @@ import (
 func (r *transactionRunner) rollback(ctx context.Context) error {
 	r.journal.Rollback = RollbackStatusPending
 	r.journal.ManualActions = nil
-	_ = r.setStatus(ctx, TransactionStatusRollingBack)
+	if err := r.setStatus(ctx, TransactionStatusRollingBack); err != nil {
+		return err
+	}
 
 	for i := len(r.journal.Modules) - 1; i >= 0; i-- {
 		r.journal.Modules[i].Rollback.FailedActions = nil
 		r.rollbackModule(ctx, &r.journal.Modules[i])
-		_ = r.update(ctx)
+		if err := r.update(ctx); err != nil {
+			return err
+		}
 	}
 
 	if len(r.journal.ManualActions) > 0 {
 		r.journal.Rollback = RollbackStatusFailed
-		_ = r.setStatus(ctx, TransactionStatusRollbackFailed)
-		return &Error{
+		rollbackErr := &Error{
 			Code:    CodeRollbackFailed,
 			Message: fmt.Sprintf("transaction %s rollback requires manual recovery", r.journal.ID),
 		}
+		if err := r.setStatus(ctx, TransactionStatusRollbackFailed); err != nil {
+			return errors.Join(rollbackErr, err)
+		}
+		return rollbackErr
 	}
 
 	r.journal.Rollback = RollbackStatusSucceeded

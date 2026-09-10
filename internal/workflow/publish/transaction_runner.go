@@ -16,6 +16,7 @@ package publish
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -247,21 +248,25 @@ func (r *transactionRunner) ensureRemoteBaseUnchanged(ctx context.Context, mod *
 	return nil
 }
 
-func (r *transactionRunner) fail(ctx context.Context, err error) (Result, error) {
-	r.journal.Failure = err.Error()
-	_ = r.setStatus(ctx, TransactionStatusFailed)
+func (r *transactionRunner) fail(ctx context.Context, cause error) (Result, error) {
+	r.journal.Failure = cause.Error()
+	if err := r.setStatus(ctx, TransactionStatusFailed); err != nil {
+		return Result{modules: r.results(), transaction: r.journal}, errors.Join(cause, err)
+	}
 	if r.service.opts.RollbackMode == RollbackAutomatic {
 		rollbackErr := r.rollback(ctx)
 		if rollbackErr != nil {
 			return Result{modules: r.results(), transaction: r.journal}, rollbackErr
 		}
-		return Result{modules: r.results(), transaction: r.journal}, err
+		return Result{modules: r.results(), transaction: r.journal}, cause
 	}
 	if r.service.opts.RollbackMode == RollbackManual {
 		r.journal.Rollback = RollbackStatusPending
-		_ = r.update(ctx)
+		if err := r.update(ctx); err != nil {
+			return Result{modules: r.results(), transaction: r.journal}, errors.Join(cause, err)
+		}
 	}
-	return Result{modules: r.results(), transaction: r.journal}, err
+	return Result{modules: r.results(), transaction: r.journal}, cause
 }
 
 func (r *transactionRunner) setStatus(ctx context.Context, status TransactionStatus) error {
