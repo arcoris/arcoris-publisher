@@ -41,11 +41,13 @@ func isUnsafeStateFileRepresentation(err error) bool {
 }
 
 // readBoundedStateFile reads trusted recovery state through a deliberately
-// narrow filesystem boundary. Transaction state files must be regular files,
-// must not be symlinks, and must remain the same filesystem object between the
-// path inspection and the opened descriptor. The size limit prevents malformed
-// recovery state from turning a read-only inspection path into an unbounded
-// allocation.
+// narrow filesystem boundary. Transaction state files must not be symlinks or
+// special files and must remain the same filesystem object between path
+// inspection and the opened descriptor. Directories are reported as ordinary
+// read failures to preserve the public diagnostics distinction between an
+// inaccessible state file and a corrupt regular-file representation. The size
+// limit prevents malformed recovery state from turning a read-only inspection
+// path into an unbounded allocation.
 //
 // Errors intentionally mention only the base name so default diagnostics do
 // not leak local paths.
@@ -53,6 +55,9 @@ func readBoundedStateFile(path string, maxBytes int64) ([]byte, error) {
 	pathInfo, err := os.Lstat(path)
 	if err != nil {
 		return nil, err
+	}
+	if pathInfo.IsDir() {
+		return nil, fmt.Errorf("transaction state file %s is a directory", filepath.Base(path))
 	}
 	if !pathInfo.Mode().IsRegular() {
 		return nil, fmt.Errorf("%w: %s", errStateFileNotRegular, filepath.Base(path))
@@ -68,11 +73,11 @@ func readBoundedStateFile(path string, maxBytes int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !openedInfo.Mode().IsRegular() {
-		return nil, fmt.Errorf("%w: %s", errStateFileNotRegular, filepath.Base(path))
-	}
 	if !os.SameFile(pathInfo, openedInfo) {
 		return nil, fmt.Errorf("%w: %s", errStateFileChanged, filepath.Base(path))
+	}
+	if !openedInfo.Mode().IsRegular() {
+		return nil, fmt.Errorf("%w: %s", errStateFileNotRegular, filepath.Base(path))
 	}
 
 	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
