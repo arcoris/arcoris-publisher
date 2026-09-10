@@ -26,6 +26,7 @@ import (
 func TestPathSafetyHelpers(t *testing.T) {
 	root := t.TempDir()
 	inside := filepath.Join(root, "child")
+	dotDotNamedChild := filepath.Join(root, "..cache")
 	outside := filepath.Join(filepath.Dir(root), filepath.Base(root)+"-other")
 
 	if err := ensureInside(outside, ""); err != nil {
@@ -37,6 +38,9 @@ func TestPathSafetyHelpers(t *testing.T) {
 	if err := ensureInside(inside, root); err != nil {
 		t.Fatalf("ensureInside(inside) error = %v", err)
 	}
+	if err := ensureInside(dotDotNamedChild, root); err != nil {
+		t.Fatalf("ensureInside(dot-dot named child) error = %v", err)
+	}
 	if err := ensureInside(outside, root); err == nil {
 		t.Fatalf("ensureInside(outside) should fail")
 	}
@@ -46,8 +50,20 @@ func TestPathSafetyHelpers(t *testing.T) {
 	if err := ensureInside(inside, " "); err == nil {
 		t.Fatalf("ensureInside(empty root text) should fail")
 	}
-	if err := ensureSafeRemove(string(filepath.Separator), ""); err == nil {
-		t.Fatalf("ensureSafeRemove(root) should fail")
+
+	absRoot, err := filepath.Abs(string(filepath.Separator))
+	if err != nil {
+		t.Fatalf("filepath.Abs(root) error = %v", err)
+	}
+	for !isFilesystemRoot(absRoot) {
+		parent := filepath.Dir(absRoot)
+		if parent == absRoot {
+			break
+		}
+		absRoot = parent
+	}
+	if err := ensureSafeRemove(absRoot, ""); err == nil {
+		t.Fatalf("ensureSafeRemove(root %q) should fail", absRoot)
 	}
 }
 
