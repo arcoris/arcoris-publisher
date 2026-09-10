@@ -68,19 +68,21 @@ type operationLockOutcome struct {
 }
 
 type operationLockOps struct {
-	remove       func(string) error
-	syncParent   func(string) error
-	now          func() time.Time
-	token        func() (string, error)
-	beforeRemove func()
+	remove            func(string) error
+	syncAcquireParent func(string) error
+	syncParent        func(string) error
+	now               func() time.Time
+	token             func() (string, error)
+	beforeRemove      func()
 }
 
 func defaultOperationLockOps() operationLockOps {
 	return operationLockOps{
-		remove:     os.Remove,
-		syncParent: syncParentDir,
-		now:        func() time.Time { return time.Now().UTC() },
-		token:      randomOperationLockToken,
+		remove:            os.Remove,
+		syncAcquireParent: syncParentDir,
+		syncParent:        syncParentDir,
+		now:               func() time.Time { return time.Now().UTC() },
+		token:             randomOperationLockToken,
 	}
 }
 
@@ -88,6 +90,9 @@ func (ops operationLockOps) withDefaults() operationLockOps {
 	defaults := defaultOperationLockOps()
 	if ops.remove == nil {
 		ops.remove = defaults.remove
+	}
+	if ops.syncAcquireParent == nil {
+		ops.syncAcquireParent = defaults.syncAcquireParent
 	}
 	if ops.syncParent == nil {
 		ops.syncParent = defaults.syncParent
@@ -148,7 +153,7 @@ func acquireOperationLock(ctx context.Context, stateDir string, operation operat
 	if err := file.Close(); err != nil {
 		return operationLock{}, joinOperationLockAcquireCleanup(path, ops, err)
 	}
-	if err := ops.syncParent(path); err != nil {
+	if err := ops.syncAcquireParent(path); err != nil {
 		return operationLock{}, joinOperationLockAcquireCleanup(path, ops, err)
 	}
 	return operationLock{path: path, operation: operation, token: token, ops: ops}, nil
