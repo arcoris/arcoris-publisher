@@ -21,11 +21,11 @@ import (
 	"io"
 )
 
-// UnmarshalJSON rejects journal representations that this binary cannot
-// interpret safely. Durable recovery state is versioned state, not a
-// best-effort configuration file: an unknown schema, status, rollback status,
-// or JSON field must fail closed instead of being silently projected onto the
-// current structs.
+// UnmarshalJSON rejects wire representations that this binary cannot decode
+// safely while keeping enum-like status values opaque. schemaVersion defines
+// the structural compatibility boundary; unknown fields or versions fail
+// closed, while unknown status values remain inspectable and are conservatively
+// treated as publish blockers by TransactionStatus policy.
 func (j *TransactionJournal) UnmarshalJSON(data []byte) error {
 	type journalWire TransactionJournal
 
@@ -51,12 +51,6 @@ func (j *TransactionJournal) UnmarshalJSON(data []byte) error {
 	if err := requireJSONEOF(decoder); err != nil {
 		return err
 	}
-	if !knownTransactionStatus(decoded.Status) {
-		return fmt.Errorf("unsupported transaction status %q", decoded.Status)
-	}
-	if !knownRollbackStatus(decoded.Rollback) {
-		return fmt.Errorf("unsupported rollback status %q", decoded.Rollback)
-	}
 
 	*j = TransactionJournal(decoded)
 	return nil
@@ -73,22 +67,17 @@ func requireJSONEOF(decoder *json.Decoder) error {
 	return nil
 }
 
-// normalizeTransactionJournalForWrite produces the canonical v1 form used by
-// the file store. A zero schema version is accepted only for in-process
-// callers and normalized before persistence; non-zero unknown versions are
-// rejected so old binaries cannot manufacture future state accidentally.
+// normalizeTransactionJournalForWrite produces the canonical supported wire
+// version. The storage layer intentionally does not validate status transitions:
+// transactionRunner owns that state-machine policy, while storage preserves
+// opaque enum values so unknown-but-structurally-compatible state remains
+// diagnosable and fail-closed.
 func normalizeTransactionJournalForWrite(journal TransactionJournal) (TransactionJournal, error) {
 	if journal.SchemaVersion == 0 {
 		journal.SchemaVersion = transactionSchemaVersion
 	}
 	if journal.SchemaVersion != transactionSchemaVersion {
 		return TransactionJournal{}, fmt.Errorf("unsupported transaction journal schemaVersion %d", journal.SchemaVersion)
-	}
-	if !knownTransactionStatus(journal.Status) {
-		return TransactionJournal{}, fmt.Errorf("unsupported transaction status %q", journal.Status)
-	}
-	if !knownRollbackStatus(journal.Rollback) {
-		return TransactionJournal{}, fmt.Errorf("unsupported rollback status %q", journal.Rollback)
 	}
 	return journal, nil
 }
@@ -108,18 +97,6 @@ func knownTransactionStatus(status TransactionStatus) bool {
 		TransactionStatusRollingBack,
 		TransactionStatusRolledBack,
 		TransactionStatusRollbackFailed:
-		return true
-	default:
-		return false
-	}
-}
-
-func knownRollbackStatus(status RollbackStatus) bool {
-	switch status {
-	case RollbackStatusEmpty,
-		RollbackStatusPending,
-		RollbackStatusSucceeded,
-		RollbackStatusFailed:
 		return true
 	default:
 		return false
