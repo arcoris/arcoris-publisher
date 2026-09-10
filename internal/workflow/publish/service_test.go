@@ -311,8 +311,13 @@ func TestPublishPreservesLockReleaseFailureAfterJournalCreateFailure(t *testing.
 			fakeGit.Statuses[worktree] = dirtyStatus()
 			stateDir := t.TempDir()
 			opts := publishOptions(t, Options{StateDir: stateDir})
-			forceJournalCreateFailure(t, stateDir, "tx-test")
 			service := New(Dependencies{Git: fakeGit}, opts)
+			service.journalStoreFactory = func(stateDir string) JournalStore {
+				return createFailingJournalStore{
+					JournalStore: NewFileJournalStore(stateDir),
+					err:          errors.New("create refused"),
+				}
+			}
 			service.lockOps = tt.lockOps(stateDir)
 
 			_, err := service.Publish(context.Background(), req)
@@ -346,13 +351,6 @@ func TestPublishDoesNotPushTagWhenBranchPushFails(t *testing.T) {
 	}
 	assertCallAbsent(t, fakeGit.Calls, "tag")
 	assertCallAbsent(t, fakeGit.Calls, "push-tag")
-}
-
-func forceJournalCreateFailure(t *testing.T, stateDir string, id TransactionID) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Join(stateDir, "transactions", id.String()+".json"), 0o700); err != nil {
-		t.Fatalf("MkdirAll() error = %v", err)
-	}
 }
 
 func assertReleaseFailureLockState(t *testing.T, stateDir string, wantID TransactionID, wantMissing bool) {
