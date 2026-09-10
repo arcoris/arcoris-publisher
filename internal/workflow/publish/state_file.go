@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	maxTransactionLockBytes = 16 << 10
-	maxOperationLockBytes   = 16 << 10
+	maxTransactionLockBytes    = 16 << 10
+	maxOperationLockBytes      = 16 << 10
 	maxTransactionJournalBytes = 8 << 20
 )
 
