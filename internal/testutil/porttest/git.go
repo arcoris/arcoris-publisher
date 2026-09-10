@@ -27,7 +27,7 @@ type GitCall struct {
 	// Op is the operation name.
 	Op string
 
-	// RepoDir is the repository worktree path.
+	// RepoDir is the canonical repository worktree path.
 	RepoDir string
 
 	// Ref is a branch, tag, refspec, or commit depending on Op.
@@ -44,6 +44,11 @@ type GitCall struct {
 }
 
 // Git is a deterministic in-memory Git port for workflow tests.
+//
+// Repository paths are compared by the same canonical absolute-path identity
+// used by FileSystem. This matters on Windows, where concise fixtures such as
+// /repo acquire a drive when production filepath operations make them absolute.
+// Refs, remote names, URLs, and Git configuration keys are never path-normalized.
 type Git struct {
 	// Statuses returns status by worktree path.
 	Statuses map[string]git.Status
@@ -69,13 +74,15 @@ type Git struct {
 	// Tags reports local tag existence by tag name.
 	Tags map[git.TagName]bool
 
-	// RemoteRefs reports remote ref existence by "remote\x00ref".
+	// RemoteRefs reports remote ref existence by "remote\x00ref" or
+	// "repoDir\x00remote\x00ref".
 	RemoteRefs map[string]bool
 
 	// Refs reports local ref existence by "repoDir\x00ref" or ref.
 	Refs map[string]bool
 
-	// RemoteRefHashes reports remote ref object hashes by "remote\x00ref".
+	// RemoteRefHashes reports remote ref object hashes by "remote\x00ref" or
+	// "repoDir\x00remote\x00ref".
 	RemoteRefHashes map[string]git.CommitHash
 
 	// RemoteURLs reports configured remote URLs by "repoDir\x00remote" or remote.
@@ -131,10 +138,10 @@ func (g *Git) CurrentBranch(context.Context, string) (git.BranchName, error) {
 
 // Status returns the configured worktree status or a clean default.
 func (g *Git) Status(_ context.Context, repoDir string) (git.Status, error) {
-	if err := g.StatusErrors[repoDir]; err != nil {
+	if err, ok := lookupRepoValue(g.StatusErrors, repoDir); ok && err != nil {
 		return git.Status{}, err
 	}
-	status, ok := g.Statuses[repoDir]
+	status, ok := lookupRepoValue(g.Statuses, repoDir)
 	if !ok {
 		return git.Status{Clean: true}, nil
 	}
@@ -144,13 +151,13 @@ func (g *Git) Status(_ context.Context, repoDir string) (git.Status, error) {
 
 // ConfigGet reports configured effective Git config values.
 func (g *Git) ConfigGet(_ context.Context, repoDir string, key string) (string, bool, error) {
-	if err := g.ConfigErrors[repoDir+"\x00"+key]; err != nil {
+	if err, ok := lookupRepoScopedValue(g.ConfigErrors, repoDir, key); ok && err != nil {
 		return "", false, err
 	}
 	if err := g.ConfigErrors[key]; err != nil {
 		return "", false, err
 	}
-	if value, ok := g.ConfigValues[repoDir+"\x00"+key]; ok {
+	if value, ok := lookupRepoScopedValue(g.ConfigValues, repoDir, key); ok {
 		value = strings.TrimSpace(value)
 		return value, value != "", nil
 	}
@@ -163,7 +170,10 @@ func (g *Git) ConfigGet(_ context.Context, repoDir string, key string) (string, 
 
 // RefExists reports configured local refs.
 func (g *Git) RefExists(_ context.Context, repoDir string, ref string) (bool, error) {
-	return g.Refs[repoDir+"\x00"+ref] || g.Refs[ref], nil
+	if exists, ok := lookupRepoScopedValue(g.Refs, repoDir, ref); ok && exists {
+		return true, nil
+	}
+	return g.Refs[ref], nil
 }
 
 // RemoteRefExists reports configured remote refs.
@@ -174,7 +184,7 @@ func (g *Git) RemoteRefExists(_ context.Context, repoDir string, remote string, 
 	if hash := g.remoteRefHash(repoDir, remote, ref); hash != "" {
 		return true, nil
 	}
-	if g.RemoteRefs[remoteRefKeyForRepo(repoDir, remote, ref)] {
+	if exists, ok := lookupRepoScopedValue(g.RemoteRefs, repoDir, remote, ref); ok && exists {
 		return true, nil
 	}
 	return g.RemoteRefs[remoteRefKey(remote, ref)], nil
@@ -192,7 +202,7 @@ func (g *Git) RemoteRefHash(_ context.Context, repoDir string, remote string, re
 // RemoteURL reports configured remote URLs.
 func (g *Git) RemoteURL(_ context.Context, repoDir string, remote string) (string, bool, error) {
 	remote = defaultRemote(remote)
-	if url := g.RemoteURLs[repoDir+"\x00"+remote]; url != "" {
+	if url, ok := lookupRepoScopedValue(g.RemoteURLs, repoDir, remote); ok && url != "" {
 		return url, true, nil
 	}
 	if url := g.RemoteURLs[remote]; url != "" {
@@ -205,7 +215,7 @@ func (g *Git) RemoteURL(_ context.Context, repoDir string, remote string) (strin
 func (g *Git) AddRemote(_ context.Context, repoDir string, remote string, url string) error {
 	remote = defaultRemote(remote)
 	g.record("remote-add", repoDir, remote+"="+url, false)
-	g.RemoteURLs[repoDir+"\x00"+remote] = url
+	g.RemoteURLs[repoScopedKey(repoDir, remote)] = url
 	return nil
 }
 
@@ -301,9 +311,9 @@ func (g *Git) DeleteRemoteRef(
 		return g.DeleteRemoteRefError
 	}
 	delete(g.RemoteRefs, remoteRefKey(remote, ref))
-	delete(g.RemoteRefs, remoteRefKeyForRepo(repoDir, remote, ref))
+	deleteRepoScopedValues(g.RemoteRefs, repoDir, remote, ref)
 	delete(g.RemoteRefHashes, remoteRefKey(remote, ref))
-	delete(g.RemoteRefHashes, remoteRefKeyForRepo(repoDir, remote, ref))
+	deleteRepoScopedValues(g.RemoteRefHashes, repoDir, remote, ref)
 	return nil
 }
 
@@ -339,8 +349,9 @@ func (g *Git) PushTag(
 	g.recordPush("push-tag", repoDir, string(tag), opts)
 	if g.PushTagError == nil {
 		ref := "refs/tags/" + tag.String()
-		g.RemoteRefs[remoteRefKeyForRepo(repoDir, remote, ref)] = true
-		g.RemoteRefHashes[remoteRefKeyForRepo(repoDir, remote, ref)] = g.CommitHash
+		key := remoteRefKeyForRepo(repoDir, remote, ref)
+		g.RemoteRefs[key] = true
+		g.RemoteRefHashes[key] = g.CommitHash
 	}
 	return g.PushTagError
 }
@@ -358,7 +369,7 @@ func (g *Git) DeleteTag(_ context.Context, repoDir string, tag git.TagName) erro
 func (g *Git) record(op, repoDir, ref string, forceWithLease bool) {
 	g.Calls = append(g.Calls, GitCall{
 		Op:             op,
-		RepoDir:        repoDir,
+		RepoDir:        normalizePath(repoDir),
 		Ref:            ref,
 		ForceWithLease: forceWithLease,
 	})
@@ -367,7 +378,7 @@ func (g *Git) record(op, repoDir, ref string, forceWithLease bool) {
 func (g *Git) recordPush(op, repoDir, ref string, opts git.PushOptions) {
 	g.Calls = append(g.Calls, GitCall{
 		Op:                   op,
-		RepoDir:              repoDir,
+		RepoDir:              normalizePath(repoDir),
 		Ref:                  ref,
 		ForceWithLease:       opts.ForceWithLease || opts.ForceWithLeaseRef != "",
 		ForceWithLeaseRef:    opts.ForceWithLeaseRef,
@@ -387,7 +398,7 @@ func RemoteRefKey(remote string, ref string) string {
 	return remoteRefKey(remote, ref)
 }
 
-// RemoteRefKeyForRepo returns a repo-scoped key used by RemoteRefs.
+// RemoteRefKeyForRepo returns a canonical repo-scoped key used by RemoteRefs.
 func RemoteRefKeyForRepo(repoDir string, remote string, ref string) string {
 	return remoteRefKeyForRepo(repoDir, remote, ref)
 }
@@ -397,7 +408,14 @@ func remoteRefKey(remote string, ref string) string {
 }
 
 func remoteRefKeyForRepo(repoDir string, remote string, ref string) string {
-	return repoDir + "\x00" + remote + "\x00" + ref
+	return repoScopedKey(repoDir, remote, ref)
+}
+
+func repoScopedKey(repoDir string, components ...string) string {
+	parts := make([]string, 0, len(components)+1)
+	parts = append(parts, normalizePath(repoDir))
+	parts = append(parts, components...)
+	return strings.Join(parts, "\x00")
 }
 
 func defaultRemote(remote string) string {
@@ -408,7 +426,7 @@ func defaultRemote(remote string) string {
 }
 
 func (g *Git) remoteRefHash(repoDir string, remote string, ref string) git.CommitHash {
-	if hash := g.RemoteRefHashes[remoteRefKeyForRepo(repoDir, remote, ref)]; hash != "" {
+	if hash, ok := lookupRepoScopedValue(g.RemoteRefHashes, repoDir, remote, ref); ok && hash != "" {
 		return hash
 	}
 	return g.RemoteRefHashes[remoteRefKey(remote, ref)]
@@ -426,4 +444,53 @@ func (g *Git) recordRemotePush(repoDir string, remote string, refspec git.RefSpe
 	key := remoteRefKeyForRepo(repoDir, remote, after)
 	g.RemoteRefs[key] = true
 	g.RemoteRefHashes[key] = hash
+}
+
+func lookupRepoValue[T any](values map[string]T, repoDir string) (T, bool) {
+	canonical := normalizePath(repoDir)
+	if value, ok := values[canonical]; ok {
+		return value, true
+	}
+	for key, value := range values {
+		if normalizePath(key) == canonical {
+			return value, true
+		}
+	}
+	var zero T
+	return zero, false
+}
+
+func lookupRepoScopedValue[T any](values map[string]T, repoDir string, components ...string) (T, bool) {
+	canonicalKey := repoScopedKey(repoDir, components...)
+	if value, ok := values[canonicalKey]; ok {
+		return value, true
+	}
+
+	wantSuffix := "\x00" + strings.Join(components, "\x00")
+	canonicalRepo := normalizePath(repoDir)
+	for key, value := range values {
+		storedRepo, suffix, ok := strings.Cut(key, "\x00")
+		if !ok || "\x00"+suffix != wantSuffix {
+			continue
+		}
+		if normalizePath(storedRepo) == canonicalRepo {
+			return value, true
+		}
+	}
+	var zero T
+	return zero, false
+}
+
+func deleteRepoScopedValues[T any](values map[string]T, repoDir string, components ...string) {
+	canonicalRepo := normalizePath(repoDir)
+	wantSuffix := "\x00" + strings.Join(components, "\x00")
+	for key := range values {
+		storedRepo, suffix, ok := strings.Cut(key, "\x00")
+		if !ok || "\x00"+suffix != wantSuffix {
+			continue
+		}
+		if normalizePath(storedRepo) == canonicalRepo {
+			delete(values, key)
+		}
+	}
 }
