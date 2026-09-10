@@ -64,7 +64,7 @@ func (s Service) RollbackTransaction(ctx context.Context, stateDir string, id Tr
 	if journal.Status == TransactionStatusCommitted {
 		return journal, &Error{
 			Code:    CodeRecoveryFailed,
-			Message: fmt.Sprintf("transaction %s is committed and cannot be rolled back without force", id),
+			Message: fmt.Sprintf("transaction %s is committed and cannot be rolled back", id),
 		}
 	}
 	if journal.Status == TransactionStatusRolledBack {

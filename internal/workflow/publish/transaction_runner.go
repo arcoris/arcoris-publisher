@@ -270,19 +270,26 @@ func (r *transactionRunner) fail(ctx context.Context, cause error) (Result, erro
 }
 
 func (r *transactionRunner) setStatus(ctx context.Context, status TransactionStatus) error {
-	r.journal.Status = status
-	r.journal.UpdatedAt = time.Now().UTC()
-	if err := r.store.Update(ctx, r.journal); err != nil {
+	if err := validateTransactionStatusTransition(r.journal.Status, status); err != nil {
+		return &Error{Code: CodeTransactionFailed, Message: "invalid transaction status transition", Cause: err}
+	}
+	next := r.journal
+	next.Status = status
+	next.UpdatedAt = time.Now().UTC()
+	if err := r.store.Update(ctx, next); err != nil {
 		return &Error{Code: CodeJournalFailed, Message: "update transaction journal failed", Cause: err}
 	}
+	r.journal = next
 	return nil
 }
 
 func (r *transactionRunner) update(ctx context.Context) error {
-	r.journal.UpdatedAt = time.Now().UTC()
-	if err := r.store.Update(ctx, r.journal); err != nil {
+	next := r.journal
+	next.UpdatedAt = time.Now().UTC()
+	if err := r.store.Update(ctx, next); err != nil {
 		return &Error{Code: CodeJournalFailed, Message: "update transaction journal failed", Cause: err}
 	}
+	r.journal = next
 	return nil
 }
 
