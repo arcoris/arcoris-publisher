@@ -85,6 +85,9 @@ func TestFileJournalStoreRejectsUnsupportedWireRepresentations(t *testing.T) {
 		{name: "future schema", json: `{"schemaVersion":2,"id":"tx-test","status":"pending"}`},
 		{name: "unknown field", json: `{"schemaVersion":1,"id":"tx-test","status":"pending","futureField":true}`},
 		{name: "multiple values", json: `{"schemaVersion":1,"id":"tx-test","status":"pending"} {}`},
+		{name: "duplicate schema", json: `{"schemaVersion":1,"schemaVersion":1,"id":"tx-test","status":"pending"}`},
+		{name: "duplicate escaped key", json: `{"schemaVersion":1,"id":"tx-test","\u0069d":"tx-other","status":"pending"}`},
+		{name: "duplicate nested key", json: `{"schemaVersion":1,"id":"tx-test","status":"pending","modules":[{"module":"foundation","module":"control"}]}`},
 	}
 
 	for _, tt := range tests {
