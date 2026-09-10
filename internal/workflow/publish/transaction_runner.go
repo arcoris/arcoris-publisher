@@ -254,9 +254,8 @@ func (r *transactionRunner) fail(ctx context.Context, cause error) (Result, erro
 		return Result{modules: r.results(), transaction: r.journal}, errors.Join(cause, err)
 	}
 	if r.service.opts.RollbackMode == RollbackAutomatic {
-		rollbackErr := r.rollback(ctx)
-		if rollbackErr != nil {
-			return Result{modules: r.results(), transaction: r.journal}, rollbackErr
+		if rollbackErr := r.rollback(ctx); rollbackErr != nil {
+			return Result{modules: r.results(), transaction: r.journal}, errors.Join(cause, rollbackErr)
 		}
 		return Result{modules: r.results(), transaction: r.journal}, cause
 	}
