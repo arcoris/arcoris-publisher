@@ -29,6 +29,10 @@ import (
 func (j *TransactionJournal) UnmarshalJSON(data []byte) error {
 	type journalWire TransactionJournal
 
+	if err := validateUniqueJSONKeys(data); err != nil {
+		return err
+	}
+
 	var envelope struct {
 		SchemaVersion *int `json:"schemaVersion"`
 	}
@@ -53,6 +57,74 @@ func (j *TransactionJournal) UnmarshalJSON(data []byte) error {
 	}
 
 	*j = TransactionJournal(decoded)
+	return nil
+}
+
+// validateUniqueJSONKeys rejects duplicate object member names at every depth.
+// encoding/json otherwise accepts duplicates and keeps the last value, which is
+// unsafe for durable recovery state because two readers could assign different
+// meaning to the same bytes. Decoder.Token returns decoded member names, so
+// escaped spellings such as "id" and "\u0069d" are treated as duplicates.
+func validateUniqueJSONKeys(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := validateUniqueJSONValue(decoder); err != nil {
+		return err
+	}
+	return requireJSONEOF(decoder)
+}
+
+func validateUniqueJSONValue(decoder *json.Decoder) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	delim, ok := token.(json.Delim)
+	if !ok {
+		return nil
+	}
+
+	switch delim {
+	case '{':
+		seen := make(map[string]struct{})
+		for decoder.More() {
+			keyToken, err := decoder.Token()
+			if err != nil {
+				return err
+			}
+			key, ok := keyToken.(string)
+			if !ok {
+				return fmt.Errorf("transaction journal JSON object contains a non-string key")
+			}
+			if _, duplicate := seen[key]; duplicate {
+				return fmt.Errorf("transaction journal contains duplicate JSON key %q", key)
+			}
+			seen[key] = struct{}{}
+			if err := validateUniqueJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+		return consumeJSONDelimiter(decoder, '}')
+	case '[':
+		for decoder.More() {
+			if err := validateUniqueJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+		return consumeJSONDelimiter(decoder, ']')
+	default:
+		return fmt.Errorf("transaction journal contains unexpected JSON delimiter %q", delim)
+	}
+}
+
+func consumeJSONDelimiter(decoder *json.Decoder, want json.Delim) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	got, ok := token.(json.Delim)
+	if !ok || got != want {
+		return fmt.Errorf("transaction journal JSON delimiter mismatch")
+	}
 	return nil
 }
 
