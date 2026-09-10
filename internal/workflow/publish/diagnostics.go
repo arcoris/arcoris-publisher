@@ -16,9 +16,7 @@ package publish
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -382,11 +380,13 @@ func inspectJournalDiagnostics(ctx context.Context, stateDir string) ([]JournalD
 
 	journals := make([]JournalDiagnostic, 0, len(entries))
 	for _, entry := range entries {
-		if !strings.HasSuffix(entry.Name(), ".json") {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
-		diagnostic := readJournalDiagnostic(ctx, store, entry.Name())
-		journals = append(journals, diagnostic)
+		if err := ctx.Err(); err != nil {
+			return journals, err
+		}
+		journals = append(journals, readJournalDiagnostic(store, entry.Name()))
 	}
 	sort.Slice(journals, func(i, j int) bool {
 		if journals[i].StartedAt.Equal(journals[j].StartedAt) {
@@ -397,32 +397,23 @@ func inspectJournalDiagnostics(ctx context.Context, stateDir string) ([]JournalD
 	return journals, nil
 }
 
-func readJournalDiagnostic(ctx context.Context, store FileJournalStore, name string) JournalDiagnostic {
+func readJournalDiagnostic(store FileJournalStore, name string) JournalDiagnostic {
 	id := diagnosticJournalID(name)
 	path := filepath.Join(store.transactionsDir(), name)
 	out := JournalDiagnostic{ID: id, Name: name, Path: path}
-	if err := ctx.Err(); err != nil {
-		out.ReadFailed = true
-		out.Message = err.Error()
-		return out
-	}
-	data, err := os.ReadFile(path)
+
+	journal, err := readTransactionJournalFile(path, "")
 	if err != nil {
+		if errors.Is(err, errTransactionJournalCorrupt) {
+			out.Corrupt = true
+			out.Message = err.Error()
+			return out
+		}
 		out.ReadFailed = true
-		out.Message = fmt.Sprintf("read transaction journal %s failed: %v", name, err)
+		out.Message = journalReadErrorMessage(name, err)
 		return out
 	}
-	var journal TransactionJournal
-	if err := json.Unmarshal(data, &journal); err != nil {
-		out.Corrupt = true
-		out.Message = fmt.Sprintf("transaction journal %s is corrupt: %v", name, err)
-		return out
-	}
-	if err := validateJournalIdentity(name, "", journal.ID); err != nil {
-		out.Corrupt = true
-		out.Message = err.Error()
-		return out
-	}
+
 	return JournalDiagnostic{
 		ID:               journal.ID,
 		Name:             name,
@@ -462,10 +453,13 @@ func inspectOperationLock(stateDir string) OperationLockDiagnostic {
 		return OperationLockDiagnostic{}
 	}
 	out := OperationLockDiagnostic{Path: path, Message: "read transaction operation lock failed"}
-	if _, statErr := os.Stat(path); statErr == nil {
+	if _, statErr := os.Lstat(path); statErr == nil {
 		out.Present = true
 	}
-	if errors.Is(err, errOperationLockCorrupt) {
+	if errors.Is(err, errOperationLockCorrupt) ||
+		errors.Is(err, errStateFileNotRegular) ||
+		errors.Is(err, errStateFileChanged) ||
+		errors.Is(err, errStateFileTooLarge) {
 		out.Present = true
 		out.Corrupt = true
 		out.Message = err.Error()
