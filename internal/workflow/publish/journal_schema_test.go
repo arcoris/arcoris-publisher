@@ -154,3 +154,39 @@ func TestFileJournalStoreKeepsUnknownStatusOpaqueAndBlocking(t *testing.T) {
 		t.Fatalf("unknown status transition error = %v, want invalid transition", err)
 	}
 }
+
+func TestFileJournalStoreDoesNotIgnoreJournalShapedDirectory(t *testing.T) {
+	store := NewFileJournalStore(t.TempDir())
+	path := filepath.Join(store.transactionsDir(), "tx-bad.json")
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+
+	if _, err := store.List(context.Background()); err == nil {
+		t.Fatal("List() error = nil for journal-shaped directory")
+	}
+	if _, ok, err := store.HasPending(context.Background()); err == nil || ok {
+		t.Fatalf("HasPending() = ok %v error %v, want fail-closed read error", ok, err)
+	}
+
+	diagnostics, err := InspectTransactionState(context.Background(), store.StateDir())
+	if err != nil {
+		t.Fatalf("InspectTransactionState() error = %v", err)
+	}
+	if !diagnostics.PublishBlocked {
+		t.Fatal("PublishBlocked = false")
+	}
+	if len(diagnostics.Journals) != 1 || !diagnostics.Journals[0].ReadFailed {
+		t.Fatalf("journals = %#v, want one read-failed diagnostic", diagnostics.Journals)
+	}
+	found := false
+	for _, blocker := range diagnostics.Blockers {
+		if blocker.Kind == TransactionBlockerJournalFileReadFailed && blocker.Name == "tx-bad.json" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("blockers = %#v, want journal_file_read_failed", diagnostics.Blockers)
+	}
+}
