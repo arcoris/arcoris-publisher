@@ -113,6 +113,38 @@ func TestFailDoesNotStartRollbackWhenFailureStateCannotPersist(t *testing.T) {
 	}
 }
 
+func TestFailPreservesPrimaryCauseWhenAutomaticRollbackFails(t *testing.T) {
+	publishErr := errors.New("candidate push failed")
+	rollbackPersistErr := errors.New("rolling back state write denied")
+	store := &failingJournalStore{failUpdateAt: 2, updateErr: rollbackPersistErr}
+	fakeGit := porttest.NewGit()
+	runner := transactionRunner{
+		service: New(Dependencies{Git: fakeGit}, Options{RollbackMode: RollbackAutomatic}),
+		store:   store,
+		journal: TransactionJournal{
+			ID:     "tx-test",
+			Status: TransactionStatusCandidatesPushed,
+			Modules: []ModuleTransactionState{{
+				Module:             "foundation",
+				WorktreeDir:        "/worktree",
+				CandidateBranchRef: "refs/heads/arcpub/tx/tx-test/foundation",
+				CandidatePushed:    true,
+			}},
+		},
+	}
+
+	_, err := runner.fail(context.Background(), publishErr)
+	if !errors.Is(err, publishErr) || !errors.Is(err, rollbackPersistErr) {
+		t.Fatalf("fail() error = %v, want publication and rollback failures", err)
+	}
+	if store.updateCalls != 2 {
+		t.Fatalf("Update() calls = %d, want 2", store.updateCalls)
+	}
+	if len(fakeGit.Calls) != 0 {
+		t.Fatalf("rollback mutated Git without durable rolling_back state: %#v", fakeGit.Calls)
+	}
+}
+
 func TestFailSurfacesManualRollbackPersistenceFailure(t *testing.T) {
 	publishErr := errors.New("candidate push failed")
 	persistErr := errors.New("journal write denied")
