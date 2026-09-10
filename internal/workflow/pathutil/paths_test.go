@@ -15,6 +15,7 @@
 package pathutil
 
 import (
+	"path/filepath"
 	"testing"
 
 	"arcoris.dev/arcoris-publisher/internal/manifest"
@@ -27,19 +28,24 @@ func TestCleanAbsRejectsBlankPath(t *testing.T) {
 }
 
 func TestEnsureInside(t *testing.T) {
-	if err := EnsureInside("/repo", "/repo/module"); err != nil {
+	root := filepath.Join(string(filepath.Separator), "repo")
+	child := filepath.Join(root, "module")
+	outside := filepath.Join(string(filepath.Separator), "other")
+	if err := EnsureInside(root, child); err != nil {
 		t.Fatalf("EnsureInside(child) error = %v", err)
 	}
-	if err := EnsureInside("/repo", "/other"); err == nil {
+	if err := EnsureInside(root, outside); err == nil {
 		t.Fatal("EnsureInside(escaped) error = nil")
 	}
 }
 
 func TestJoinRelative(t *testing.T) {
-	if got := JoinRelative("/repo", manifest.RelativePath(".")); got != "/repo" {
+	root := filepath.Join(string(filepath.Separator), "repo")
+	if got := JoinRelative(root, manifest.RelativePath(".")); got != filepath.Clean(root) {
 		t.Fatalf("JoinRelative(.) = %q", got)
 	}
-	if got := JoinRelative("/repo", manifest.RelativePath("pkg/api")); got != "/repo/pkg/api" {
-		t.Fatalf("JoinRelative(pkg/api) = %q", got)
+	want := filepath.Join(root, "pkg", "api")
+	if got := JoinRelative(root, manifest.RelativePath("pkg/api")); got != want {
+		t.Fatalf("JoinRelative(pkg/api) = %q, want %q", got, want)
 	}
 }
