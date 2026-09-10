@@ -380,7 +380,7 @@ func inspectJournalDiagnostics(ctx context.Context, stateDir string) ([]JournalD
 
 	journals := make([]JournalDiagnostic, 0, len(entries))
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+		if !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
 		if err := ctx.Err(); err != nil {
