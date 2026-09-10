@@ -190,8 +190,11 @@ func (l operationLock) Release() (operationLockOutcome, error) {
 }
 
 func readOperationLock(path string) (operationLockInfo, error) {
-	data, err := os.ReadFile(path)
+	data, err := readBoundedStateFile(path, maxOperationLockBytes)
 	if err != nil {
+		if errors.Is(err, errStateFileTooLarge) {
+			return operationLockInfo{}, operationLockCorruptf("transaction operation lock exceeds maximum size")
+		}
 		return operationLockInfo{}, err
 	}
 	info := operationLockInfo{}
@@ -252,6 +255,12 @@ func readOperationLock(path string) (operationLockInfo, error) {
 	}
 	if info.Token == "" {
 		return operationLockInfo{}, operationLockCorruptf("transaction operation lock identity is missing")
+	}
+	if info.PID == "" {
+		return operationLockInfo{}, operationLockCorruptf("transaction operation lock pid is missing")
+	}
+	if info.StartedAt == "" {
+		return operationLockInfo{}, operationLockCorruptf("transaction operation lock startedAt is missing")
 	}
 	info.Path = path
 	return info, nil

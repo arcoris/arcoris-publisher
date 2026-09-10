@@ -108,8 +108,11 @@ func (s FileJournalStore) Load(ctx context.Context, id TransactionID) (Transacti
 	if err != nil {
 		return TransactionJournal{}, err
 	}
-	data, err := os.ReadFile(path)
+	data, err := readBoundedStateFile(path, maxTransactionJournalBytes)
 	if err != nil {
+		if errors.Is(err, errStateFileTooLarge) {
+			return TransactionJournal{}, journalCorruptf("transaction journal %s exceeds maximum size", filepath.Base(path))
+		}
 		return TransactionJournal{}, err
 	}
 	var journal TransactionJournal
@@ -141,8 +144,11 @@ func (s FileJournalStore) List(ctx context.Context) ([]TransactionSummary, error
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		data, err := readBoundedStateFile(filepath.Join(dir, entry.Name()), maxTransactionJournalBytes)
 		if err != nil {
+			if errors.Is(err, errStateFileTooLarge) {
+				return nil, journalCorruptf("transaction journal %s exceeds maximum size", entry.Name())
+			}
 			return nil, err
 		}
 		var journal TransactionJournal

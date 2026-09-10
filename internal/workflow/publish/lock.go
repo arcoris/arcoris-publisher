@@ -204,8 +204,11 @@ func transactionLockPath(stateDir string) (string, error) {
 }
 
 func readTransactionLock(path string) (TransactionLockInfo, error) {
-	data, err := os.ReadFile(path)
+	data, err := readBoundedStateFile(path, maxTransactionLockBytes)
 	if err != nil {
+		if errors.Is(err, errStateFileTooLarge) {
+			return TransactionLockInfo{}, lockCorruptf("publish lock exceeds maximum size")
+		}
 		return TransactionLockInfo{}, err
 	}
 	info := TransactionLockInfo{}
@@ -250,8 +253,8 @@ func readTransactionLock(path string) (TransactionLockInfo, error) {
 			}
 			info.StartedAt = value
 		case "command":
-			if strings.TrimSpace(value) == "" {
-				return TransactionLockInfo{}, lockCorruptf("publish lock command is empty")
+			if value != "publish" {
+				return TransactionLockInfo{}, lockCorruptf("unsupported publish lock command %q", value)
 			}
 			info.Command = value
 		default:
@@ -263,6 +266,17 @@ func readTransactionLock(path string) (TransactionLockInfo, error) {
 	}
 	if err := validateTransactionID(info.ID); err != nil {
 		return TransactionLockInfo{}, lockCorruptf("publish lock has unsafe transaction id %q", info.ID)
+	}
+	if seen["schemaVersion"] {
+		if info.PID == "" {
+			return TransactionLockInfo{}, lockCorruptf("publish lock pid is missing")
+		}
+		if info.StartedAt == "" {
+			return TransactionLockInfo{}, lockCorruptf("publish lock startedAt is missing")
+		}
+		if info.Command == "" {
+			return TransactionLockInfo{}, lockCorruptf("publish lock command is missing")
+		}
 	}
 	info.Path = path
 	return info, nil
