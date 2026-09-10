@@ -48,17 +48,18 @@ func TestTransactionLockAcquireCleanupAfterParentSyncFailure(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			stateDir := t.TempDir()
 			primary := errors.New("initial parent sync denied")
-			syncCalls := 0
+			cleanupSyncCalls := 0
 			ops := transactionLockOps{
 				remove: os.Remove,
+				syncAcquireParent: func(string) error {
+					return primary
+				},
 				syncParent: func(string) error {
-					syncCalls++
-					if syncCalls == 1 {
-						return primary
-					}
+					cleanupSyncCalls++
 					return tt.cleanupSyncErr
 				},
 			}
@@ -85,8 +86,12 @@ func TestTransactionLockAcquireCleanupAfterParentSyncFailure(t *testing.T) {
 			if tt.cleanupSyncErr != nil && !errors.Is(err, tt.cleanupSyncErr) {
 				t.Fatalf("acquireTransactionLock() error = %v, want underlying cleanup sync failure", err)
 			}
-			if tt.remove == nil && syncCalls != 2 {
-				t.Fatalf("syncParent calls = %d, want 2", syncCalls)
+			wantCleanupSyncCalls := 1
+			if tt.remove != nil {
+				wantCleanupSyncCalls = 0
+			}
+			if cleanupSyncCalls != wantCleanupSyncCalls {
+				t.Fatalf("cleanup syncParent calls = %d, want %d", cleanupSyncCalls, wantCleanupSyncCalls)
 			}
 			assertStatePathExists(t, filepath.Join(stateDir, "publish.lock"), tt.wantExists)
 		})
@@ -118,16 +123,17 @@ func TestOperationLockAcquireCleanupAfterParentSyncFailure(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			stateDir := t.TempDir()
 			primary := errors.New("initial parent sync denied")
-			syncCalls := 0
+			cleanupSyncCalls := 0
 			ops := testOperationLockOps()
+			ops.syncAcquireParent = func(string) error {
+				return primary
+			}
 			ops.syncParent = func(string) error {
-				syncCalls++
-				if syncCalls == 1 {
-					return primary
-				}
+				cleanupSyncCalls++
 				return tt.cleanupSyncErr
 			}
 			if tt.remove != nil {
@@ -147,8 +153,12 @@ func TestOperationLockAcquireCleanupAfterParentSyncFailure(t *testing.T) {
 			if tt.cleanupSyncErr != nil && !errors.Is(err, tt.cleanupSyncErr) {
 				t.Fatalf("acquireOperationLock() error = %v, want underlying cleanup sync failure", err)
 			}
-			if tt.remove == nil && syncCalls != 2 {
-				t.Fatalf("syncParent calls = %d, want 2", syncCalls)
+			wantCleanupSyncCalls := 1
+			if tt.remove != nil {
+				wantCleanupSyncCalls = 0
+			}
+			if cleanupSyncCalls != wantCleanupSyncCalls {
+				t.Fatalf("cleanup syncParent calls = %d, want %d", cleanupSyncCalls, wantCleanupSyncCalls)
 			}
 			assertStatePathExists(t, operationLockPath(stateDir), tt.wantExists)
 		})
