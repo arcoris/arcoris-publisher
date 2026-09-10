@@ -95,11 +95,11 @@ func removeTransactionLockIfCurrent(path string, expected TransactionID, ops tra
 		return lockRemoveOutcome{}, fmt.Errorf("%w: publish lock changed from %s to %s", errTransactionLockChanged, expected, info.ID)
 	}
 	if err := ops.remove(path); err != nil {
-		return lockRemoveOutcome{}, fmt.Errorf("%w: %v", errTransactionLockDeleteFailed, err)
+		return lockRemoveOutcome{}, fmt.Errorf("%w: %w", errTransactionLockDeleteFailed, err)
 	}
 	outcome := lockRemoveOutcome{Removed: true}
 	if err := ops.syncParent(path); err != nil {
-		return outcome, fmt.Errorf("%w: %v", errTransactionLockSyncFailed, err)
+		return outcome, fmt.Errorf("%w: %w", errTransactionLockSyncFailed, err)
 	}
 	outcome.Synced = true
 	return outcome, nil
@@ -139,26 +139,41 @@ func acquireTransactionLock(ctx context.Context, stateDir string, id Transaction
 		}
 		return transactionLock{}, err
 	}
+
 	content := fmt.Sprintf("schemaVersion=%s\ntransaction=%s\npid=%d\nstartedAt=%s\ncommand=publish\n", transactionLockSchemaVersion, id, os.Getpid(), now.UTC().Format(time.RFC3339Nano))
 	if _, err := file.WriteString(content); err != nil {
-		_ = file.Close()
-		_ = os.Remove(path)
-		return transactionLock{}, err
+		return transactionLock{}, abortTransactionLockAcquire(file, path, ops, err)
 	}
 	if err := file.Sync(); err != nil {
-		_ = file.Close()
-		_ = os.Remove(path)
-		return transactionLock{}, err
+		return transactionLock{}, abortTransactionLockAcquire(file, path, ops, err)
 	}
 	if err := file.Close(); err != nil {
-		_ = os.Remove(path)
-		return transactionLock{}, err
+		return transactionLock{}, joinTransactionLockAcquireCleanup(path, ops, err)
 	}
-	if err := syncParentDir(path); err != nil {
-		_ = os.Remove(path)
-		return transactionLock{}, err
+	if err := ops.syncParent(path); err != nil {
+		return transactionLock{}, joinTransactionLockAcquireCleanup(path, ops, err)
 	}
 	return transactionLock{path: path, id: id, ops: ops}, nil
+}
+
+func abortTransactionLockAcquire(file *os.File, path string, ops transactionLockOps, primary error) error {
+	if closeErr := file.Close(); closeErr != nil {
+		primary = errors.Join(primary, fmt.Errorf("close partial publish lock failed: %w", closeErr))
+	}
+	return joinTransactionLockAcquireCleanup(path, ops, primary)
+}
+
+func joinTransactionLockAcquireCleanup(path string, ops transactionLockOps, primary error) error {
+	outcome, cleanupErr := cleanupCreatedStateFile(path, ops.remove, ops.syncParent)
+	if cleanupErr == nil {
+		return primary
+	}
+	if !outcome.Removed {
+		cleanupErr = fmt.Errorf("%w during acquire cleanup: %w", errTransactionLockDeleteFailed, cleanupErr)
+	} else {
+		cleanupErr = fmt.Errorf("%w during acquire cleanup after lock removal: %w", errTransactionLockSyncFailed, cleanupErr)
+	}
+	return errors.Join(primary, cleanupErr)
 }
 
 func (l transactionLock) Release() (lockReleaseOutcome, error) {
@@ -206,8 +221,8 @@ func transactionLockPath(stateDir string) (string, error) {
 func readTransactionLock(path string) (TransactionLockInfo, error) {
 	data, err := readBoundedStateFile(path, maxTransactionLockBytes)
 	if err != nil {
-		if errors.Is(err, errStateFileTooLarge) {
-			return TransactionLockInfo{}, lockCorruptf("publish lock exceeds maximum size")
+		if isUnsafeStateFileRepresentation(err) {
+			return TransactionLockInfo{}, lockCorruptf("publish lock has an unsafe file representation: %v", err)
 		}
 		return TransactionLockInfo{}, err
 	}
