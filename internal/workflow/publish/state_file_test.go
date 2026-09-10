@@ -49,15 +49,18 @@ func TestReadBoundedStateFileRejectsOversizedFile(t *testing.T) {
 	}
 }
 
-func TestReadBoundedStateFileRejectsDirectory(t *testing.T) {
+func TestReadBoundedStateFileRejectsDirectoryAsReadFailure(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state")
 	if err := os.Mkdir(path, 0o700); err != nil {
 		t.Fatalf("Mkdir() error = %v", err)
 	}
 
 	_, err := readBoundedStateFile(path, 1024)
-	if !errors.Is(err, errStateFileNotRegular) {
-		t.Fatalf("readBoundedStateFile() error = %v, want errStateFileNotRegular", err)
+	if err == nil {
+		t.Fatal("readBoundedStateFile() error = nil")
+	}
+	if isUnsafeStateFileRepresentation(err) {
+		t.Fatalf("directory classified as corrupt representation: %v", err)
 	}
 }
 
