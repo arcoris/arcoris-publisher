@@ -29,12 +29,24 @@ func includePath(path string, opts Options) string {
 	return ""
 }
 
+// isLocalAbsolutePath recognizes absolute path syntax from every supported
+// platform, not only the host running the renderer. Transaction state and test
+// fixtures can outlive or cross an OS boundary; default redaction must not leak
+// a Unix path on Windows or a Windows path on Unix merely because filepath.IsAbs
+// follows host semantics.
 func isLocalAbsolutePath(path string) bool {
 	if filepath.IsAbs(path) {
 		return true
 	}
-	if len(path) >= 3 && path[1] == ':' && (path[2] == '\\' || path[2] == '/') {
+	if strings.HasPrefix(path, "/") {
+		return true
+	}
+	if len(path) >= 3 && isASCIILetter(path[0]) && path[1] == ':' && (path[2] == '\\' || path[2] == '/') {
 		return true
 	}
 	return strings.HasPrefix(path, `\\`)
+}
+
+func isASCIILetter(value byte) bool {
+	return value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z'
 }
