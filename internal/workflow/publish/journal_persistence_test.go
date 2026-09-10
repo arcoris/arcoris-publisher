@@ -38,6 +38,7 @@ func TestRollbackStopsBeforeGitMutationWhenIntentCannotPersist(t *testing.T) {
 				CandidateBranchRef: "refs/heads/arcpub/tx/tx-test/foundation",
 				CandidatePushed:    true,
 			}},
+		},
 	}
 
 	err := runner.rollback(context.Background())
@@ -68,6 +69,7 @@ func TestRollbackStopsAfterProgressPersistenceFailure(t *testing.T) {
 				CandidateBranchRef: "refs/heads/arcpub/tx/tx-test/foundation",
 				CandidatePushed:    true,
 			}},
+		},
 	}
 
 	err := runner.rollback(context.Background())
@@ -99,6 +101,7 @@ func TestFailDoesNotStartRollbackWhenFailureStateCannotPersist(t *testing.T) {
 				CandidateBranchRef: "refs/heads/arcpub/tx/tx-test/foundation",
 				CandidatePushed:    true,
 			}},
+		},
 	}
 
 	_, err := runner.fail(context.Background(), publishErr)
