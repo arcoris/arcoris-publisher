@@ -28,17 +28,46 @@ const (
 	maxTransactionJournalBytes = 8 << 20
 )
 
-var errStateFileTooLarge = errors.New("transaction state file too large")
+var (
+	errStateFileTooLarge   = errors.New("transaction state file too large")
+	errStateFileNotRegular = errors.New("transaction state file is not a regular file")
+	errStateFileChanged    = errors.New("transaction state file changed while opening")
+)
 
-// readBoundedStateFile prevents malformed recovery state from turning a
-// read-only inspection path into an unbounded allocation. Errors intentionally
-// mention only the base name so default diagnostics do not leak local paths.
+// readBoundedStateFile reads trusted recovery state through a deliberately
+// narrow filesystem boundary. Transaction state files must be regular files,
+// must not be symlinks, and must remain the same filesystem object between the
+// path inspection and the opened descriptor. The size limit prevents malformed
+// recovery state from turning a read-only inspection path into an unbounded
+// allocation.
+//
+// Errors intentionally mention only the base name so default diagnostics do
+// not leak local paths.
 func readBoundedStateFile(path string, maxBytes int64) ([]byte, error) {
+	pathInfo, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !pathInfo.Mode().IsRegular() {
+		return nil, fmt.Errorf("%w: %s", errStateFileNotRegular, filepath.Base(path))
+	}
+
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
+
+	openedInfo, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !openedInfo.Mode().IsRegular() {
+		return nil, fmt.Errorf("%w: %s", errStateFileNotRegular, filepath.Base(path))
+	}
+	if !os.SameFile(pathInfo, openedInfo) {
+		return nil, fmt.Errorf("%w: %s", errStateFileChanged, filepath.Base(path))
+	}
 
 	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
 	if err != nil {
