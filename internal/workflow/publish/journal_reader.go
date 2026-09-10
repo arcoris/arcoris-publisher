@@ -16,7 +16,6 @@ package publish
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"path/filepath"
 )
@@ -30,9 +29,7 @@ import (
 func readTransactionJournalFile(path string, requested TransactionID) (TransactionJournal, error) {
 	data, err := readBoundedStateFile(path, maxTransactionJournalBytes)
 	if err != nil {
-		if errors.Is(err, errStateFileTooLarge) ||
-			errors.Is(err, errStateFileNotRegular) ||
-			errors.Is(err, errStateFileChanged) {
+		if isUnsafeStateFileRepresentation(err) {
 			return TransactionJournal{}, journalCorruptf(
 				"transaction journal %s has an unsafe file representation: %v",
 				filepath.Base(path),
