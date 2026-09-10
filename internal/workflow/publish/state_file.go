@@ -34,6 +34,12 @@ var (
 	errStateFileChanged    = errors.New("transaction state file changed while opening")
 )
 
+func isUnsafeStateFileRepresentation(err error) bool {
+	return errors.Is(err, errStateFileTooLarge) ||
+		errors.Is(err, errStateFileNotRegular) ||
+		errors.Is(err, errStateFileChanged)
+}
+
 // readBoundedStateFile reads trusted recovery state through a deliberately
 // narrow filesystem boundary. Transaction state files must be regular files,
 // must not be symlinks, and must remain the same filesystem object between the
