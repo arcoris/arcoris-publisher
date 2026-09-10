@@ -27,6 +27,8 @@ import (
 	"arcoris.dev/arcoris-publisher/internal/workflow/target"
 )
 
+type journalStoreFactory func(stateDir string) JournalStore
+
 // Service publishes verified target repositories.
 type Service struct {
 	// deps contains infrastructure ports used by publication.
@@ -35,8 +37,9 @@ type Service struct {
 	// opts contains normalized publication options.
 	opts Options
 
-	lockOps          transactionLockOps
-	operationLockOps operationLockOps
+	lockOps             transactionLockOps
+	operationLockOps    operationLockOps
+	journalStoreFactory journalStoreFactory
 }
 
 // New returns a publication service.
@@ -49,11 +52,24 @@ func New(deps Dependencies, opts Options) Service {
 		opts.RollbackMode = defaults.RollbackMode
 	}
 	return Service{
-		deps:             deps,
-		opts:             opts,
-		lockOps:          defaultTransactionLockOps(),
-		operationLockOps: defaultOperationLockOps(),
+		deps:                 deps,
+		opts:                 opts,
+		lockOps:              defaultTransactionLockOps(),
+		operationLockOps:     defaultOperationLockOps(),
+		journalStoreFactory:  defaultJournalStoreFactory,
 	}
+}
+
+func defaultJournalStoreFactory(stateDir string) JournalStore {
+	return NewFileJournalStore(stateDir)
+}
+
+func (s Service) newJournalStore(stateDir string) JournalStore {
+	factory := s.journalStoreFactory
+	if factory == nil {
+		factory = defaultJournalStoreFactory
+	}
+	return factory(stateDir)
 }
 
 // Publish commits, tags, and pushes every changed verified module.
@@ -127,7 +143,7 @@ func (s Service) publishTransaction(
 		result, err = releaseOperationLockForPublish(operationLock, result, err)
 	}()
 
-	store := NewFileJournalStore(stateDir)
+	store := s.newJournalStore(stateDir)
 	if pending, ok, err := store.HasPending(ctx); err != nil {
 		return Result{}, &Error{Code: CodeJournalFailed, Message: "pending transaction lookup failed", Cause: err}
 	} else if ok {
