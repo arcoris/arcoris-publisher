@@ -71,7 +71,7 @@ func (s FileJournalStore) Create(ctx context.Context, journal TransactionJournal
 	if err != nil {
 		return err
 	}
-	if _, err := os.Stat(path); err == nil {
+	if _, err := os.Lstat(path); err == nil {
 		return fmt.Errorf("%w: %s", errTransactionJournalExists, filepath.Base(path))
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -90,11 +90,15 @@ func (s FileJournalStore) Update(ctx context.Context, journal TransactionJournal
 	if err != nil {
 		return err
 	}
-	if _, err := os.Stat(path); err != nil {
+	info, err := os.Lstat(path)
+	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("%w: %s", errTransactionJournalNotFound, filepath.Base(path))
 		}
 		return err
+	}
+	if !info.Mode().IsRegular() {
+		return journalCorruptf("transaction journal %s is not a regular file", filepath.Base(path))
 	}
 	return s.write(ctx, journal)
 }
@@ -108,21 +112,7 @@ func (s FileJournalStore) Load(ctx context.Context, id TransactionID) (Transacti
 	if err != nil {
 		return TransactionJournal{}, err
 	}
-	data, err := readBoundedStateFile(path, maxTransactionJournalBytes)
-	if err != nil {
-		if errors.Is(err, errStateFileTooLarge) {
-			return TransactionJournal{}, journalCorruptf("transaction journal %s exceeds maximum size", filepath.Base(path))
-		}
-		return TransactionJournal{}, err
-	}
-	var journal TransactionJournal
-	if err := json.Unmarshal(data, &journal); err != nil {
-		return TransactionJournal{}, journalCorruptf("transaction journal %s is corrupt: %w", filepath.Base(path), err)
-	}
-	if err := validateJournalIdentity(filepath.Base(path), id, journal.ID); err != nil {
-		return TransactionJournal{}, err
-	}
-	return journal, nil
+	return readTransactionJournalFile(path, id)
 }
 
 // List returns transaction summaries sorted by start time.
@@ -144,18 +134,11 @@ func (s FileJournalStore) List(ctx context.Context) ([]TransactionSummary, error
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
-		data, err := readBoundedStateFile(filepath.Join(dir, entry.Name()), maxTransactionJournalBytes)
-		if err != nil {
-			if errors.Is(err, errStateFileTooLarge) {
-				return nil, journalCorruptf("transaction journal %s exceeds maximum size", entry.Name())
-			}
+		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		var journal TransactionJournal
-		if err := json.Unmarshal(data, &journal); err != nil {
-			return nil, journalCorruptf("transaction journal %s is corrupt: %w", entry.Name(), err)
-		}
-		if err := validateJournalIdentity(entry.Name(), "", journal.ID); err != nil {
+		journal, err := readTransactionJournalFile(filepath.Join(dir, entry.Name()), "")
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, journal.Summary())
