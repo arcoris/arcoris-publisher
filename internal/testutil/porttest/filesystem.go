@@ -44,30 +44,30 @@ func NewFileSystem() *FileSystem {
 
 // AddDir registers path and its parents as directories.
 func (fs *FileSystem) AddDir(path string) {
-	fs.addParents(filepath.Clean(path))
+	fs.addParents(normalizePath(path))
 }
 
 // AddFile registers path as a regular file with detached contents.
 func (fs *FileSystem) AddFile(path string, data []byte) {
-	path = filepath.Clean(path)
+	path = normalizePath(path)
 	fs.addParents(filepath.Dir(path))
 	fs.Files[path] = append([]byte(nil), data...)
 }
 
 // Exists reports whether path is registered.
 func (fs *FileSystem) Exists(_ context.Context, path string) (bool, error) {
-	path = filepath.Clean(path)
+	path = normalizePath(path)
 	return fs.Dirs[path] || fs.Files[path] != nil, nil
 }
 
 // IsDir reports whether path is registered as a directory.
 func (fs *FileSystem) IsDir(_ context.Context, path string) (bool, error) {
-	return fs.Dirs[filepath.Clean(path)], nil
+	return fs.Dirs[normalizePath(path)], nil
 }
 
 // ReadFile returns detached file contents.
 func (fs *FileSystem) ReadFile(_ context.Context, path string) ([]byte, error) {
-	path = filepath.Clean(path)
+	path = normalizePath(path)
 	data, ok := fs.Files[path]
 	if !ok {
 		return nil, fmt.Errorf("file %s not found", path)
@@ -83,7 +83,7 @@ func (fs *FileSystem) WriteFile(
 	data []byte,
 	opts filesystem.WriteFileOptions,
 ) error {
-	path = filepath.Clean(path)
+	path = normalizePath(path)
 	if fs.Files[path] != nil && !opts.Overwrite {
 		return fmt.Errorf("file %s already exists", path)
 	}
@@ -97,19 +97,19 @@ func (fs *FileSystem) WriteFile(
 
 // MkdirAll registers path and its parents as directories.
 func (fs *FileSystem) MkdirAll(_ context.Context, path string, _ filesystem.MkdirOptions) error {
-	fs.addParents(filepath.Clean(path))
+	fs.addParents(normalizePath(path))
 	return nil
 }
 
 // RemoveAll removes path and descendants.
 func (fs *FileSystem) RemoveAll(_ context.Context, path string, _ filesystem.RemoveOptions) error {
-	fs.removeTree(filepath.Clean(path))
+	fs.removeTree(normalizePath(path))
 	return nil
 }
 
 // CleanDir removes directory contents while preserving the directory itself.
 func (fs *FileSystem) CleanDir(_ context.Context, dir string, opts filesystem.CleanDirOptions) error {
-	dir = filepath.Clean(dir)
+	dir = normalizePath(dir)
 	if !fs.Dirs[dir] {
 		if opts.AllowMissing {
 			return nil
@@ -134,8 +134,8 @@ func (fs *FileSystem) CopyTree(
 	dst string,
 	_ filesystem.CopyTreeOptions,
 ) (filesystem.CopyTreeResult, error) {
-	src = filepath.Clean(src)
-	dst = filepath.Clean(dst)
+	src = normalizePath(src)
+	dst = normalizePath(dst)
 	if !fs.Dirs[src] {
 		return filesystem.CopyTreeResult{}, fmt.Errorf("directory %s not found", src)
 	}
@@ -163,7 +163,7 @@ func (fs *FileSystem) TreeHash(
 	root string,
 	_ filesystem.TreeHashOptions,
 ) (filesystem.TreeHash, error) {
-	root = filepath.Clean(root)
+	root = normalizePath(root)
 	if !fs.Dirs[root] {
 		return "", fmt.Errorf("directory %s not found", root)
 	}
@@ -176,6 +176,21 @@ func (fs *FileSystem) TreeHash(
 	}
 
 	return filesystem.TreeHash(fmt.Sprintf("sha256:test:%s:%d", root, count)), nil
+}
+
+// normalizePath mirrors the production workflows' absolute-path boundary.
+// Tests often use concise rooted-looking fixtures such as /repo; on Windows
+// those paths still need a volume before filepath-based production code and the
+// in-memory filesystem can agree on identity. Normalizing every entry and
+// lookup avoids platform-specific fixture branches while preserving native path
+// semantics.
+func normalizePath(path string) string {
+	clean := filepath.Clean(path)
+	abs, err := filepath.Abs(clean)
+	if err != nil {
+		return clean
+	}
+	return filepath.Clean(abs)
 }
 
 func (fs *FileSystem) addParents(path string) {
