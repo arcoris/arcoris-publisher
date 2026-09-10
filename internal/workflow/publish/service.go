@@ -27,6 +27,9 @@ import (
 	"arcoris.dev/arcoris-publisher/internal/workflow/target"
 )
 
+// journalStoreFactory isolates construction of durable transaction storage.
+// Production services use FileJournalStore; tests can inject precise storage
+// failures without manufacturing unrelated filesystem corruption.
 type journalStoreFactory func(stateDir string) JournalStore
 
 // Service publishes verified target repositories.
@@ -52,11 +55,11 @@ func New(deps Dependencies, opts Options) Service {
 		opts.RollbackMode = defaults.RollbackMode
 	}
 	return Service{
-		deps:                 deps,
-		opts:                 opts,
-		lockOps:              defaultTransactionLockOps(),
-		operationLockOps:     defaultOperationLockOps(),
-		journalStoreFactory:  defaultJournalStoreFactory,
+		deps:                deps,
+		opts:                opts,
+		lockOps:             defaultTransactionLockOps(),
+		operationLockOps:    defaultOperationLockOps(),
+		journalStoreFactory: defaultJournalStoreFactory,
 	}
 }
 
