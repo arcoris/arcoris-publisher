@@ -209,7 +209,7 @@ func TestRollbackTransactionRefusesExistingOperationLock(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t := tt
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			stateDir := t.TempDir()
 			if tt.setup != nil {
