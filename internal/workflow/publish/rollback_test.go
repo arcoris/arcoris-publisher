@@ -35,7 +35,7 @@ func TestRollbackRefusesMovedFinalBranch(t *testing.T) {
 
 	runner := transactionRunner{
 		service: New(Dependencies{Git: fakeGit}, Options{}),
-		store:   NewFileJournalStore(t.TempDir()),
+		store:   &failingJournalStore{},
 		journal: TransactionJournal{
 			ID:     "tx-test",
 			Status: TransactionStatusBranchesPromoted,
@@ -69,7 +69,7 @@ func TestRollbackTreatsMissingCandidateAsAlreadyDeleted(t *testing.T) {
 	fakeGit := porttest.NewGit()
 	runner := transactionRunner{
 		service: New(Dependencies{Git: fakeGit}, Options{}),
-		store:   NewFileJournalStore(t.TempDir()),
+		store:   &failingJournalStore{},
 		journal: TransactionJournal{
 			ID:     "tx-test",
 			Status: TransactionStatusCandidatesPushed,
@@ -103,7 +103,7 @@ func TestRollbackRestoresBranchWithExactLease(t *testing.T) {
 
 	runner := transactionRunner{
 		service: New(Dependencies{Git: fakeGit}, Options{}),
-		store:   NewFileJournalStore(t.TempDir()),
+		store:   &failingJournalStore{},
 		journal: TransactionJournal{
 			ID:     "tx-test",
 			Status: TransactionStatusBranchesPromoted,
@@ -193,9 +193,7 @@ func TestRollbackTransactionRefusesExistingOperationLock(t *testing.T) {
 				}
 			},
 		},
-		{
-			name: "missing journal",
-		},
+		{name: "missing journal"},
 		{
 			name: "corrupt journal",
 			setup: func(t *testing.T, stateDir string) {
@@ -211,7 +209,7 @@ func TestRollbackTransactionRefusesExistingOperationLock(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
+		t := tt
 		t.Run(tt.name, func(t *testing.T) {
 			stateDir := t.TempDir()
 			if tt.setup != nil {
