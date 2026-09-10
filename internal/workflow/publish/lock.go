@@ -39,9 +39,10 @@ var (
 )
 
 type transactionLockOps struct {
-	remove       func(string) error
-	syncParent   func(string) error
-	beforeRemove func()
+	remove            func(string) error
+	syncAcquireParent func(string) error
+	syncParent        func(string) error
+	beforeRemove      func()
 }
 
 type lockRemoveOutcome struct {
@@ -56,8 +57,9 @@ type lockReleaseOutcome struct {
 
 func defaultTransactionLockOps() transactionLockOps {
 	return transactionLockOps{
-		remove:     os.Remove,
-		syncParent: syncParentDir,
+		remove:            os.Remove,
+		syncAcquireParent: syncParentDir,
+		syncParent:        syncParentDir,
 	}
 }
 
@@ -65,6 +67,9 @@ func (ops transactionLockOps) withDefaults() transactionLockOps {
 	defaults := defaultTransactionLockOps()
 	if ops.remove == nil {
 		ops.remove = defaults.remove
+	}
+	if ops.syncAcquireParent == nil {
+		ops.syncAcquireParent = defaults.syncAcquireParent
 	}
 	if ops.syncParent == nil {
 		ops.syncParent = defaults.syncParent
@@ -150,7 +155,7 @@ func acquireTransactionLock(ctx context.Context, stateDir string, id Transaction
 	if err := file.Close(); err != nil {
 		return transactionLock{}, joinTransactionLockAcquireCleanup(path, ops, err)
 	}
-	if err := ops.syncParent(path); err != nil {
+	if err := ops.syncAcquireParent(path); err != nil {
 		return transactionLock{}, joinTransactionLockAcquireCleanup(path, ops, err)
 	}
 	return transactionLock{path: path, id: id, ops: ops}, nil
