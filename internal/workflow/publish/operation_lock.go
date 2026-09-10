@@ -140,24 +140,38 @@ func acquireOperationLock(ctx context.Context, stateDir string, operation operat
 		ops.now().UTC().Format(time.RFC3339Nano),
 	)
 	if _, err := file.WriteString(content); err != nil {
-		_ = file.Close()
-		_ = os.Remove(path)
-		return operationLock{}, err
+		return operationLock{}, abortOperationLockAcquire(file, path, ops, err)
 	}
 	if err := file.Sync(); err != nil {
-		_ = file.Close()
-		_ = os.Remove(path)
-		return operationLock{}, err
+		return operationLock{}, abortOperationLockAcquire(file, path, ops, err)
 	}
 	if err := file.Close(); err != nil {
-		_ = os.Remove(path)
-		return operationLock{}, err
+		return operationLock{}, joinOperationLockAcquireCleanup(path, ops, err)
 	}
 	if err := ops.syncParent(path); err != nil {
-		_ = os.Remove(path)
-		return operationLock{}, err
+		return operationLock{}, joinOperationLockAcquireCleanup(path, ops, err)
 	}
 	return operationLock{path: path, operation: operation, token: token, ops: ops}, nil
+}
+
+func abortOperationLockAcquire(file *os.File, path string, ops operationLockOps, primary error) error {
+	if closeErr := file.Close(); closeErr != nil {
+		primary = errors.Join(primary, fmt.Errorf("close partial transaction operation lock failed: %w", closeErr))
+	}
+	return joinOperationLockAcquireCleanup(path, ops, primary)
+}
+
+func joinOperationLockAcquireCleanup(path string, ops operationLockOps, primary error) error {
+	outcome, cleanupErr := cleanupCreatedStateFile(path, ops.remove, ops.syncParent)
+	if cleanupErr == nil {
+		return primary
+	}
+	if !outcome.Removed {
+		cleanupErr = fmt.Errorf("%w during acquire cleanup: %w", errOperationLockDeleteFailed, cleanupErr)
+	} else {
+		cleanupErr = fmt.Errorf("%w during acquire cleanup after lock removal: %w", errOperationLockSyncFailed, cleanupErr)
+	}
+	return errors.Join(primary, cleanupErr)
 }
 
 func (l operationLock) Release() (operationLockOutcome, error) {
@@ -179,11 +193,11 @@ func (l operationLock) Release() (operationLockOutcome, error) {
 		return operationLockOutcome{}, fmt.Errorf("%w: transaction operation lock changed", errOperationLockChanged)
 	}
 	if err := ops.remove(l.path); err != nil {
-		return operationLockOutcome{}, fmt.Errorf("%w: %v", errOperationLockDeleteFailed, err)
+		return operationLockOutcome{}, fmt.Errorf("%w: %w", errOperationLockDeleteFailed, err)
 	}
 	outcome := operationLockOutcome{Released: true}
 	if err := ops.syncParent(l.path); err != nil {
-		return outcome, fmt.Errorf("%w: %v", errOperationLockSyncFailed, err)
+		return outcome, fmt.Errorf("%w: %w", errOperationLockSyncFailed, err)
 	}
 	outcome.Synced = true
 	return outcome, nil
@@ -192,8 +206,8 @@ func (l operationLock) Release() (operationLockOutcome, error) {
 func readOperationLock(path string) (operationLockInfo, error) {
 	data, err := readBoundedStateFile(path, maxOperationLockBytes)
 	if err != nil {
-		if errors.Is(err, errStateFileTooLarge) {
-			return operationLockInfo{}, operationLockCorruptf("transaction operation lock exceeds maximum size")
+		if isUnsafeStateFileRepresentation(err) {
+			return operationLockInfo{}, operationLockCorruptf("transaction operation lock has an unsafe file representation: %v", err)
 		}
 		return operationLockInfo{}, err
 	}
