@@ -42,7 +42,10 @@ type FileJournalStore struct {
 	stateDir string
 }
 
-var errTransactionJournalCorrupt = errors.New("transaction journal corrupt")
+var (
+	errTransactionJournalCorrupt = errors.New("transaction journal corrupt")
+	errTransactionJournalExists  = errors.New("transaction journal already exists")
+)
 
 func journalCorruptf(format string, args ...any) error {
 	return fmt.Errorf("%w: "+format, append([]any{errTransactionJournalCorrupt}, args...)...)
@@ -56,12 +59,30 @@ func NewFileJournalStore(stateDir string) FileJournalStore {
 // StateDir returns the journal state directory.
 func (s FileJournalStore) StateDir() string { return s.stateDir }
 
-// Create writes a new transaction journal atomically.
+// Create writes a new transaction journal atomically and refuses to replace an
+// existing transaction identity. Publish mutation paths hold operation.lock,
+// so this existence precondition is serialized with all supported state-dir
+// writers while atomicWriteFile preserves crash-safe file replacement.
 func (s FileJournalStore) Create(ctx context.Context, journal TransactionJournal) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	path, err := s.journalPath(journal.ID)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("%w: %s", errTransactionJournalExists, filepath.Base(path))
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	return s.write(ctx, journal)
 }
 
-// Update replaces an existing transaction journal atomically.
+// Update atomically persists the current transaction journal representation.
+// A strict update-existing precondition is enforced by the workflow lifecycle
+// in a subsequent storage-hardening pass; this method already writes only the
+// canonical supported schema.
 func (s FileJournalStore) Update(ctx context.Context, journal TransactionJournal) error {
 	return s.write(ctx, journal)
 }
@@ -146,6 +167,10 @@ func (s FileJournalStore) HasPending(ctx context.Context) (TransactionSummary, b
 
 func (s FileJournalStore) write(ctx context.Context, journal TransactionJournal) error {
 	if err := ctx.Err(); err != nil {
+		return err
+	}
+	journal, err := normalizeTransactionJournalForWrite(journal)
+	if err != nil {
 		return err
 	}
 	path, err := s.journalPath(journal.ID)
