@@ -131,7 +131,7 @@ func (s FileJournalStore) List(ctx context.Context) ([]TransactionSummary, error
 
 	out := make([]TransactionSummary, 0, len(entries))
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+		if !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
 		if err := ctx.Err(); err != nil {
