@@ -66,20 +66,28 @@ func ensureInside(path, root string) error {
 
 // ensureSafeRemove applies extra checks for destructive removal.
 //
-// It rejects the filesystem root even when no SafetyRoot is supplied. Callers
-// should still provide SafetyRoot whenever possible for stronger protection.
+// It rejects any platform filesystem root even when no SafetyRoot is supplied.
+// filepath.Dir(root) == root holds for POSIX roots, Windows volume roots, and
+// UNC roots without hard-coding a separator or drive-letter representation.
+// Callers should still provide SafetyRoot whenever possible for stronger
+// protection.
 func ensureSafeRemove(path, root string) error {
 	abs, err := absClean(path)
 	if err != nil {
 		return err
 	}
-	if abs == string(filepath.Separator) {
+	if isFilesystemRoot(abs) {
 		return errors.New("refusing to remove filesystem root")
 	}
 	if err := ensureInside(abs, root); err != nil {
 		return err
 	}
 	return nil
+}
+
+func isFilesystemRoot(path string) bool {
+	clean := filepath.Clean(path)
+	return filepath.Dir(clean) == clean
 }
 
 // isNotExist centralizes os.ErrNotExist matching for wrapped filesystem errors.
@@ -101,5 +109,8 @@ func isPathInsideRoot(rel string) bool {
 	if rel == "." {
 		return true
 	}
-	return !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel)
+	if filepath.IsAbs(rel) {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
