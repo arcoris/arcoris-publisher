@@ -32,6 +32,7 @@ type operationLock struct {
 	path      string
 	operation operationLockOperation
 	token     string
+	owned     bool
 	ops       operationLockOps
 }
 
@@ -47,12 +48,12 @@ const (
 const operationLockSchemaVersion = "1"
 
 var (
-	errOperationLockExists       = errors.New("transaction operation lock exists")
-	errOperationLockCorrupt      = errors.New("transaction operation lock corrupt")
-	errOperationLockChanged      = errors.New("transaction operation lock changed")
-	errOperationLockDisappeared  = errors.New("transaction operation lock disappeared")
-	errOperationLockDeleteFailed = errors.New("transaction operation lock delete failed")
-	errOperationLockSyncFailed   = errors.New("transaction operation lock sync failed")
+	errOperationLockExists        = errors.New("transaction operation lock exists")
+	errOperationLockCorrupt       = errors.New("transaction operation lock corrupt")
+	errOperationLockChanged       = errors.New("transaction operation lock changed")
+	errOperationLockDisappeared   = errors.New("transaction operation lock disappeared")
+	errOperationLockDeleteFailed  = errors.New("transaction operation lock delete failed")
+	errOperationLockSyncFailed    = errors.New("transaction operation lock sync failed")
 )
 
 type operationLockInfo struct {
@@ -157,7 +158,7 @@ func acquireOperationLock(ctx context.Context, stateDir string, operation operat
 	if err := ops.syncAcquireParent(path); err != nil {
 		return operationLock{}, joinOperationLockAcquireCleanup(path, ops, err)
 	}
-	return operationLock{path: path, operation: operation, token: token, ops: ops}, nil
+	return operationLock{path: path, operation: operation, token: token, owned: true, ops: ops}, nil
 }
 
 func abortOperationLockAcquire(file *os.File, path string, ops operationLockOps, primary error) error {
@@ -180,13 +181,12 @@ func joinOperationLockAcquireCleanup(path string, ops operationLockOps, primary 
 	return errors.Join(primary, cleanupErr)
 }
 
-// Release removes the operation lock only when the persisted identity still
-// matches the lock acquired by this caller. Once acquisition has succeeded,
-// disappearance is an observable lifecycle failure rather than a successful
-// no-op: another actor removing the lock breaks mutation serialization and must
-// not be hidden from the caller.
+// Release removes the operation lock only when this handle owns a lock created
+// by acquireOperationLock and the persisted identity still matches. An acquired
+// lock disappearing before release is an observable lifecycle failure rather
+// than a successful no-op.
 func (l operationLock) Release() (operationLockOutcome, error) {
-	if l.path == "" {
+	if !l.owned || l.path == "" {
 		return operationLockOutcome{}, nil
 	}
 	ops := l.ops.withDefaults()
