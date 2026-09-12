@@ -21,6 +21,9 @@ import (
 
 // RemoteURL reads the configured URL for a named remote.
 func (c *Client) RemoteURL(ctx context.Context, repoDir string, remote string) (string, bool, error) {
+	if _, err := validatedRemote(remote); err != nil {
+		return "", false, err
+	}
 	spec := c.command(repoDir, []string{"remote", "get-url", defaultRemote(remote)}, nil, true, true)
 	spec.AllowedExitCodes = []int{0, 2}
 	result, err := c.runner.Run(ctx, spec)
@@ -35,6 +38,12 @@ func (c *Client) RemoteURL(ctx context.Context, repoDir string, remote string) (
 
 // AddRemote adds a named remote with url.
 func (c *Client) AddRemote(ctx context.Context, repoDir string, remote string, url string) error {
+	if _, err := validatedRemote(remote); err != nil {
+		return err
+	}
+	if err := validateGitPositional("remote URL", url); err != nil {
+		return err
+	}
 	result, err := c.runner.Run(ctx, c.command(repoDir, []string{"remote", "add", defaultRemote(remote), url}, []string{url}, true, true))
 	if err != nil {
 		return wrapGitCommandError("git remote add failed", result, err)
