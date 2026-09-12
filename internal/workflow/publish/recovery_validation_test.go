@@ -75,7 +75,7 @@ func TestValidateRollbackJournalRejectsUntrustedRecoveryInputs(t *testing.T) {
 		{
 			name: "non hexadecimal object",
 			mutate: func(journal *TransactionJournal) {
-				journal.Modules[0].CreatedCommit = "HEAD~1"
+				journal.Modules[0].CreatedCommit = "HEAD0000"
 			},
 			want: "non-hexadecimal",
 		},
@@ -112,7 +112,7 @@ func TestValidateRollbackJournalRejectsUntrustedRecoveryInputs(t *testing.T) {
 func TestRollbackTransactionRejectsInvalidJournalBeforeGitOperations(t *testing.T) {
 	stateDir := t.TempDir()
 	journal := rollbackValidationFixture(t)
-	journal.WorktreeForTest("relative/worktree")
+	journal.Modules[0].WorktreeDir = "relative/worktree"
 	store := NewFileJournalStore(stateDir)
 	if err := store.Create(context.Background(), journal); err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -146,8 +146,4 @@ func rollbackValidationFixture(t *testing.T) TransactionJournal {
 			CandidateBranchRef: candidateRef(id, "foundation"),
 		}},
 	}
-}
-
-func (j *TransactionJournal) WorktreeForTest(path string) {
-	j.Modules[0].WorktreeDir = path
 }
