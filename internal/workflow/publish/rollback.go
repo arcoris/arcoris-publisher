@@ -175,11 +175,30 @@ func (r *transactionRunner) rollbackCandidate(ctx context.Context, mod *ModuleTr
 	mod.CandidatePushed = false
 }
 
+// rollbackLocalTag removes a local tag only while its peeled target still
+// equals the commit created by this transaction. This works for both annotated
+// and lightweight tags and avoids deleting a tag that was recreated or moved
+// after publication failed.
 func (r *transactionRunner) rollbackLocalTag(ctx context.Context, mod *ModuleTransactionState) {
 	if !mod.LocalTagCreated || mod.FinalTagRef == "" {
 		return
 	}
-	if err := r.service.deps.Git.DeleteTag(ctx, mod.WorktreeDir, git.TagName(strings.TrimPrefix(mod.FinalTagRef, "refs/tags/"))); err != nil {
+	tag := git.TagName(strings.TrimPrefix(mod.FinalTagRef, "refs/tags/"))
+	current, ok, err := r.service.deps.Git.TagTargetHash(ctx, mod.WorktreeDir, tag)
+	if err != nil {
+		r.recordRollbackFailure(mod, "local tag lookup failed", err)
+		return
+	}
+	if !ok {
+		mod.Rollback.LocalTagDeleted = true
+		mod.LocalTagCreated = false
+		return
+	}
+	if mod.CreatedCommit == "" || current != mod.CreatedCommit {
+		r.recordManualAction(*mod, mod.FinalTagRef, mod.CreatedCommit, "", "local tag changed after transaction; refusing to delete")
+		return
+	}
+	if err := r.service.deps.Git.DeleteTag(ctx, mod.WorktreeDir, tag); err != nil {
 		r.recordRollbackFailure(mod, "local tag delete failed", err)
 		return
 	}
