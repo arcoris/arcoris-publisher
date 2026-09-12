@@ -17,6 +17,10 @@ package git
 import "arcoris.dev/arcoris-publisher/internal/ports/porterr"
 
 const (
+	// CodeInvalidArgument identifies a Git operation rejected before invoking
+	// Git because a caller-controlled argument is ambiguous or unsafe for the
+	// command-line interface.
+	CodeInvalidArgument porterr.Code = "git_invalid_argument"
 	// CodeCommandFailed identifies a Git command that exited unsuccessfully.
 	CodeCommandFailed porterr.Code = "git_command_failed"
 	// CodeRefNotFound identifies a missing local Git reference.
