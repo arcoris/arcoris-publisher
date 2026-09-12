@@ -23,6 +23,12 @@ import (
 
 // RemoteRefExists checks a remote ref with ls-remote.
 func (c *Client) RemoteRefExists(ctx context.Context, repoDir string, remote string, ref string) (bool, error) {
+	if _, err := validatedRemote(remote); err != nil {
+		return false, err
+	}
+	if err := validateGitPositional("remote ref", ref); err != nil {
+		return false, err
+	}
 	spec := c.command(repoDir, []string{"ls-remote", "--exit-code", defaultRemote(remote), ref}, nil, true, true)
 	spec.AllowedExitCodes = []int{0, 2}
 	result, err := c.runner.Run(ctx, spec)
@@ -39,6 +45,12 @@ func (c *Client) RemoteRefHash(
 	remote string,
 	ref string,
 ) (gitport.CommitHash, bool, error) {
+	if _, err := validatedRemote(remote); err != nil {
+		return "", false, err
+	}
+	if err := validateGitPositional("remote ref", ref); err != nil {
+		return "", false, err
+	}
 	spec := c.command(repoDir, []string{"ls-remote", "--exit-code", defaultRemote(remote), ref}, nil, true, true)
 	spec.AllowedExitCodes = []int{0, 2}
 	result, err := c.runner.Run(ctx, spec)
