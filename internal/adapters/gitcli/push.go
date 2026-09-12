@@ -22,6 +22,22 @@ import (
 
 // Push runs git push for one refspec.
 func (c *Client) Push(ctx context.Context, repoDir string, remote string, refspec gitport.RefSpec, opts gitport.PushOptions) error {
+	if _, err := validatedRemote(remote); err != nil {
+		return err
+	}
+	if err := validateGitPositional("refspec", refspec.String()); err != nil {
+		return err
+	}
+	if opts.ForceWithLeaseRef != "" {
+		if err := validateGitPositional("force-with-lease ref", opts.ForceWithLeaseRef); err != nil {
+			return err
+		}
+	}
+	if opts.ForceWithLeaseExpect != "" {
+		if err := validateGitPositional("force-with-lease object", opts.ForceWithLeaseExpect.String()); err != nil {
+			return err
+		}
+	}
 	result, err := c.runner.Run(ctx, c.command(repoDir, pushArgs(remote, refspec, opts), opts.SensitiveValues, true, true))
 	if err != nil {
 		return wrapGitCommandError("git push failed", result, err)
@@ -37,6 +53,12 @@ func (c *Client) DeleteRemoteRef(
 	ref string,
 	opts gitport.PushOptions,
 ) error {
+	if _, err := validatedRemote(remote); err != nil {
+		return err
+	}
+	if err := validateGitPositional("remote ref", ref); err != nil {
+		return err
+	}
 	result, err := c.runner.Run(ctx, c.command(repoDir, deleteRemoteRefArgs(remote, ref, opts), opts.SensitiveValues, true, true))
 	if err != nil {
 		return wrapGitCommandError("git remote ref delete failed", result, err)
