@@ -181,6 +181,10 @@ func joinTransactionLockAcquireCleanup(path string, ops transactionLockOps, prim
 	return errors.Join(primary, cleanupErr)
 }
 
+// Release removes this caller's publish lock. An acquired lock disappearing
+// before release is an ownership failure, not a successful no-op; hiding that
+// race would make the transaction lifecycle look cleaner than the persisted
+// state actually was.
 func (l transactionLock) Release() (lockReleaseOutcome, error) {
 	if l.path == "" {
 		return lockReleaseOutcome{}, nil
@@ -188,9 +192,6 @@ func (l transactionLock) Release() (lockReleaseOutcome, error) {
 	outcome, err := removeTransactionLockIfCurrent(l.path, l.id, l.ops)
 	release := lockReleaseOutcome{Removed: outcome.Removed, Synced: outcome.Synced}
 	if err != nil {
-		if errors.Is(err, errTransactionLockDisappeared) {
-			return lockReleaseOutcome{}, nil
-		}
 		return release, err
 	}
 	return release, nil
