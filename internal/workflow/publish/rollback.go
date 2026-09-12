@@ -145,16 +145,26 @@ func (r *transactionRunner) rollbackFinalBranch(ctx context.Context, mod *Module
 	mod.FinalBranchPromoted = false
 }
 
+// rollbackCandidate deletes only the candidate ref that still points at the
+// commit created by this transaction. Candidate refs are private staging refs,
+// but they can still be moved by operators or another tool invocation; deleting
+// by name alone would destroy state no longer owned by this transaction.
 func (r *transactionRunner) rollbackCandidate(ctx context.Context, mod *ModuleTransactionState) {
 	if !mod.CandidatePushed {
 		return
 	}
-	if _, ok, err := r.service.deps.Git.RemoteRefHash(ctx, mod.WorktreeDir, r.service.opts.RemoteName, mod.CandidateBranchRef); err != nil {
+	current, ok, err := r.service.deps.Git.RemoteRefHash(ctx, mod.WorktreeDir, r.service.opts.RemoteName, mod.CandidateBranchRef)
+	if err != nil {
 		r.recordRollbackFailure(mod, "candidate ref lookup failed", err)
 		return
-	} else if !ok {
+	}
+	if !ok {
 		mod.Rollback.CandidateDeleted = true
 		mod.CandidatePushed = false
+		return
+	}
+	if mod.CreatedCommit == "" || current != mod.CreatedCommit {
+		r.recordManualAction(*mod, mod.CandidateBranchRef, mod.CreatedCommit, "", "candidate ref changed after transaction; refusing to delete")
 		return
 	}
 	if err := r.service.deps.Git.DeleteRemoteRef(ctx, mod.WorktreeDir, r.service.opts.RemoteName, mod.CandidateBranchRef, git.PushOptions{}); err != nil {
