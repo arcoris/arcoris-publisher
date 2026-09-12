@@ -50,6 +50,7 @@ var (
 	errOperationLockExists       = errors.New("transaction operation lock exists")
 	errOperationLockCorrupt      = errors.New("transaction operation lock corrupt")
 	errOperationLockChanged      = errors.New("transaction operation lock changed")
+	errOperationLockDisappeared  = errors.New("transaction operation lock disappeared")
 	errOperationLockDeleteFailed = errors.New("transaction operation lock delete failed")
 	errOperationLockSyncFailed   = errors.New("transaction operation lock sync failed")
 )
@@ -179,6 +180,11 @@ func joinOperationLockAcquireCleanup(path string, ops operationLockOps, primary 
 	return errors.Join(primary, cleanupErr)
 }
 
+// Release removes the operation lock only when the persisted identity still
+// matches the lock acquired by this caller. Once acquisition has succeeded,
+// disappearance is an observable lifecycle failure rather than a successful
+// no-op: another actor removing the lock breaks mutation serialization and must
+// not be hidden from the caller.
 func (l operationLock) Release() (operationLockOutcome, error) {
 	if l.path == "" {
 		return operationLockOutcome{}, nil
@@ -190,7 +196,7 @@ func (l operationLock) Release() (operationLockOutcome, error) {
 	info, err := readOperationLock(l.path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return operationLockOutcome{}, nil
+			return operationLockOutcome{}, fmt.Errorf("%w: %v", errOperationLockDisappeared, err)
 		}
 		return operationLockOutcome{}, err
 	}
@@ -349,6 +355,8 @@ func operationLockReleaseMessage(outcome operationLockOutcome, err error) string
 		return "transaction state operation lock cleanup sync failed after lock removal"
 	case errors.Is(err, errOperationLockDeleteFailed):
 		return "transaction state operation lock cleanup delete failed"
+	case errors.Is(err, errOperationLockDisappeared):
+		return "transaction state operation lock cleanup found the acquired lock missing"
 	case errors.Is(err, errOperationLockChanged):
 		return "transaction state operation lock cleanup refused changed lock"
 	case errors.Is(err, errOperationLockCorrupt):
