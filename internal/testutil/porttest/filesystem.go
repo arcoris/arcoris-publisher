@@ -178,19 +178,23 @@ func (fs *FileSystem) TreeHash(
 	return filesystem.TreeHash(fmt.Sprintf("sha256:test:%s:%d", root, count)), nil
 }
 
-// normalizePath mirrors the production workflows' absolute-path boundary.
-// Tests often use concise rooted-looking fixtures such as /repo; on Windows
-// those paths still need a volume before filepath-based production code and the
-// in-memory filesystem can agree on identity. Normalizing every entry and
-// lookup avoids platform-specific fixture branches while preserving native path
+// normalizePath returns the logical path identity used by the in-memory test
+// ports. The fake filesystem intentionally has no concept of Windows volumes:
+// fixtures such as /repo and runtime paths such as D:\repo refer to the same
+// logical object. Stripping a volume after making the path absolute keeps tests
+// deterministic across runner drive letters without changing production path
 // semantics.
 func normalizePath(path string) string {
 	clean := filepath.Clean(path)
-	abs, err := filepath.Abs(clean)
-	if err != nil {
-		return clean
+	if !filepath.IsAbs(clean) && filepath.VolumeName(clean) == "" && !strings.HasPrefix(clean, string(filepath.Separator)) {
+		if abs, err := filepath.Abs(clean); err == nil {
+			clean = filepath.Clean(abs)
+		}
 	}
-	return filepath.Clean(abs)
+	if volume := filepath.VolumeName(clean); volume != "" {
+		clean = strings.TrimPrefix(clean, volume)
+	}
+	return filepath.Clean(clean)
 }
 
 func (fs *FileSystem) addParents(path string) {
