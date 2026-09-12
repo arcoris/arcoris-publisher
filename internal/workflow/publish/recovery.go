@@ -70,10 +70,27 @@ func (s Service) RollbackTransaction(ctx context.Context, stateDir string, id Tr
 	if journal.Status == TransactionStatusRolledBack {
 		return journal, nil
 	}
-
-	if journal.Remote != "" {
-		s.opts.RemoteName = journal.Remote
+	if err := validateRollbackJournal(journal); err != nil {
+		return journal, &Error{
+			Code:    CodeRecoveryFailed,
+			Message: fmt.Sprintf("transaction %s recovery state is invalid", id),
+			Cause:   err,
+		}
 	}
+
+	effectiveRemote := s.opts.RemoteName
+	if journal.Remote != "" {
+		effectiveRemote = journal.Remote
+	}
+	if err := validateRecoveryRemote(effectiveRemote); err != nil {
+		return journal, &Error{
+			Code:    CodeRecoveryFailed,
+			Message: fmt.Sprintf("transaction %s recovery remote is invalid", id),
+			Cause:   err,
+		}
+	}
+	s.opts.RemoteName = effectiveRemote
+
 	runner := transactionRunner{service: s, store: store, journal: journal}
 	err = runner.rollback(ctx)
 	return runner.journal, err
