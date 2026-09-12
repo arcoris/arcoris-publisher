@@ -23,6 +23,12 @@ type TagClient interface {
 	// Missing tags should return (false, nil). Ambiguous or malformed refs should
 	// be returned as errors rather than treated as missing tags.
 	TagExists(ctx context.Context, repoDir string, tag TagName) (bool, error)
+	// TagTargetHash resolves tag to the commit it ultimately references.
+	//
+	// Annotated tags must be peeled so callers can compare their target commit
+	// with a transaction-created commit without depending on the tag-object hash.
+	// Missing tags should return ("", false, nil).
+	TagTargetHash(ctx context.Context, repoDir string, tag TagName) (CommitHash, bool, error)
 	// CreateTag creates tag at target according to opts.
 	//
 	// Annotated tags should use opts.Message as their annotation body; lightweight
