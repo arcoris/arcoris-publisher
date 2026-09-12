@@ -22,6 +22,14 @@ import (
 
 // Fetch runs git fetch for one remote.
 func (c *Client) Fetch(ctx context.Context, repoDir string, remote string, opts gitport.FetchOptions) error {
+	if _, err := validatedRemote(remote); err != nil {
+		return err
+	}
+	for _, refspec := range opts.RefSpecs {
+		if err := validateGitPositional("fetch refspec", refspec.String()); err != nil {
+			return err
+		}
+	}
 	result, err := c.runner.Run(ctx, c.command(repoDir, fetchArgs(remote, opts), opts.SensitiveValues, true, true))
 	if err != nil {
 		return wrapGitCommandError("git fetch failed", result, err)
