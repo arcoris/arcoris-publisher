@@ -79,13 +79,14 @@ func TestOperationLockReleaseSafety(t *testing.T) {
 		wantExists   bool
 	}{
 		{
-			name: "missing lock is no-op",
+			name: "missing acquired lock is an error",
 			setup: func(t *testing.T, stateDir string, _ operationLock) {
 				t.Helper()
 				if err := os.Remove(operationLockPath(stateDir)); err != nil {
 					t.Fatalf("Remove() error = %v", err)
 				}
 			},
+			wantErr:    errOperationLockDisappeared,
 			wantExists: false,
 		},
 		{
